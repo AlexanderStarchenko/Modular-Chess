@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Модульные Шахматы</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="main-layout">
+        <div id="game-area">
+            <div class="player-info top-player">
+                <div class="player-details">
+                    <span class="player-avatar">🤖</span>
+                    <span class="player-name" id="top-player-name">Оппонент</span>
+                    <div class="captures-row">
+                        <span class="captured-pieces" id="top-captured"></span>
+                        <span class="material-advantage" id="top-advantage"></span>
+                    </div>
+                </div>
+                <div class="timer" id="top-timer">10:00</div>
+            </div>
+            
+            <div id="board-container">
+                <div id="chessboard"></div>
+            </div>
+            
+            <div class="player-info bottom-player">
+                <div class="player-details">
+                    <span class="player-avatar">👤</span>
+                    <span class="player-name" id="bottom-player-name">Вы</span>
+                    <div class="captures-row">
+                        <span class="captured-pieces" id="bottom-captured"></span>
+                        <span class="material-advantage" id="bottom-advantage"></span>
+                    </div>
+                </div>
+                <div class="timer" id="bottom-timer">10:00</div>
+            </div>
+        </div>
+        
+        <div id="sidebar">
+            <div class="sidebar-section settings-section">
+                <h2>Настройки</h2>
+                
+                <div class="setting-group">
+                    <label>Режим игры:</label>
+                    <div class="toggle-container">
+                        <span>Игрок</span>
+                        <label class="switch">
+                            <input type="checkbox" id="pc-toggle">
+                            <span class="slider round"></span>
+                        </label>
+                        <span>ПК</span>
+                    </div>
+                </div>
+
+                <div class="setting-group" id="difficulty-container" style="display: none;">
+                    <label>Сложность:</label>
+                    <select id="difficulty-select" class="styled-select">
+                        <option value="1">Легкий</option>
+                        <option value="2" selected>Средний</option>
+                        <option value="3">Сложный</option>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <label>Контроль времени:</label>
+                    <select id="time-control" class="styled-select">
+                        <option value="0">Без времени</option>
+                        <option value="180,2">3 мин + 2 сек</option>
+                        <option value="300,0">5 мин</option>
+                        <option value="600,0" selected>10 мин</option>
+                        <option value="1800,0">30 мин</option>
+                        <option value="custom">Свой...</option>
+                    </select>
+                    <div id="custom-time-inputs" style="display: none; margin-top: 10px; gap: 10px; display: flex;">
+                        <input type="number" id="custom-mins" placeholder="Мин" min="1" max="180" class="styled-input" style="width: 50%;">
+                        <input type="number" id="custom-inc" placeholder="+Сек" min="0" max="60" class="styled-input" style="width: 50%;">
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <label>Стиль доски:</label>
+                    <select id="theme-select" class="styled-select">
+                        <option value="classic">Классика (Зеленый)</option>
+                        <option value="wood">Дерево</option>
+                        <option value="ocean">Океан (Синий)</option>
+                        <option value="dark">Темный (Серый)</option>
+                    </select>
+                </div>
+
+                <button id="reset-btn" class="primary-btn">Новая игра</button>
+            </div>
+
+            <div class="sidebar-section info-section">
+                <div class="status-box">
+                    <span id="status">Ход белых</span>
+                    <div id="game-info" class="sub-status">Игра началась</div>
+                </div>
+                
+                <div id="move-history">
+                    <div class="history-header">История ходов</div>
+                    <ul id="history-list"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="js/logic.js"></script>
+    <script src="js/ui.js"></script>
+</body>
+</html>
