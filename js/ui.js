@@ -649,6 +649,20 @@ const ChessUI = (() => {
         const difficulty = difficultySelect.value;
         const state = ChessLogic.getState();
         
+        if (difficulty === '5') {
+            // Unreal difficulty uses Stockfish (handled outside the main AI worker)
+            const fen = ChessLogic.getFen();
+            ChessAIUnreal.getBestMove(fen).then(bestMove => {
+                if (gameEnded) return;
+                if (bestMove) {
+                    executeMove(bestMove.fromR, bestMove.fromC, bestMove.toR, bestMove.toC);
+                }
+                isWaitingForPC = false;
+                renderBoard();
+            });
+            return;
+        }
+        
         if (!aiWorker) {
             aiWorker = new Worker('js/ai_worker.js');
             aiWorker.onmessage = function(e) {
