@@ -129,6 +129,25 @@
             </div>
         </div>
     </div>
+    <!-- Network Modal -->
+    <div id="network-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2 style="margin-top: 0;">Сетевая игра</h2>
+            <div class="setting-group">
+                <label>IP-адрес сервера:</label>
+                <input type="text" id="network-ip-input" class="styled-input" value="192.168.0.105">
+            </div>
+            <div class="setting-group">
+                <label>ID комнаты:</label>
+                <input type="text" id="network-room-input" class="styled-input" value="123">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button id="network-connect-btn" class="primary-btn">Подключиться</button>
+                <button id="network-cancel-btn" class="secondary-btn">Отмена</button>
+            </div>
+        </div>
+    </div>
+
     <script src="js/logic.js?v=3"></script>
     <script src="js/ai_shared.js?v=3"></script>
     <script src="js/ai_easy.js?v=3"></script>

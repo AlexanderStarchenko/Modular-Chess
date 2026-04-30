@@ -67,7 +67,8 @@ const ChessUI = (() => {
     }
 
     function init() {
-        // ... (existing init code)
+        console.log("Chess UI Initializing...");
+        
         boardElement = document.getElementById('chessboard');
         statusElement = document.getElementById('status');
         gameInfoElement = document.getElementById('game-info');
@@ -88,6 +89,53 @@ const ChessUI = (() => {
         analysisProgress = document.getElementById('analysis-progress');
         stockfishTip = document.getElementById('analysis-advice');
 
+        // Network button logic
+        if (networkBtn) {
+            const modal = document.getElementById('network-modal');
+            const connectBtn = document.getElementById('network-connect-btn');
+            const cancelBtn = document.getElementById('network-cancel-btn');
+            const ipInput = document.getElementById('network-ip-input');
+            const roomInput = document.getElementById('network-room-input');
+
+            networkBtn.onclick = () => {
+                if (networkState && networkState.connected) {
+                    if (confirm('Покинуть комнату и вернуться в одиночную игру?')) {
+                        SocketTransport.disconnect();
+                        networkBtn.textContent = 'Играть по сети';
+                        networkBtn.classList.remove('leave-room-btn');
+                        document.getElementById('difficulty-container').style.display = pcToggle.checked ? '' : 'none';
+                        startNewGame();
+                    }
+                    return;
+                }
+                modal.style.display = 'flex';
+            };
+
+            cancelBtn.onclick = () => {
+                modal.style.display = 'none';
+            };
+
+            connectBtn.onclick = () => {
+                const serverIp = ipInput.value.trim() || '192.168.0.105';
+                const roomId = roomInput.value.trim() || '123';
+                
+                try {
+                    modal.style.display = 'none';
+                    pcToggle.checked = false;
+                    document.getElementById('difficulty-container').style.display = 'none';
+                    startNewGame(); 
+                    
+                    const fullUrl = serverIp.includes(':') ? serverIp : `http://${serverIp}:3000`;
+                    SocketTransport.init(roomId, fullUrl);
+                    
+                    networkBtn.textContent = `Покинуть комнату (${roomId})`;
+                    networkBtn.classList.add('leave-room-btn');
+                } catch (e) {
+                    console.error('Network Error:', e);
+                }
+            };
+        }
+
         topPlayerName = document.getElementById('top-player-name');
         bottomPlayerName = document.getElementById('bottom-player-name');
         topTimerDisplay = document.getElementById('top-timer');
@@ -101,8 +149,8 @@ const ChessUI = (() => {
             ChessNetwork.on('status', state => {
                 networkState = state;
                 const drawBtn = document.getElementById('draw-btn');
-                if (drawBtn && !gameEnded) {
-                    drawBtn.style.display = (networkState && networkState.connected) ? 'block' : 'none';
+                if (drawBtn) {
+                    drawBtn.style.display = (networkState && networkState.connected && !gameEnded) ? 'block' : 'none';
                 }
             });
             ChessNetwork.on('move', move => {
@@ -275,29 +323,6 @@ const ChessUI = (() => {
         });
 
         themeSelect.addEventListener('change', updateTheme);
-
-        networkBtn.addEventListener('click', () => {
-            let serverIp = '192.168.0.105'; // Default from our last check
-            if (window.location.protocol === 'file:') {
-                const userIp = prompt('Введите IP-адрес вашего компьютера (его пишет сервер в консоли):', serverIp);
-                if (!userIp) return;
-                serverIp = userIp;
-            }
-
-            const roomId = prompt('Введите ID комнаты (например: room123):', 'room123');
-            if (roomId) {
-                pcToggle.checked = false;
-                document.getElementById('difficulty-container').style.display = 'none';
-                startNewGame(); 
-                
-                // Pass the IP to the transport
-                const fullUrl = serverIp.startsWith('http') ? serverIp : `http://${serverIp}:3000`;
-                SocketTransport.init(roomId, fullUrl);
-                
-                networkBtn.textContent = `В комнате: ${roomId}`;
-                networkBtn.disabled = true;
-            }
-        });
 
         updateTheme();
         startNewGame();

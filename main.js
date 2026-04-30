@@ -7,7 +7,8 @@ function createWindow() {
         height: 900,
         webPreferences: {
             nodeIntegration: true,
-            contextIsolation: false
+            contextIsolation: false,
+            webSecurity: false
         },
         autoHideMenuBar: true,
         title: "Modular Chess"

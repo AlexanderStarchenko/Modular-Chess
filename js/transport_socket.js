@@ -20,6 +20,7 @@ const SocketTransport = (() => {
 
         // Use customUrl if provided (from prompt), otherwise fallback to local/auto
         const serverUrl = customUrl || (window.location.protocol === 'file:' ? 'http://192.168.0.105:3000' : undefined);
+        console.log('Connecting to:', serverUrl);
         socket = io(serverUrl);
         currentRoom = roomId;
 
@@ -90,6 +91,10 @@ const SocketTransport = (() => {
             }
         });
 
+        socket.on('connect_error', (error) => {
+            console.error('Connection Error:', error.message);
+        });
+
         socket.on('disconnect', () => {
             console.log('Disconnected from server');
             ChessNetwork.disconnect();
@@ -121,7 +126,17 @@ const SocketTransport = (() => {
         });
     }
 
+    function disconnect() {
+        if (socket) {
+            socket.disconnect();
+            socket = null;
+            currentRoom = null;
+        }
+        ChessNetwork.disconnect();
+    }
+
     return {
-        init
+        init,
+        disconnect
     };
 })();
