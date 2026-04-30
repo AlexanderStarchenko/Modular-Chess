@@ -277,12 +277,23 @@ const ChessUI = (() => {
         themeSelect.addEventListener('change', updateTheme);
 
         networkBtn.addEventListener('click', () => {
-            const roomId = prompt('Введите ID комнаты для игры (например: room123):', 'room123');
+            let serverIp = '192.168.0.105'; // Default from our last check
+            if (window.location.protocol === 'file:') {
+                const userIp = prompt('Введите IP-адрес вашего компьютера (его пишет сервер в консоли):', serverIp);
+                if (!userIp) return;
+                serverIp = userIp;
+            }
+
+            const roomId = prompt('Введите ID комнаты (например: room123):', 'room123');
             if (roomId) {
                 pcToggle.checked = false;
                 document.getElementById('difficulty-container').style.display = 'none';
-                startNewGame(); // Reset game locally before joining
-                SocketTransport.init(roomId);
+                startNewGame(); 
+                
+                // Pass the IP to the transport
+                const fullUrl = serverIp.startsWith('http') ? serverIp : `http://${serverIp}:3000`;
+                SocketTransport.init(roomId, fullUrl);
+                
                 networkBtn.textContent = `В комнате: ${roomId}`;
                 networkBtn.disabled = true;
             }

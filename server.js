@@ -5,7 +5,12 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
+});
 
 // Serve static files from the current directory
 app.use(express.static(__dirname));
@@ -51,12 +56,12 @@ io.on('connection', (socket) => {
         socket.to(data.roomId).emit('chess-sync', data.state);
     });
 
-    socket.on('resign', (roomId) => {
-        socket.to(roomId).emit('resign');
+    socket.on('resign', (data) => {
+        socket.to(data.roomId).emit('resign');
     });
 
-    socket.on('draw-offer', (roomId) => {
-        socket.to(roomId).emit('draw-offer');
+    socket.on('draw-offer', (data) => {
+        socket.to(data.roomId).emit('draw-offer');
     });
 
     socket.on('draw-response', (data) => {
@@ -68,13 +73,28 @@ io.on('connection', (socket) => {
     });
 });
 
+const os = require('os');
+
+function getLocalIp() {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                return iface.address;
+            }
+        }
+    }
+    return 'localhost';
+}
+
 // Start server on port 3000
 const PORT = 3000;
-// Listen on 0.0.0.0 to be accessible from other devices on the network
+const LOCAL_IP = getLocalIp();
+
 server.listen(PORT, '0.0.0.0', () => {
     console.log('-----------------------------------');
     console.log(`Chess server is running!`);
-    console.log(`Local: http://localhost:${PORT}`);
-    console.log(`Network: http://192.168.0.103:${PORT}`);
+    console.log(`Local:   http://localhost:${PORT}`);
+    console.log(`Network: http://${LOCAL_IP}:${PORT}`);
     console.log('-----------------------------------');
 });

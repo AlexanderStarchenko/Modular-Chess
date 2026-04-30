@@ -11,14 +11,16 @@ const SocketTransport = (() => {
      * Initializes connection to the server and joins a room.
      * @param {string} roomId 
      */
-    function init(roomId = 'default-room') {
+    function init(roomId = 'default-room', customUrl = null) {
         // io() is provided by the socket.io client library
         if (typeof io === 'undefined') {
             console.error('Socket.io client library not loaded!');
             return;
         }
 
-        socket = io();
+        // Use customUrl if provided (from prompt), otherwise fallback to local/auto
+        const serverUrl = customUrl || (window.location.protocol === 'file:' ? 'http://192.168.0.105:3000' : undefined);
+        socket = io(serverUrl);
         currentRoom = roomId;
 
         socket.on('connect', () => {
@@ -108,10 +110,10 @@ const SocketTransport = (() => {
                 socket.emit('undo-response', { roomId: currentRoom, accepted });
             },
             sendResign: () => {
-                socket.emit('resign', currentRoom);
+                socket.emit('resign', { roomId: currentRoom });
             },
             sendDrawOffer: () => {
-                socket.emit('draw-offer', currentRoom);
+                socket.emit('draw-offer', { roomId: currentRoom });
             },
             sendDrawResponse: (accepted) => {
                 socket.emit('draw-response', { roomId: currentRoom, accepted });
