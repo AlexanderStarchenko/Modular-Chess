@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Модульные Шахматы</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=3">
 </head>
 <body>
     <div id="main-layout">
@@ -87,9 +87,13 @@
                         <option value="ocean">Океан (Синий)</option>
                         <option value="dark">Темный (Серый)</option>
                     </select>
-                </div>
-
                 <button id="reset-btn" class="primary-btn">Новая игра</button>
+                <div class="controls-row" style="margin-top: 10px;">
+                    <button id="undo-btn" class="btn btn-secondary">Отменить ход</button>
+                    <button id="resign-btn" class="btn btn-danger">Сдаться</button>
+                </div>
+                <button id="draw-btn" class="btn btn-secondary" style="margin-top: 10px; width: 100%; display: none;">Предложить ничью</button>
+                <button id="network-btn" class="secondary-btn" style="margin-top: 10px; width: 100%;">Играть по сети</button>
             </div>
 
             <div class="sidebar-section info-section">
@@ -98,14 +102,35 @@
                     <div id="game-info" class="sub-status">Игра началась</div>
                 </div>
                 
+                <button id="analyze-btn" class="primary-btn" style="margin-top: 10px; width: 100%; display: none;">Анализировать партию</button>
+
                 <div id="move-history">
-                    <div class="history-header">История ходов</div>
-                    <ul id="history-list"></ul>
+                    <div class="history-header" style="margin-top: 10px;">История ходов</div>
+                    <div class="history-container">
+                        <ul id="history-list" class="history-list"></ul>
+                    </div>
+                </div>
+
+                <div id="analysis-panel" class="panel" style="display: none; margin-top: 15px;">
+                    <h3 style="margin: 0 0 10px 0; font-size: 1.1em; color: var(--text-color);">Аналитика партии</h3>
+                    <div id="analysis-progress" style="margin-bottom: 10px; font-size: 0.9em;"></div>
+                    <div id="analysis-advice" style="margin-bottom: 10px; font-weight: bold; color: var(--primary-color);"></div>
+                    <div class="history-container" style="max-height: 200px; margin-bottom: 0;">
+                        <ul id="analysis-list" class="history-list"></ul>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <script src="js/logic.js"></script>
-    <script src="js/ui.js"></script>
+    <script src="js/logic.js?v=3"></script>
+    <script src="js/ai_shared.js?v=3"></script>
+    <script src="js/ai_easy.js?v=3"></script>
+    <script src="js/ai_medium.js?v=3"></script>
+    <script src="js/ai_hard.js?v=3"></script>
+    <script src="js/analysis_manager.js?v=3"></script>
+    <script src="js/network.js?v=3"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/transport_socket.js?v=3"></script>
+    <script src="js/ui.js?v=3"></script>
 </body>
 </html>

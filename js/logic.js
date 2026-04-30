@@ -15,6 +15,8 @@ const ChessLogic = (() => {
 
     // Castling rights: has the king/rook moved yet?
     let castlingRights = {};
+    let listeners = [];
+    let gameHistory = [];
 
     /**
      * Initializes the board with the starting position.
@@ -36,6 +38,8 @@ const ChessLogic = (() => {
             wRookAMoved: false, wRookHMoved: false,
             bRookAMoved: false, bRookHMoved: false
         };
+        gameHistory = [];
+        notifyChange();
     }
 
     /**
@@ -43,6 +47,126 @@ const ChessLogic = (() => {
      */
     function getBoard() {
         return board;
+    }
+
+    function cloneBoard(src = board) {
+        return src.map(row => row.slice());
+    }
+
+    function getState() {
+        return {
+            board: cloneBoard(),
+            turn,
+            castlingRights: { ...castlingRights },
+            gameHistory: getGameHistory()
+        };
+    }
+
+    function loadState(state) {
+        if (!state || !Array.isArray(state.board) || state.board.length !== 8) {
+            return false;
+        }
+
+        board = cloneBoard(state.board);
+        turn = state.turn === 'b' ? 'b' : 'w';
+        castlingRights = { ...castlingRights, ...(state.castlingRights || {}) };
+        if (Array.isArray(state.gameHistory)) {
+            gameHistory = state.gameHistory.map(entry => ({ ...entry, move: { ...entry.move } }));
+        }
+        notifyChange();
+        return true;
+    }
+
+    function loadFen(fen, options = {}) {
+        if (typeof fen !== 'string') return false;
+
+        const parts = fen.trim().split(/\s+/);
+        const rows = (parts[0] || '').split('/');
+        if (rows.length !== 8) return false;
+
+        const nextBoard = rows.map(row => {
+            const parsed = [];
+            row.split('').forEach(char => {
+                if (/\d/.test(char)) {
+                    for (let i = 0; i < Number(char); i++) parsed.push(null);
+                } else {
+                    parsed.push(char);
+                }
+            });
+            return parsed;
+        });
+
+        if (nextBoard.some(row => row.length !== 8)) return false;
+
+        board = nextBoard;
+        turn = parts[1] === 'b' ? 'b' : 'w';
+        const rights = parts[2] || '-';
+        castlingRights = {
+            wKingMoved: !rights.includes('K') && !rights.includes('Q'),
+            bKingMoved: !rights.includes('k') && !rights.includes('q'),
+            wRookAMoved: !rights.includes('Q'),
+            wRookHMoved: !rights.includes('K'),
+            bRookAMoved: !rights.includes('q'),
+            bRookHMoved: !rights.includes('k')
+        };
+
+        if (!options.keepHistory) gameHistory = [];
+        notifyChange();
+        return true;
+    }
+
+    function boardToFen() {
+        const rows = board.map(row => {
+            let empty = 0;
+            let fenRow = '';
+
+            row.forEach(piece => {
+                if (!piece) {
+                    empty++;
+                    return;
+                }
+                if (empty > 0) {
+                    fenRow += empty;
+                    empty = 0;
+                }
+                fenRow += piece;
+            });
+
+            return fenRow + (empty > 0 ? empty : '');
+        });
+
+        const rights = [
+            !castlingRights.wKingMoved && !castlingRights.wRookHMoved && board[7][7] === 'R' ? 'K' : '',
+            !castlingRights.wKingMoved && !castlingRights.wRookAMoved && board[7][0] === 'R' ? 'Q' : '',
+            !castlingRights.bKingMoved && !castlingRights.bRookHMoved && board[0][7] === 'r' ? 'k' : '',
+            !castlingRights.bKingMoved && !castlingRights.bRookAMoved && board[0][0] === 'r' ? 'q' : ''
+        ].join('') || '-';
+
+        return `${rows.join('/')} ${turn} ${rights} - 0 1`;
+    }
+
+    function getGameHistory() {
+        return gameHistory.map(entry => ({ ...entry, move: { ...entry.move } }));
+    }
+
+    function subscribe(listener) {
+        if (typeof listener !== 'function') return () => {};
+        listeners.push(listener);
+        return () => {
+            listeners = listeners.filter(fn => fn !== listener);
+        };
+    }
+
+    function notifyChange() {
+        const snapshot = getState();
+        listeners.forEach(listener => {
+            try {
+                listener(snapshot);
+            } catch (err) {
+                // Keep the game running even if a listener fails.
+                console.error('ChessLogic listener error:', err);
+            }
+        });
     }
 
     /**
@@ -286,124 +410,16 @@ const ChessLogic = (() => {
         return moves;
     }
 
-    const PIECE_VALUES = {
-        'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 900,
-        'P': 10, 'N': 30, 'B': 30, 'R': 50, 'Q': 90, 'K': 900
-    };
 
-    function evaluateBoard() {
-        let total = 0;
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                const piece = board[r][c];
-                if (piece) {
-                    const val = PIECE_VALUES[piece] || 0;
-                    total += (piece === piece.toUpperCase()) ? val : -val;
-                }
-            }
-        }
-        return total;
-    }
 
-    function minimax(depth, isMaximizing, alpha, beta) {
-        if (depth === 0) return evaluateBoard();
 
-        const moves = getAllLegalMoves(isMaximizing ? 'w' : 'b');
-        if (moves.length === 0) {
-            if (isKingInCheck(isMaximizing ? 'w' : 'b')) return isMaximizing ? -10000 : 10000;
-            return 0; // Stalemate
-        }
-
-        if (isMaximizing) {
-            let bestEval = -Infinity;
-            for (const move of moves) {
-                const piece = board[move.fromR][move.fromC];
-                const target = board[move.toR][move.toC];
-                board[move.toR][move.toC] = piece;
-                board[move.fromR][move.fromC] = null;
-                
-                const evaluation = minimax(depth - 1, false, alpha, beta);
-                
-                board[move.fromR][move.fromC] = piece;
-                board[move.toR][move.toC] = target;
-                
-                bestEval = Math.max(bestEval, evaluation);
-                alpha = Math.max(alpha, evaluation);
-                if (beta <= alpha) break;
-            }
-            return bestEval;
-        } else {
-            let bestEval = Infinity;
-            for (const move of moves) {
-                const piece = board[move.fromR][move.fromC];
-                const target = board[move.toR][move.toC];
-                board[move.toR][move.toC] = piece;
-                board[move.fromR][move.fromC] = null;
-                
-                const evaluation = minimax(depth - 1, true, alpha, beta);
-                
-                board[move.fromR][move.fromC] = piece;
-                board[move.toR][move.toC] = target;
-                
-                bestEval = Math.min(bestEval, evaluation);
-                beta = Math.min(beta, evaluation);
-                if (beta <= alpha) break;
-            }
-            return bestEval;
-        }
-    }
-
-    function getBestMove(color, difficulty = 2) {
-        const moves = getAllLegalMoves(color);
-        if (moves.length === 0) return null;
-
-        // Difficulty 1: Easy (Depth 1, occasionally random)
-        // Difficulty 2: Medium (Depth 2)
-        // Difficulty 3: Hard (Depth 3)
-        let depth = parseInt(difficulty);
-        
-        // On easy mode, 30% chance to just pick a random move
-        if (depth === 1 && Math.random() < 0.3) {
-            return moves[Math.floor(Math.random() * moves.length)];
-        }
-
-        let bestMove = null;
-        let bestValue = color === 'w' ? -Infinity : Infinity;
-
-        // Shuffle moves to add some randomness to equal evaluations
-        moves.sort(() => Math.random() - 0.5);
-
-        for (const move of moves) {
-            const piece = board[move.fromR][move.fromC];
-            const target = board[move.toR][move.toC];
-            board[move.toR][move.toC] = piece;
-            board[move.fromR][move.fromC] = null;
-
-            const boardValue = minimax(depth, color !== 'w', -Infinity, Infinity);
-
-            board[move.fromR][move.fromC] = piece;
-            board[move.toR][move.toC] = target;
-
-            if (color === 'w') {
-                if (boardValue > bestValue) {
-                    bestValue = boardValue;
-                    bestMove = move;
-                }
-            } else {
-                if (boardValue < bestValue) {
-                    bestValue = boardValue;
-                    bestMove = move;
-                }
-            }
-        }
-        return bestMove;
-    }
 
     /**
      * Executes a move on the board.
      */
     function movePiece(fromRow, fromCol, toRow, toCol) {
         if (isLegalMove(fromRow, fromCol, toRow, toCol)) {
+            const beforeFen = boardToFen();
             let piece = board[fromRow][fromCol];
             
             // Pawn promotion
@@ -432,17 +448,34 @@ const ChessLogic = (() => {
             if (fromRow === 0 && fromCol === 7) castlingRights.bRookHMoved = true;
 
             turn = turn === 'w' ? 'b' : 'w';
+            gameHistory.push({
+                fen: boardToFen(),
+                beforeFen,
+                move: { fromRow, fromCol, toRow, toCol, uci: coordsToUci(fromRow, fromCol, toRow, toCol) }
+            });
+            notifyChange();
             return true;
         }
         return false;
+    }
+
+    function coordsToUci(fromRow, fromCol, toRow, toCol) {
+        const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+        return `${files[fromCol]}${8 - fromRow}${files[toCol]}${8 - toRow}`;
     }
 
     return {
         initBoard,
         getBoard,
         getTurn,
+        getState,
+        loadState,
+        loadFen,
+        getFen: boardToFen,
+        getGameHistory,
+        subscribe,
         movePiece,
-        getBestMove,
+        getAllLegalMoves,
         isValidMove: isLegalMove,
         isKingInCheck
     };

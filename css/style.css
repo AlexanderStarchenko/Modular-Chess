@@ -255,6 +255,63 @@ body {
     box-shadow: 0 10px 15px -3px rgba(56, 189, 248, 0.4);
 }
 
+.secondary-btn {
+    width: 100%;
+    padding: 12px;
+    background: #334155;
+    color: var(--text-color);
+    border: 1px solid #475569;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.secondary-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.controls-row {
+    display: flex;
+    gap: 10px;
+}
+
+.controls-row .btn {
+    flex: 1;
+    padding: 12px;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #475569;
+}
+
+.btn-secondary {
+    background: #334155;
+    color: var(--text-color);
+}
+
+.btn-secondary:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.btn-danger {
+    background: #7f1d1d;
+    color: #fca5a5;
+    border-color: #991b1b !important;
+}
+
+.btn-danger:hover {
+    background: #991b1b;
+    color: #fef2f2;
+}
+
+.analysis-start {
+    margin-top: 0;
+}
+
 .toggle-container {
     display: flex;
     align-items: center;
@@ -355,4 +412,149 @@ input:checked + .slider:before {
     display: grid;
     grid-template-columns: 30px 1fr 1fr;
     align-items: center;
+}
+
+.analysis-panel {
+    background: #1e293b;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.analysis-progress {
+    min-height: 18px;
+    margin-bottom: 8px;
+    color: #cbd5e1;
+    font-size: 0.85rem;
+}
+
+.analysis-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.analysis-move {
+    display: grid;
+    grid-template-columns: 42px 1fr 42px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    color: var(--text-color);
+    cursor: pointer;
+    text-align: left;
+}
+
+.analysis-move.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+
+.analysis-quality {
+    color: var(--accent);
+    font-weight: 800;
+    text-align: right;
+}
+
+.quality-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: white;
+    font-size: 0.85em;
+    display: inline-block;
+    min-width: 20px;
+    text-align: center;
+}
+
+.quality-badge.brilliant { background-color: #059669; }
+.quality-badge.good { background-color: #10b981; }
+.quality-badge.inaccuracy { background-color: #f59e0b; }
+.quality-badge.mistake { background-color: #ef4444; }
+.quality-badge.blunder { background-color: #991b1b; }
+
+.stockfish-tip {
+    margin-top: 10px;
+    padding: 10px;
+    background: #0f172a;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.stockfish-tip span {
+    color: #cbd5e1;
+    font-size: 0.8rem;
+}
+
+.stockfish-tip strong {
+    color: var(--accent);
+}
+
+.square.suggested-from::after,
+.square.suggested-to::after {
+    content: "";
+    position: absolute;
+    inset: 12px;
+    border: 3px solid #facc15;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 3;
+}
+
+.square.suggested-to::after {
+    background: rgba(250, 204, 21, 0.25);
+}
+
+/* Мобильная адаптация */
+@media (max-width: 900px) {
+    body {
+        align-items: flex-start;
+        padding: 10px;
+    }
+
+    #main-layout {
+        flex-direction: column;
+        padding: 15px;
+        gap: 20px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    #game-area {
+        width: 100%;
+    }
+
+    #chessboard {
+        grid-template-columns: repeat(8, 1fr);
+        grid-template-rows: none; /* Let rows auto-size */
+        width: 100%;
+        max-width: 560px;
+        border-width: 4px;
+    }
+
+    .square {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1 / 1;
+        font-size: clamp(20px, 8vw, 50px);
+    }
+
+    #sidebar {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .timer {
+        font-size: 1.2rem;
+        padding: 5px 10px;
+    }
+
+    .player-info {
+        padding: 8px 10px;
+    }
 }
