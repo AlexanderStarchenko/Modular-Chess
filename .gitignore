@@ -3,3 +3,6 @@ node_modules/
 *.log
 .env
 js/stockfish-18.wasm
+release/
+dist/
+.vscode/

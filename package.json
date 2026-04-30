@@ -2,12 +2,33 @@
   "name": "modular-chess",
   "version": "1.0.0",
   "description": "Multiplayer Chess with AI",
-  "main": "server.js",
+  "main": "main.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "electron .",
+    "dist": "electron-builder",
+    "server": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "socket.io": "^4.7.2"
+  },
+  "devDependencies": {
+    "electron": "^30.0.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.alexanderstarchenko.modularchess",
+    "win": {
+      "target": "portable"
+    },
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "**/*",
+      "!release/**/*",
+      "!node_modules/electron/**/*",
+      "!node_modules/electron-builder/**/*"
+    ]
   }
 }
