@@ -136,14 +136,21 @@ const ChessAIShared = (() => {
 
         if (isMaximizing) {
             for (const move of moves) {
-                const piece = board[move.fromR][move.fromC];
+                const origPiece = board[move.fromR][move.fromC];
+                let piece = origPiece;
                 const target = board[move.toR][move.toC];
+                
+                // Simulate pawn promotion to Queen
+                if (piece.toLowerCase() === 'p' && (move.toR === 0 || move.toR === 7)) {
+                    piece = piece === 'P' ? 'Q' : 'q';
+                }
+
                 board[move.toR][move.toC] = piece;
                 board[move.fromR][move.fromC] = null;
                 
                 const score = quiesce(board, alpha, beta, false, logic);
                 
-                board[move.fromR][move.fromC] = piece;
+                board[move.fromR][move.fromC] = origPiece;
                 board[move.toR][move.toC] = target;
                 
                 if (score >= beta) return beta;
@@ -152,14 +159,20 @@ const ChessAIShared = (() => {
             return alpha;
         } else {
             for (const move of moves) {
-                const piece = board[move.fromR][move.fromC];
+                const origPiece = board[move.fromR][move.fromC];
+                let piece = origPiece;
                 const target = board[move.toR][move.toC];
+                
+                if (piece.toLowerCase() === 'p' && (move.toR === 0 || move.toR === 7)) {
+                    piece = piece === 'P' ? 'Q' : 'q';
+                }
+
                 board[move.toR][move.toC] = piece;
                 board[move.fromR][move.fromC] = null;
                 
                 const score = quiesce(board, alpha, beta, true, logic);
                 
-                board[move.fromR][move.fromC] = piece;
+                board[move.fromR][move.fromC] = origPiece;
                 board[move.toR][move.toC] = target;
                 
                 if (score <= alpha) return alpha;
@@ -189,14 +202,20 @@ const ChessAIShared = (() => {
         if (isMaximizing) {
             let bestEval = -Infinity;
             for (const move of moves) {
-                const piece = board[move.fromR][move.fromC];
+                const origPiece = board[move.fromR][move.fromC];
+                let piece = origPiece;
                 const target = board[move.toR][move.toC];
+
+                if (piece.toLowerCase() === 'p' && (move.toR === 0 || move.toR === 7)) {
+                    piece = piece === 'P' ? 'Q' : 'q';
+                }
+
                 board[move.toR][move.toC] = piece;
                 board[move.fromR][move.fromC] = null;
                 
                 const evaluation = minimax(board, depth - 1, false, alpha, beta, logic);
                 
-                board[move.fromR][move.fromC] = piece;
+                board[move.fromR][move.fromC] = origPiece;
                 board[move.toR][move.toC] = target;
                 
                 bestEval = Math.max(bestEval, evaluation);
@@ -207,14 +226,20 @@ const ChessAIShared = (() => {
         } else {
             let bestEval = Infinity;
             for (const move of moves) {
-                const piece = board[move.fromR][move.fromC];
+                const origPiece = board[move.fromR][move.fromC];
+                let piece = origPiece;
                 const target = board[move.toR][move.toC];
+
+                if (piece.toLowerCase() === 'p' && (move.toR === 0 || move.toR === 7)) {
+                    piece = piece === 'P' ? 'Q' : 'q';
+                }
+
                 board[move.toR][move.toC] = piece;
                 board[move.fromR][move.fromC] = null;
                 
                 const evaluation = minimax(board, depth - 1, true, alpha, beta, logic);
                 
-                board[move.fromR][move.fromC] = piece;
+                board[move.fromR][move.fromC] = origPiece;
                 board[move.toR][move.toC] = target;
                 
                 bestEval = Math.min(bestEval, evaluation);

@@ -16,14 +16,20 @@ const ChessAIMedium = (() => {
         moves.sort(() => Math.random() - 0.5);
 
         for (const move of moves) {
-            const piece = board[move.fromR][move.fromC];
+            const origPiece = board[move.fromR][move.fromC];
+            let piece = origPiece;
             const target = board[move.toR][move.toC];
+            
+            if (piece.toLowerCase() === 'p' && (move.toR === 0 || move.toR === 7)) {
+                piece = piece === 'P' ? 'Q' : 'q';
+            }
+
             board[move.toR][move.toC] = piece;
             board[move.fromR][move.fromC] = null;
 
             const boardValue = ChessAIShared.minimax(board, 2, color !== 'w', -Infinity, Infinity, ChessLogic);
 
-            board[move.fromR][move.fromC] = piece;
+            board[move.fromR][move.fromC] = origPiece;
             board[move.toR][move.toC] = target;
 
             if (color === 'w') {

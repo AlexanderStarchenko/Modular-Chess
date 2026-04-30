@@ -109,12 +109,33 @@ const AnalysisManager = (() => {
                 bestmove: evalBefore.bestmove,
                 diff,
                 scoreBefore,
-                scoreAfter: myScoreAfter
+                scoreAfter: myScoreAfter,
+                accuracy: Math.max(0, Math.min(100, Math.round(100 * Math.exp(-0.005 * Math.max(0, -diff)))))
             });
         }
 
+        // Calculate overall accuracy
+        let whiteSum = 0, whiteCount = 0;
+        let blackSum = 0, blackCount = 0;
+
+        results.forEach((res, idx) => {
+            if (idx % 2 === 0) { // White move
+                whiteSum += res.accuracy;
+                whiteCount++;
+            } else { // Black move
+                blackSum += res.accuracy;
+                blackCount++;
+            }
+        });
+
+        const stats = {
+            whiteAccuracy: whiteCount > 0 ? Math.round(whiteSum / whiteCount) : 100,
+            blackAccuracy: blackCount > 0 ? Math.round(blackSum / blackCount) : 100,
+            moves: results
+        };
+
         isAnalyzing = false;
-        if (onComplete) onComplete(results);
+        if (onComplete) onComplete(stats);
     }
 
     return {

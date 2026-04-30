@@ -16,6 +16,7 @@
                     <div class="captures-row">
                         <span class="captured-pieces" id="top-captured"></span>
                         <span class="material-advantage" id="top-advantage"></span>
+                        <span class="accuracy-badge" id="top-accuracy" title="Точность по Stockfish"></span>
                     </div>
                 </div>
                 <div class="timer" id="top-timer">10:00</div>
@@ -32,6 +33,7 @@
                     <div class="captures-row">
                         <span class="captured-pieces" id="bottom-captured"></span>
                         <span class="material-advantage" id="bottom-advantage"></span>
+                        <span class="accuracy-badge" id="bottom-accuracy" title="Точность по Stockfish"></span>
                     </div>
                 </div>
                 <div class="timer" id="bottom-timer">10:00</div>
@@ -60,7 +62,13 @@
                         <option value="1">Легкий</option>
                         <option value="2" selected>Средний</option>
                         <option value="3">Сложный</option>
+                        <option value="4">Экстра-сложный</option>
                     </select>
+                </div>
+
+                <div class="setting-group">
+                    <label>Анализ игры:</label>
+                    <button id="analyze-btn" class="secondary-btn">Анализировать точность</button>
                 </div>
 
                 <div class="setting-group">
@@ -82,8 +90,7 @@
                 <div class="setting-group">
                     <label>Стиль доски:</label>
                     <select id="theme-select" class="styled-select">
-                        <option value="classic">Классика (Зеленый)</option>
-                        <option value="wood">Дерево</option>
+                        <option value="classic">Классика</option>
                         <option value="ocean">Океан (Синий)</option>
                         <option value="dark">Темный (Серый)</option>
                     </select>
@@ -127,6 +134,7 @@
     <script src="js/ai_easy.js?v=3"></script>
     <script src="js/ai_medium.js?v=3"></script>
     <script src="js/ai_hard.js?v=3"></script>
+    <script src="js/ai_very_hard.js?v=3"></script>
     <script src="js/analysis_manager.js?v=3"></script>
     <script src="js/network.js?v=3"></script>
     <script src="/socket.io/socket.io.js"></script>

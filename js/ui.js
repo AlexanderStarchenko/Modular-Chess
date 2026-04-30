@@ -29,6 +29,7 @@ const ChessUI = (() => {
     let increment = 0;
     let isTimerRunning = false;
     let gameEnded = false;
+    let lastTickTime = null;
 
     // Capture tracking
     let capturedByWhite = []; // pieces white captured (black pieces)
@@ -327,6 +328,9 @@ const ChessUI = (() => {
         capturedByWhite = [];
         capturedByBlack = [];
         updateCapturesDisplay();
+        
+        document.getElementById('top-accuracy').style.display = 'none';
+        document.getElementById('bottom-accuracy').style.display = 'none';
 
         if (document.getElementById('resign-btn')) document.getElementById('resign-btn').disabled = false;
         if (document.getElementById('draw-btn')) {
@@ -420,13 +424,19 @@ const ChessUI = (() => {
         if (isTimerRunning || parseTimeControl().time === 0 || gameEnded) return;
         isTimerRunning = true;
         
+        lastTickTime = Date.now();
+        
         timerInterval = setInterval(() => {
+            const now = Date.now();
+            const dt = (now - lastTickTime) / 1000;
+            lastTickTime = now;
+
             const turn = ChessLogic.getTurn();
             if (turn === 'w') {
-                whiteTimeLeft -= 0.1;
+                whiteTimeLeft -= dt;
                 if (whiteTimeLeft <= 0) handleTimeout('w');
             } else {
-                blackTimeLeft -= 0.1;
+                blackTimeLeft -= dt;
                 if (blackTimeLeft <= 0) handleTimeout('b');
             }
             updateTimerDisplays();
@@ -631,26 +641,31 @@ const ChessUI = (() => {
         }
     }
 
+    let aiWorker = null;
+
     function makePCMove() {
         if (gameEnded) return;
         
-        const turn = ChessLogic.getTurn();
         const difficulty = difficultySelect.value;
-        let bestMove;
-        if (difficulty === '1') {
-            bestMove = ChessAIEasy.getBestMove(turn);
-        } else if (difficulty === '2') {
-            bestMove = ChessAIMedium.getBestMove(turn);
-        } else {
-            bestMove = ChessAIHard.getBestMove(turn);
+        const state = ChessLogic.getState();
+        
+        if (!aiWorker) {
+            aiWorker = new Worker('js/ai_worker.js');
+            aiWorker.onmessage = function(e) {
+                if (gameEnded) return;
+                
+                const { bestMove } = e.data;
+                
+                if (bestMove) {
+                    executeMove(bestMove.fromR, bestMove.fromC, bestMove.toR, bestMove.toC);
+                }
+                
+                isWaitingForPC = false;
+                renderBoard();
+            };
         }
         
-        if (bestMove) {
-            executeMove(bestMove.fromR, bestMove.fromC, bestMove.toR, bestMove.toC);
-        }
-        
-        isWaitingForPC = false;
-        renderBoard();
+        aiWorker.postMessage({ state, difficulty });
     }
 
     function updateCapturesDisplay() {
@@ -781,11 +796,34 @@ const ChessUI = (() => {
         
         AnalysisManager.analyzeGame(history, (current, total) => {
             if (analysisProgress) analysisProgress.textContent = `Анализ: ход ${current} из ${total}...`;
-        }, (results) => {
+        }, (stats) => {
             if (analysisProgress) analysisProgress.textContent = 'Анализ завершен!';
-            analysisResults = results;
+            analysisResults = stats.moves;
             renderAnalysisList();
+            displayAccuracyStats(stats);
         });
+    }
+
+    function displayAccuracyStats(stats) {
+        const topAcc = document.getElementById('top-accuracy');
+        const bottomAcc = document.getElementById('bottom-accuracy');
+        
+        if (topAcc && bottomAcc) {
+            const isWhiteBottom = playerColor === 'w';
+            const whiteValue = `${stats.whiteAccuracy}%`;
+            const blackValue = `${stats.blackAccuracy}%`;
+            
+            if (isWhiteBottom) {
+                bottomAcc.textContent = whiteValue;
+                topAcc.textContent = blackValue;
+            } else {
+                bottomAcc.textContent = blackValue;
+                topAcc.textContent = whiteValue;
+            }
+            
+            topAcc.style.display = 'inline-block';
+            bottomAcc.style.display = 'inline-block';
+        }
     }
 
     function parseUciMove(uci) {
@@ -817,7 +855,9 @@ const ChessUI = (() => {
                 qualityHtml = `<span class="quality-badge ${result.qualityClass}" style="margin-left:5px; font-weight:bold;">${result.quality}</span>`;
             }
             
-            li.innerHTML = `<strong>${num}. ${turnStr}</strong>: ${result.move.uci} <span style="color:gray;font-size:0.8em">[${result.scoreBefore} -> ${result.scoreAfter} = ${result.diff}]</span> ${qualityHtml}`;
+            const accuracyHtml = `<span style="margin-left: 5px; color: #3b82f6; font-weight: bold;">${result.accuracy}%</span>`;
+            
+            li.innerHTML = `<strong>${num}. ${turnStr}</strong>: ${result.move.uci} <span style="color:gray;font-size:0.8em">[${result.scoreBefore} -> ${result.scoreAfter}]</span> ${accuracyHtml} ${qualityHtml}`;
             
             li.addEventListener('click', () => {
                 selectAnalysisMove(index);

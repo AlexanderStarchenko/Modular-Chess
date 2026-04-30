@@ -349,27 +349,62 @@ const ChessLogic = (() => {
             }
             if (kingR !== -1) break;
         }
-
         if (kingR === -1) return false;
 
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                const p = board[r][c];
-                if (p) {
-                    const isPWhite = p === p.toUpperCase();
-                    if ((color === 'w' && !isPWhite) || (color === 'b' && isPWhite)) {
-                        if (isValidMoveInternal(r, c, kingR, kingC, true)) {
-                            return true;
-                        }
-                    }
+        const isWhite = color === 'w';
+        
+        // 1. Knight jumps
+        const knightJumps = [[-2,-1], [-2,1], [-1,-2], [-1,2], [1,-2], [1,2], [2,-1], [2,1]];
+        const oppKnight = isWhite ? 'n' : 'N';
+        for (const [dr, dc] of knightJumps) {
+            const r = kingR + dr;
+            const c = kingC + dc;
+            if (r >= 0 && r < 8 && c >= 0 && c < 8 && board[r][c] === oppKnight) return true;
+        }
+
+        // 2. Pawns
+        const pawnDir = isWhite ? -1 : 1;
+        const oppPawn = isWhite ? 'p' : 'P';
+        if (kingR + pawnDir >= 0 && kingR + pawnDir < 8) {
+            if (kingC - 1 >= 0 && board[kingR + pawnDir][kingC - 1] === oppPawn) return true;
+            if (kingC + 1 < 8 && board[kingR + pawnDir][kingC + 1] === oppPawn) return true;
+        }
+
+        // 3. Rays (Rook, Bishop, Queen)
+        const dirs = [
+            [-1, 0], [1, 0], [0, -1], [0, 1], // Orthogonal
+            [-1, -1], [-1, 1], [1, -1], [1, 1] // Diagonal
+        ];
+        const oppRook = isWhite ? 'r' : 'R';
+        const oppBishop = isWhite ? 'b' : 'B';
+        const oppQueen = isWhite ? 'q' : 'Q';
+        const oppKing = isWhite ? 'k' : 'K';
+
+        for (let i = 0; i < dirs.length; i++) {
+            const [dr, dc] = dirs[i];
+            let r = kingR + dr;
+            let c = kingC + dc;
+            let dist = 1;
+            while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                const piece = board[r][c];
+                if (piece) {
+                    if (piece === oppQueen) return true;
+                    if (i < 4 && piece === oppRook) return true;
+                    if (i >= 4 && piece === oppBishop) return true;
+                    if (dist === 1 && piece === oppKing) return true;
+                    break;
                 }
+                r += dr;
+                c += dc;
+                dist++;
             }
         }
+
         return false;
     }
 
-    function isLegalMove(fromRow, fromCol, toRow, toCol) {
-        if (!isValidMoveInternal(fromRow, fromCol, toRow, toCol)) return false;
+    function isLegalMove(fromRow, fromCol, toRow, toCol, ignoreTurn = false) {
+        if (!isValidMoveInternal(fromRow, fromCol, toRow, toCol, ignoreTurn)) return false;
 
         const piece = board[fromRow][fromCol];
         const targetPiece = board[toRow][toCol];
@@ -388,26 +423,113 @@ const ChessLogic = (() => {
         return !inCheck;
     }
 
-    function getAllLegalMoves(color) {
+    function getPseudoLegalMoves(r, c, piece) {
         const moves = [];
+        const isWhite = piece === piece.toUpperCase();
+        const p = piece.toLowerCase();
+        
+        function addIfValid(tr, tc) {
+            if (tr >= 0 && tr < 8 && tc >= 0 && tc < 8) {
+                const target = board[tr][tc];
+                if (!target || (target === target.toUpperCase()) !== isWhite) {
+                    moves.push({ fromR: r, fromC: c, toR: tr, toC: tc });
+                }
+            }
+        }
+
+        function addRay(dr, dc) {
+            let tr = r + dr;
+            let tc = c + dc;
+            while (tr >= 0 && tr < 8 && tc >= 0 && tc < 8) {
+                const target = board[tr][tc];
+                if (!target) {
+                    moves.push({ fromR: r, fromC: c, toR: tr, toC: tc });
+                } else {
+                    if ((target === target.toUpperCase()) !== isWhite) {
+                        moves.push({ fromR: r, fromC: c, toR: tr, toC: tc });
+                    }
+                    break;
+                }
+                tr += dr;
+                tc += dc;
+            }
+        }
+
+        if (p === 'p') {
+            const dir = isWhite ? -1 : 1;
+            const startRow = isWhite ? 6 : 1;
+            // Forward 1
+            if (r + dir >= 0 && r + dir < 8 && !board[r + dir][c]) {
+                moves.push({ fromR: r, fromC: c, toR: r + dir, toC: c });
+                // Forward 2
+                if (r === startRow && !board[r + 2 * dir][c]) {
+                    moves.push({ fromR: r, fromC: c, toR: r + 2 * dir, toC: c });
+                }
+            }
+            // Captures
+            if (r + dir >= 0 && r + dir < 8) {
+                if (c - 1 >= 0 && board[r + dir][c - 1] && (board[r + dir][c - 1] === board[r + dir][c - 1].toUpperCase()) !== isWhite) {
+                    moves.push({ fromR: r, fromC: c, toR: r + dir, toC: c - 1 });
+                }
+                if (c + 1 < 8 && board[r + dir][c + 1] && (board[r + dir][c + 1] === board[r + dir][c + 1].toUpperCase()) !== isWhite) {
+                    moves.push({ fromR: r, fromC: c, toR: r + dir, toC: c + 1 });
+                }
+            }
+        } else if (p === 'n') {
+            const knightJumps = [[-2,-1], [-2,1], [-1,-2], [-1,2], [1,-2], [1,2], [2,-1], [2,1]];
+            for (const [dr, dc] of knightJumps) addIfValid(r + dr, c + dc);
+        } else if (p === 'b') {
+            const dirs = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+            for (const [dr, dc] of dirs) addRay(dr, dc);
+        } else if (p === 'r') {
+            const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+            for (const [dr, dc] of dirs) addRay(dr, dc);
+        } else if (p === 'q') {
+            const dirs = [[-1, -1], [-1, 1], [1, -1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]];
+            for (const [dr, dc] of dirs) addRay(dr, dc);
+        } else if (p === 'k') {
+            const dirs = [[-1, -1], [-1, 1], [1, -1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]];
+            for (const [dr, dc] of dirs) addIfValid(r + dr, c + dc);
+            
+            // Castling
+            if (isWhite && !castlingRights.wKingMoved) {
+                if (!castlingRights.wRookHMoved && !board[7][5] && !board[7][6] && board[7][7] === 'R') {
+                    moves.push({ fromR: r, fromC: c, toR: 7, toC: 6 });
+                }
+                if (!castlingRights.wRookAMoved && !board[7][1] && !board[7][2] && !board[7][3] && board[7][0] === 'R') {
+                    moves.push({ fromR: r, fromC: c, toR: 7, toC: 2 });
+                }
+            } else if (!isWhite && !castlingRights.bKingMoved) {
+                if (!castlingRights.bRookHMoved && !board[0][5] && !board[0][6] && board[0][7] === 'r') {
+                    moves.push({ fromR: r, fromC: c, toR: 0, toC: 6 });
+                }
+                if (!castlingRights.bRookAMoved && !board[0][1] && !board[0][2] && !board[0][3] && board[0][0] === 'r') {
+                    moves.push({ fromR: r, fromC: c, toR: 0, toC: 2 });
+                }
+            }
+        }
+        return moves;
+    }
+
+    function getAllLegalMoves(color, ignoreTurn = true) {
+        const legalMoves = [];
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
                 const piece = board[r][c];
                 if (piece) {
                     const isPieceWhite = piece === piece.toUpperCase();
                     if ((color === 'w' && isPieceWhite) || (color === 'b' && !isPieceWhite)) {
-                        for (let tr = 0; tr < 8; tr++) {
-                            for (let tc = 0; tc < 8; tc++) {
-                                if (isLegalMove(r, c, tr, tc)) {
-                                    moves.push({ fromR: r, fromC: c, toR: tr, toC: tc });
-                                }
+                        const candidates = getPseudoLegalMoves(r, c, piece);
+                        for (const move of candidates) {
+                            if (isLegalMove(move.fromR, move.fromC, move.toR, move.toC, ignoreTurn)) {
+                                legalMoves.push(move);
                             }
                         }
                     }
                 }
             }
         }
-        return moves;
+        return legalMoves;
     }
 
 
