@@ -860,6 +860,7 @@ const ChessUI = (() => {
         
         const difficulty = difficultySelect.value;
         const state = ChessLogic.getState();
+        console.log('[UI] Planning PC move. Difficulty:', difficulty, 'Turn:', state.turn);
         
         if (difficulty === '5') {
             // Unreal difficulty uses Stockfish (handled outside the main AI worker)
