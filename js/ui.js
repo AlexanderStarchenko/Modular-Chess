@@ -783,7 +783,7 @@ const ChessUI = (() => {
                     }
                 });
             }
-            checkGameEnd();
+            updateStatus();
             return true;
         }
         return false;

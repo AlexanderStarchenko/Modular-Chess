@@ -4,12 +4,16 @@
  */
 
 var ChessAIVeryHard = (() => {
+    // For Node.js/Jest testing
+    const _Logic = (typeof require !== 'undefined') ? require('./logic') : (typeof ChessLogic !== 'undefined' ? ChessLogic : null);
+    const _Shared = (typeof require !== 'undefined') ? require('./ai_shared') : (typeof ChessAIShared !== 'undefined' ? ChessAIShared : null);
+
     let nodesVisited = 0;
     const historyTable = {}; // For history heuristic move ordering
 
     function getBestMove(color) {
         nodesVisited = 0;
-        const board = ChessLogic.getBoard();
+        const board = _Logic.getBoard();
         const startTime = Date.now();
         const timeLimit = 3500; // 3.5 seconds per move
 
@@ -36,7 +40,7 @@ var ChessAIVeryHard = (() => {
 
     function rootSearch(board, depth, color, startTime, timeLimit) {
         const isMaximizing = color === 'w';
-        let moves = ChessLogic.getAllLegalMoves(color, false);
+        let moves = _Logic.getAllLegalMoves(color, false);
         if (moves.length === 0) return { bestMove: null, value: 0 };
 
         // Order moves using history and PST
@@ -59,7 +63,7 @@ var ChessAIVeryHard = (() => {
             board[move.toR][move.toC] = piece;
             board[move.fromR][move.fromC] = null;
 
-            const value = ChessAIShared.minimax(board, depth - 1, !isMaximizing, -Infinity, Infinity, ChessLogic);
+            const value = _Shared.minimax(board, depth - 1, !isMaximizing, -Infinity, Infinity, _Logic);
 
             board[move.fromR][move.fromC] = origPiece;
             board[move.toR][move.toC] = target;

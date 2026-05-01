@@ -7,8 +7,6 @@ var ChessAIEasy = (() => {
     // For Node.js/Jest testing
     const _Logic = (typeof require !== 'undefined') ? require('./logic') : (typeof ChessLogic !== 'undefined' ? ChessLogic : null);
     const _Shared = (typeof require !== 'undefined') ? require('./ai_shared') : (typeof ChessAIShared !== 'undefined' ? ChessAIShared : null);
-    const ChessLogic = _Logic;
-    const ChessAIShared = _Shared;
 
     function getBestMove(color) {
         if (!_Logic) return null;
@@ -20,7 +18,7 @@ var ChessAIEasy = (() => {
             return moves[Math.floor(Math.random() * moves.length)];
         }
 
-        const board = ChessLogic.getBoard();
+        const board = _Logic.getBoard();
         let bestMove = null;
         let bestValue = color === 'w' ? -Infinity : Infinity;
 
@@ -33,7 +31,7 @@ var ChessAIEasy = (() => {
             board[move.toR][move.toC] = piece;
             board[move.fromR][move.fromC] = null;
 
-            const boardValue = ChessAIShared.minimax(board, 1, color !== 'w', -Infinity, Infinity, ChessLogic);
+            const boardValue = _Shared.minimax(board, 1, color !== 'w', -Infinity, Infinity, _Logic);
 
             board[move.fromR][move.fromC] = piece;
             board[move.toR][move.toC] = target;
