@@ -4,13 +4,14 @@
  */
 
 const ChessUI = (() => {
-    let boardElement, statusElement, gameInfoElement, historyListElement, resetBtn, pcToggle, difficultySelect;
+    let boardElement, boardContainer, animationLayer, statusElement, gameInfoElement, historyListElement, resetBtn, pcToggle, difficultySelect;
     let timeControlSelect, customTimeInputs, customMinsInput, customIncInput, themeSelect;
     let topPlayerName, bottomPlayerName, topTimerDisplay, bottomTimerDisplay;
     let analysisBtn, analysisPanel, analysisList, analysisProgress, stockfishTip;
     let networkState = null;
     
     let selectedSquare = null;
+    let lastMove = null;
     let moveCount = 1;
     let isWaitingForPC = false;
     let pcMoveTimeoutId = null; // To cancel PC move
@@ -43,6 +44,56 @@ const ChessUI = (() => {
         'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚'
     };
 
+    const ChessAudio = (() => {
+        let context = null;
+
+        function getContext() {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return null;
+            if (!context) context = new AudioCtx();
+            if (context.state === 'suspended') context.resume().catch(() => {});
+            return context;
+        }
+
+        function playTone({ type, startFreq, endFreq, duration, volume, delay = 0 }) {
+            const ctx = getContext();
+            if (!ctx) return;
+
+            const startAt = ctx.currentTime + delay;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.type = type;
+            osc.frequency.setValueAtTime(startFreq, startAt);
+            if (endFreq && endFreq !== startFreq) {
+                osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), startAt + duration);
+            }
+
+            gain.gain.setValueAtTime(0.0001, startAt);
+            gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(startAt);
+            osc.stop(startAt + duration + 0.03);
+        }
+
+        return {
+            move() {
+                playTone({ type: 'sine', startFreq: 240, endFreq: 180, duration: 0.09, volume: 0.03 });
+            },
+            capture() {
+                playTone({ type: 'triangle', startFreq: 170, endFreq: 115, duration: 0.07, volume: 0.05 });
+                playTone({ type: 'square', startFreq: 96, endFreq: 72, duration: 0.12, volume: 0.018, delay: 0.04 });
+            },
+            check() {
+                playTone({ type: 'sawtooth', startFreq: 360, endFreq: 540, duration: 0.07, volume: 0.04 });
+                playTone({ type: 'sine', startFreq: 720, endFreq: 640, duration: 0.1, volume: 0.025, delay: 0.05 });
+            }
+        };
+    })();
+
     let isRemoteAction = false;
 
     function syncNetworkState() {
@@ -66,9 +117,63 @@ const ChessUI = (() => {
         }
     }
 
+    function updateLastMove(move) {
+        lastMove = move ? { ...move } : null;
+    }
+
+    function getBoardOverlay() {
+        if (!boardContainer) return null;
+        if (!animationLayer) {
+            animationLayer = document.createElement('div');
+            animationLayer.className = 'move-animation-layer';
+            boardContainer.appendChild(animationLayer);
+        }
+        return animationLayer;
+    }
+
+    function animateMove(fromRow, fromCol, toRow, toCol, piece) {
+        if (!boardElement || !boardContainer || !piece) return;
+
+        const fromSquare = boardElement.querySelector(`[data-row="${fromRow}"][data-col="${fromCol}"]`);
+        const toSquare = boardElement.querySelector(`[data-row="${toRow}"][data-col="${toCol}"]`);
+        if (!fromSquare || !toSquare) return;
+
+        const fromRect = fromSquare.getBoundingClientRect();
+        const toRect = toSquare.getBoundingClientRect();
+        const boardRect = boardElement.getBoundingClientRect();
+        const layer = getBoardOverlay();
+        if (!layer) return;
+
+        const flyPiece = document.createElement('div');
+        flyPiece.className = `piece piece-fly ${piece === piece.toLowerCase() ? 'black-piece' : ''}`;
+        flyPiece.textContent = PIECE_UNICODE[piece];
+        flyPiece.style.width = `${fromRect.width}px`;
+        flyPiece.style.height = `${fromRect.height}px`;
+        flyPiece.style.left = `${fromRect.left - boardRect.left}px`;
+        flyPiece.style.top = `${fromRect.top - boardRect.top}px`;
+        flyPiece.style.transform = 'translate3d(0, 0, 0)';
+        flyPiece.style.opacity = '1';
+        layer.appendChild(flyPiece);
+
+        requestAnimationFrame(() => {
+            const dx = toRect.left - fromRect.left;
+            const dy = toRect.top - fromRect.top;
+            flyPiece.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.02)`;
+        });
+
+        flyPiece.addEventListener('transitionend', () => {
+            flyPiece.remove();
+        }, { once: true });
+
+        window.setTimeout(() => {
+            if (flyPiece.isConnected) flyPiece.remove();
+        }, 320);
+    }
+
     function init() {
         console.log("Chess UI Initializing...");
         
+        boardContainer = document.getElementById('board-container');
         boardElement = document.getElementById('chessboard');
         statusElement = document.getElementById('status');
         gameInfoElement = document.getElementById('game-info');
@@ -174,7 +279,11 @@ const ChessUI = (() => {
                         customTimeInputs.style.display = 'none';
                     }
                 }
-                if (data.boardState) ChessLogic.loadState(data.boardState);
+                if (data.boardState) {
+                    ChessLogic.loadState(data.boardState);
+                    const history = data.boardState.gameHistory || [];
+                    lastMove = history.length ? { ...history[history.length - 1].move } : null;
+                }
                 if (data.timers) {
                     whiteTimeLeft = data.timers.white;
                     blackTimeLeft = data.timers.black;
@@ -370,6 +479,8 @@ const ChessUI = (() => {
         selectedAnalysisIndex = null;
         suggestedMove = null;
         analysisSnapshot = null;
+        lastMove = null;
+        if (animationLayer) animationLayer.innerHTML = '';
         if (analysisBtn) analysisBtn.style.display = 'none';
         hideAnalysis();
         capturedByWhite = [];
@@ -565,6 +676,14 @@ const ChessUI = (() => {
                     square.classList.add('highlight');
                 }
 
+                if (lastMove && lastMove.fromRow === r && lastMove.fromCol === c) {
+                    square.classList.add('last-move-from');
+                }
+
+                if (lastMove && lastMove.toRow === r && lastMove.toCol === c) {
+                    square.classList.add('last-move-to');
+                }
+
                 if (suggestedMove && suggestedMove.fromRow === r && suggestedMove.fromCol === c) {
                     square.classList.add('suggested-from');
                 }
@@ -590,6 +709,7 @@ const ChessUI = (() => {
     }
 
     function executeMove(fromRow, fromCol, toRow, toCol, isRemote = false) {
+        const previousLastMove = lastMove ? { ...lastMove } : null;
         stateHistory.push({
             boardState: ChessLogic.getState(),
             timers: {
@@ -603,7 +723,8 @@ const ChessUI = (() => {
             captures: {
                 white: [...capturedByWhite],
                 black: [...capturedByBlack]
-            }
+            },
+            lastMove: previousLastMove
         });
 
         const boardSnap = ChessLogic.getBoard();
@@ -615,11 +736,34 @@ const ChessUI = (() => {
         if (isRemote) isRemoteAction = false;
 
         if (success) {
-            if (targetPiece) {
+            const movedIsPawn = movingPiece && movingPiece.toLowerCase() === 'p';
+            const wasEnPassantCapture = movedIsPawn && !targetPiece && fromCol !== toCol;
+            const wasCapture = Boolean(targetPiece) || wasEnPassantCapture;
+            const givesCheck = ChessLogic.isKingInCheck(ChessLogic.getTurn());
+            const enPassantCapturedPiece = wasEnPassantCapture
+                ? boardSnap[movingPiece === movingPiece.toUpperCase() ? toRow + 1 : toRow - 1][toCol]
+                : null;
+            const capturedPiece = targetPiece || enPassantCapturedPiece;
+
+            updateLastMove({ fromRow, fromCol, toRow, toCol });
+
+            if (givesCheck) {
+                ChessAudio.check();
+            } else if (wasCapture) {
+                ChessAudio.capture();
+            } else {
+                ChessAudio.move();
+            }
+
+            animateMove(fromRow, fromCol, toRow, toCol, movingPiece);
+
+            if (wasCapture) {
                 const movingIsWhite = movingPiece === movingPiece.toUpperCase();
-                if (movingIsWhite) capturedByWhite.push(targetPiece.toLowerCase());
-                else capturedByBlack.push(targetPiece.toLowerCase());
-                updateCapturesDisplay();
+                if (capturedPiece) {
+                    if (movingIsWhite) capturedByWhite.push(capturedPiece.toLowerCase());
+                    else capturedByBlack.push(capturedPiece.toLowerCase());
+                    updateCapturesDisplay();
+                }
             }
             if (!isTimerRunning) startTimer();
             handleTurnEnd();
@@ -834,6 +978,9 @@ const ChessUI = (() => {
             moveCount = previousState.moveCount;
             capturedByWhite = previousState.captures.white;
             capturedByBlack = previousState.captures.black;
+            lastMove = previousState.lastMove || (previousState.boardState && previousState.boardState.gameHistory && previousState.boardState.gameHistory.length
+                ? { ...previousState.boardState.gameHistory[previousState.boardState.gameHistory.length - 1].move }
+                : null);
             
             selectedSquare = null;
             gameEnded = false;
@@ -944,6 +1091,7 @@ const ChessUI = (() => {
         
         ChessLogic.loadFen(result.beforeFen, { keepHistory: true });
         analysisSnapshot = { turn: ChessLogic.getTurn() };
+        lastMove = result.move ? { ...result.move } : null;
         
         if (result.bestmove && result.bestmove !== '(none)') {
             suggestedMove = parseUciMove(result.bestmove);
@@ -982,7 +1130,11 @@ const ChessUI = (() => {
             isRemoteAction = true;
             const ok = ChessLogic.loadState(state);
             isRemoteAction = false;
-            if (ok) renderBoard();
+            if (ok) {
+                const history = state && state.gameHistory ? state.gameHistory : [];
+                lastMove = history.length ? { ...history[history.length - 1].move } : null;
+                renderBoard();
+            }
             return ok;
         }
     };

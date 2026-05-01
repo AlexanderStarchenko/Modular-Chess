@@ -42,6 +42,13 @@ const ChessLogic = (() => {
     function getTurn() { return turn; }
     function getGameHistory() { return [...gameHistory]; }
 
+    function cloneGameHistory(src = gameHistory) {
+        return src.map(entry => ({
+            ...entry,
+            move: entry.move ? { ...entry.move } : null
+        }));
+    }
+
     function cloneBoard(src = board) {
         return src.map(row => row.slice());
     }
@@ -51,10 +58,29 @@ const ChessLogic = (() => {
             board: cloneBoard(),
             turn,
             castlingRights: { ...castlingRights },
-            gameHistory: getGameHistory(),
-            enPassantSquare,
+            gameHistory: cloneGameHistory(),
+            positionHistory: { ...positionHistory },
+            enPassantSquare: enPassantSquare ? { ...enPassantSquare } : null,
             halfMoveClock
         };
+    }
+
+    function loadState(state) {
+        if (!state || !Array.isArray(state.board) || state.board.length !== 8) return false;
+
+        board = cloneBoard(state.board);
+        turn = state.turn === 'b' ? 'b' : 'w';
+        castlingRights = state.castlingRights ? { ...state.castlingRights } : {};
+        gameHistory = Array.isArray(state.gameHistory) ? cloneGameHistory(state.gameHistory) : [];
+        positionHistory = state.positionHistory ? { ...state.positionHistory } : {};
+        enPassantSquare = state.enPassantSquare ? { ...state.enPassantSquare } : null;
+        halfMoveClock = Number.isFinite(state.halfMoveClock) ? state.halfMoveClock : 0;
+
+        if (!Object.keys(positionHistory).length) {
+            recordPosition();
+        }
+
+        return true;
     }
 
     function loadFen(fen, options = {}) {
@@ -367,7 +393,7 @@ const ChessLogic = (() => {
     }
 
     return {
-        initBoard, getBoard, getTurn, getState, loadFen, getFen: boardToFen,
+        initBoard, getBoard, getTurn, getState, loadState, loadFen, getFen: boardToFen,
         movePiece, getAllLegalMoves, isValidMove: isLegalMove, isKingInCheck, subscribe
     };
 })();
