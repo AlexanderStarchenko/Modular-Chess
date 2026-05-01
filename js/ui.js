@@ -873,24 +873,39 @@ const ChessUI = (() => {
         }
         
         if (!aiWorker) {
-            aiWorker = new Worker('js/ai_worker.js');
-            aiWorker.onmessage = function(e) {
-                if (gameEnded) return;
-                
-                const { bestMove } = e.data;
-                applyPCMove(bestMove);
-            };
-            aiWorker.onerror = function() {
-                aiWorker = null;
-                applyPCMove(getFallbackPCMove(difficulty));
-            };
+            try {
+                console.log('[UI] Attempting to create AI worker...');
+                aiWorker = new Worker('js/ai_worker.js');
+                aiWorker.onmessage = function(e) {
+                    if (gameEnded) return;
+                    if (e.data.error) {
+                        console.error('[UI] Worker error:', e.data.error);
+                        applyPCMove(null);
+                        return;
+                    }
+                    applyPCMove(e.data.bestMove);
+                };
+                aiWorker.onerror = function(err) {
+                    console.error('[UI] Worker load error, switching to sync mode:', err);
+                    aiWorker = 'fallback'; // Mark that we should use sync mode
+                    applyPCMove(getFallbackPCMove(difficulty));
+                };
+            } catch (e) {
+                console.warn('[UI] Web Workers blocked (file:// protocol). Using synchronous fallback.');
+                aiWorker = 'fallback';
+            }
         }
         
-        try {
-            aiWorker.postMessage({ state, difficulty });
-        } catch (error) {
-            aiWorker = null;
-            applyPCMove(getFallbackPCMove(difficulty));
+        if (aiWorker === 'fallback') {
+            const bestMove = getFallbackPCMove(difficulty);
+            applyPCMove(bestMove);
+        } else {
+            try {
+                aiWorker.postMessage({ state, difficulty });
+            } catch (error) {
+                console.error('[UI] postMessage failed, using fallback:', error);
+                applyPCMove(getFallbackPCMove(difficulty));
+            }
         }
     }
 
