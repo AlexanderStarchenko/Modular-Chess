@@ -21,10 +21,11 @@ var ChessAIVeryHard = (() => {
         let depth = 1;
 
         // Iterative Deepening
-        while (depth <= 10) { // Limit depth to 10 max
+        while (depth <= 10) { 
             const { bestMove, value } = rootSearch(board, depth, color, startTime, timeLimit);
             
-            if (Date.now() - startTime > timeLimit && bestMoveGlobal) break;
+            // Allow minimum depth of 3 even if time is up (for better quality in sync mode)
+            if (Date.now() - startTime > timeLimit && depth >= 3 && bestMoveGlobal) break;
             
             bestMoveGlobal = bestMove;
             
@@ -46,11 +47,11 @@ var ChessAIVeryHard = (() => {
         // Order moves using history and PST
         moves = orderMoves(moves, board, depth);
 
-        let bestMove = moves[0];
+        let bestMoves = [];
         let bestValue = isMaximizing ? -Infinity : Infinity;
 
         for (const move of moves) {
-            if (Date.now() - startTime > timeLimit) break;
+            if (Date.now() - startTime > timeLimit && depth >= 3 && bestMoves.length > 0) break;
 
             const origPiece = board[move.fromR][move.fromC];
             let piece = origPiece;
@@ -71,17 +72,23 @@ var ChessAIVeryHard = (() => {
             if (isMaximizing) {
                 if (value > bestValue) {
                     bestValue = value;
-                    bestMove = move;
+                    bestMoves = [move];
+                } else if (value === bestValue) {
+                    bestMoves.push(move);
                 }
             } else {
                 if (value < bestValue) {
                     bestValue = value;
-                    bestMove = move;
+                    bestMoves = [move];
+                } else if (value === bestValue) {
+                    bestMoves.push(move);
                 }
             }
         }
-
-        return { bestMove, value: bestValue };
+        
+        // Pick a random move from the best ones
+        const finalMove = bestMoves.length > 0 ? bestMoves[Math.floor(Math.random() * bestMoves.length)] : moves[0];
+        return { bestMove: finalMove, value: bestValue };
     }
 
     function orderMoves(moves, board, depth) {

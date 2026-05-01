@@ -111,6 +111,18 @@ body {
     min-width: 28px;
 }
 
+#status {
+    font-weight: 500;
+    color: var(--text-dim);
+    transition: all 0.3s ease;
+}
+
+#status.status-warning {
+    color: #ff4757;
+    font-weight: 700;
+    transform: scale(1.05);
+}
+
 .accuracy-badge {
     font-size: 0.8rem;
     font-weight: 800;

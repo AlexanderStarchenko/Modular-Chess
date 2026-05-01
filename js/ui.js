@@ -802,11 +802,6 @@ const ChessUI = (() => {
                 selectedSquare = null;
                 renderBoard();
 
-                if (pcToggle.checked && !gameEnded) {
-                    isWaitingForPC = true;
-                    statusElement.textContent = 'ПК думает...';
-                    pcMoveTimeoutId = setTimeout(makePCMove, 500);
-                }
                 return;
             } else {
                 selectPiece(row, col, currentTurn);
@@ -862,15 +857,35 @@ const ChessUI = (() => {
         const state = ChessLogic.getState();
         console.log('[UI] Planning PC move. Difficulty:', difficulty, 'Turn:', state.turn);
         
+        isWaitingForPC = true;
+        statusElement.textContent = 'ПК думает...';
+        
+        const topPlayerName = document.getElementById('top-player-name');
+        
         if (difficulty === '5') {
-            // Unreal difficulty uses Stockfish (handled outside the main AI worker)
+            const isFileProtocol = window.location.protocol === 'file:';
+            if (isFileProtocol) {
+                topPlayerName.textContent = 'Оппонент';
+                setTimeout(() => {
+                    const bestMove = getFallbackPCMove('4');
+                    applyPCMove(bestMove);
+                }, 500);
+                return;
+            }
+            
+            topPlayerName.textContent = 'Оппонент (Stockfish)';
             const fen = ChessLogic.getFen();
             ChessAIUnreal.getBestMove(fen).then(bestMove => {
                 if (gameEnded) return;
                 applyPCMove(bestMove);
+            }).catch(err => {
+                topPlayerName.textContent = 'Оппонент';
+                applyPCMove(getFallbackPCMove('4'));
             });
             return;
         }
+        
+        topPlayerName.textContent = 'Оппонент';
         
         if (!aiWorker) {
             try {
