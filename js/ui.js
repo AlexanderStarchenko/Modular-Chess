@@ -8,7 +8,7 @@ const ChessUI = (() => {
     let timeControlSelect, customTimeInputs, customMinsInput, customIncInput, themeSelect;
     let topPlayerName, bottomPlayerName, topTimerDisplay, bottomTimerDisplay;
     let analysisBtn, analysisPanel, analysisList, analysisProgress, stockfishTip;
-    let networkState = null;
+    let networkState = (typeof ChessNetwork !== 'undefined') ? ChessNetwork.getState() : { connected: false };
     
     let selectedSquare = null;
     let lastMove = null;
@@ -196,49 +196,57 @@ const ChessUI = (() => {
 
         // Network button logic
         if (networkBtn) {
+            console.log('[UI] Network button found, setting up listeners...');
             const modal = document.getElementById('network-modal');
             const connectBtn = document.getElementById('network-connect-btn');
             const cancelBtn = document.getElementById('network-cancel-btn');
             const ipInput = document.getElementById('network-ip-input');
             const roomInput = document.getElementById('network-room-input');
 
-            networkBtn.onclick = () => {
-                if (networkState && networkState.connected) {
+            networkBtn.addEventListener('click', () => {
+                const currentStatus = (typeof ChessNetwork !== 'undefined') ? ChessNetwork.getState() : { connected: false };
+                console.log('[UI] Network button click triggered. Status:', currentStatus);
+                
+                if (currentStatus.connected) {
                     if (confirm('Покинуть комнату и вернуться в одиночную игру?')) {
-                        SocketTransport.disconnect();
-                        networkBtn.textContent = 'Играть по сети';
-                        networkBtn.classList.remove('leave-room-btn');
-                        document.getElementById('difficulty-container').style.display = pcToggle.checked ? '' : 'none';
+                        if (typeof SocketTransport !== 'undefined') {
+                            SocketTransport.disconnect();
+                        } else if (typeof ChessNetwork !== 'undefined') {
+                            ChessNetwork.disconnect();
+                        }
                         startNewGame();
                     }
-                    return;
+                } else if (modal) {
+                    modal.style.display = 'flex';
                 }
-                modal.style.display = 'flex';
-            };
+            });
 
-            cancelBtn.onclick = () => {
-                modal.style.display = 'none';
-            };
-
-            connectBtn.onclick = () => {
-                const serverIp = ipInput.value.trim() || '192.168.0.105';
-                const roomId = roomInput.value.trim() || '123';
-                
-                try {
+            if (cancelBtn) {
+                cancelBtn.onclick = () => {
                     modal.style.display = 'none';
-                    pcToggle.checked = false;
-                    document.getElementById('difficulty-container').style.display = 'none';
-                    startNewGame(); 
+                };
+            }
+
+            if (connectBtn) {
+                connectBtn.onclick = () => {
+                    const serverIp = ipInput.value.trim() || '192.168.0.105';
+                    const roomId = roomInput.value.trim() || '123';
                     
-                    const fullUrl = serverIp.includes(':') ? serverIp : `http://${serverIp}:3000`;
-                    SocketTransport.init(roomId, fullUrl);
-                    
-                    networkBtn.textContent = `Покинуть комнату (${roomId})`;
-                    networkBtn.classList.add('leave-room-btn');
-                } catch (e) {
-                    console.error('Network Error:', e);
-                }
-            };
+                    try {
+                        modal.style.display = 'none';
+                        pcToggle.checked = false;
+                        document.getElementById('difficulty-container').style.display = 'none';
+                        startNewGame(); 
+                        
+                        const fullUrl = serverIp.includes(':') ? serverIp : `http://${serverIp}:3000`;
+                        SocketTransport.init(roomId, fullUrl);
+                    } catch (e) {
+                        console.error('Network Error:', e);
+                    }
+                };
+            }
+        } else {
+            console.error('[UI] network-btn element not found in DOM!');
         }
 
         topPlayerName = document.getElementById('top-player-name');
@@ -256,6 +264,18 @@ const ChessUI = (() => {
                 const drawBtn = document.getElementById('draw-btn');
                 if (drawBtn) {
                     drawBtn.style.display = (networkState && networkState.connected && !gameEnded) ? 'block' : 'none';
+                }
+                
+                // Update network button based on state
+                const networkBtn = document.getElementById('network-btn');
+                if (networkBtn) {
+                    if (networkState.connected) {
+                        networkBtn.textContent = `Покинуть комнату${networkState.roomId ? ' (' + networkState.roomId + ')' : ''}`;
+                        networkBtn.classList.add('leave-room-btn');
+                    } else {
+                        networkBtn.textContent = 'Играть по сети';
+                        networkBtn.classList.remove('leave-room-btn');
+                    }
                 }
             });
             ChessNetwork.on('move', move => {
@@ -835,6 +855,7 @@ const ChessUI = (() => {
         if (difficulty === '2' && typeof ChessAIMedium !== 'undefined') return ChessAIMedium.getBestMove(turn);
         if (difficulty === '3' && typeof ChessAIHard !== 'undefined') return ChessAIHard.getBestMove(turn);
         if (difficulty === '4' && typeof ChessAIVeryHard !== 'undefined') return ChessAIVeryHard.getBestMove(turn);
+        if (difficulty === '5' && typeof ChessAIVeryHard !== 'undefined') return ChessAIVeryHard.getBestMove(turn);
         return null;
     }
 
@@ -862,66 +883,43 @@ const ChessUI = (() => {
         
         const topPlayerName = document.getElementById('top-player-name');
         
-        if (difficulty === '5') {
-            const isFileProtocol = window.location.protocol === 'file:';
-            if (isFileProtocol) {
-                topPlayerName.textContent = 'Оппонент';
-                setTimeout(() => {
-                    const bestMove = getFallbackPCMove('4');
-                    applyPCMove(bestMove);
-                }, 500);
-                return;
-            }
-            
-            topPlayerName.textContent = 'Оппонент (Stockfish)';
+        const isElectron = navigator.userAgent.toLowerCase().includes(' electron/');
+        const isFileProtocol = window.location.protocol === 'file:' && !isElectron;
+        
+        // Stockfish Level Mapping: [Skill Level, Move Time]
+        const stockfishSettings = {
+            '1': [0, 500],   // Easy
+            '2': [5, 700],   // Medium
+            '3': [12, 1000], // Hard
+            '4': [18, 1500], // Extra Hard
+            '5': [20, 2500]  // Unreal
+        };
+
+        if (!isFileProtocol) {
+            const [skill, time] = stockfishSettings[difficulty] || [10, 1000];
             const fen = ChessLogic.getFen();
-            ChessAIUnreal.getBestMove(fen).then(bestMove => {
+            
+            if (difficulty === '5') {
+                topPlayerName.textContent = 'Оппонент (Stockfish MAX)';
+            } else {
+                topPlayerName.textContent = `Оппонент (Stockfish Lvl ${difficulty})`;
+            }
+
+            ChessAIUnreal.getBestMove(fen, skill, time).then(bestMove => {
                 if (gameEnded) return;
                 applyPCMove(bestMove);
             }).catch(err => {
+                console.error('[UI] Stockfish error, falling back:', err);
                 topPlayerName.textContent = 'Оппонент';
-                applyPCMove(getFallbackPCMove('4'));
+                applyPCMove(getFallbackPCMove(difficulty));
             });
             return;
         }
-        
+
+        // --- FALLBACK MODE (file:// protocol) ---
         topPlayerName.textContent = 'Оппонент';
-        
-        if (!aiWorker) {
-            try {
-                console.log('[UI] Attempting to create AI worker...');
-                aiWorker = new Worker('js/ai_worker.js');
-                aiWorker.onmessage = function(e) {
-                    if (gameEnded) return;
-                    if (e.data.error) {
-                        console.error('[UI] Worker error:', e.data.error);
-                        applyPCMove(null);
-                        return;
-                    }
-                    applyPCMove(e.data.bestMove);
-                };
-                aiWorker.onerror = function(err) {
-                    console.error('[UI] Worker load error, switching to sync mode:', err);
-                    aiWorker = 'fallback'; // Mark that we should use sync mode
-                    applyPCMove(getFallbackPCMove(difficulty));
-                };
-            } catch (e) {
-                console.warn('[UI] Web Workers blocked (file:// protocol). Using synchronous fallback.');
-                aiWorker = 'fallback';
-            }
-        }
-        
-        if (aiWorker === 'fallback') {
-            const bestMove = getFallbackPCMove(difficulty);
-            applyPCMove(bestMove);
-        } else {
-            try {
-                aiWorker.postMessage({ state, difficulty });
-            } catch (error) {
-                console.error('[UI] postMessage failed, using fallback:', error);
-                applyPCMove(getFallbackPCMove(difficulty));
-            }
-        }
+        const bestMove = getFallbackPCMove(difficulty);
+        applyPCMove(bestMove);
     }
 
     function updateCapturesDisplay() {

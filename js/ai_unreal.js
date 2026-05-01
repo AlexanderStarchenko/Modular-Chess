@@ -1,16 +1,16 @@
 /**
- * Unreal AI (Stockfish integration)
- * Uses Stockfish Web Worker with a configured skill level.
+ * Stockfish Engine Integration
+ * Uses Stockfish Web Worker with dynamic skill levels.
  */
 
 const ChessAIUnreal = (() => {
     let stockfish = null;
     let isThinking = false;
     let resolveMove = null;
+    let currentSkillLevel = -1;
 
-    function init() {
+    function init(skillLevel) {
         if (!stockfish) {
-            // Use the same stockfish file as AnalysisManager
             stockfish = new Worker('js/stockfish.js?v=3');
             stockfish.onmessage = function(event) {
                 const line = event.data;
@@ -23,25 +23,26 @@ const ChessAIUnreal = (() => {
                     }
                 }
             };
-            
-            // Set Stockfish skill level (0-20). 
-            // 20 is GM level, user wants "not max", so 16-17 is very strong but beatable by super-GMs.
             stockfish.postMessage('uci');
-            stockfish.postMessage('setoption name Skill Level value 16');
+        }
+        
+        // Update skill level if changed
+        if (currentSkillLevel !== skillLevel) {
+            stockfish.postMessage(`setoption name Skill Level value ${skillLevel}`);
+            currentSkillLevel = skillLevel;
         }
     }
 
-    function getBestMove(fen) {
+    function getBestMove(fen, skillLevel = 16, moveTime = 1000) {
         if (isThinking) return Promise.resolve(null);
         
-        init();
+        init(skillLevel);
         isThinking = true;
         
         return new Promise(resolve => {
             resolveMove = resolve;
             stockfish.postMessage(`position fen ${fen}`);
-            // Give it 1 second to think, which at Skill Level 16 is plenty for "Unreal"
-            stockfish.postMessage('go movetime 1000');
+            stockfish.postMessage(`go movetime ${moveTime}`);
         });
     }
 

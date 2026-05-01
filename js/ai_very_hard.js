@@ -5,8 +5,8 @@
 
 var ChessAIVeryHard = (() => {
     // For Node.js/Jest testing
-    const _Logic = (typeof require !== 'undefined') ? require('./logic') : (typeof ChessLogic !== 'undefined' ? ChessLogic : null);
-    const _Shared = (typeof require !== 'undefined') ? require('./ai_shared') : (typeof ChessAIShared !== 'undefined' ? ChessAIShared : null);
+    const _Logic = (typeof ChessLogic !== 'undefined' ? ChessLogic : (typeof require !== 'undefined' ? require('./logic') : null));
+    const _Shared = (typeof ChessAIShared !== 'undefined' ? ChessAIShared : (typeof require !== 'undefined' ? require('./ai_shared') : null));
 
     let nodesVisited = 0;
     const historyTable = {}; // For history heuristic move ordering
@@ -15,7 +15,7 @@ var ChessAIVeryHard = (() => {
         nodesVisited = 0;
         const board = _Logic.getBoard();
         const startTime = Date.now();
-        const timeLimit = 3500; // 3.5 seconds per move
+        const timeLimit = 2500; // 2.5 seconds per move
 
         let bestMoveGlobal = null;
         let depth = 1;

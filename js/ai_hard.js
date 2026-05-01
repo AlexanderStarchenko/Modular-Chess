@@ -5,8 +5,8 @@
 
 var ChessAIHard = (() => {
     // For Node.js/Jest testing
-    const _Logic = (typeof require !== 'undefined') ? require('./logic') : (typeof ChessLogic !== 'undefined' ? ChessLogic : null);
-    const _Shared = (typeof require !== 'undefined') ? require('./ai_shared') : (typeof ChessAIShared !== 'undefined' ? ChessAIShared : null);
+    const _Logic = (typeof ChessLogic !== 'undefined' ? ChessLogic : (typeof require !== 'undefined' ? require('./logic') : null));
+    const _Shared = (typeof ChessAIShared !== 'undefined' ? ChessAIShared : (typeof require !== 'undefined' ? require('./ai_shared') : null));
 
     function getBestMove(color, depth = 3) {
         if (!_Logic || !_Shared) return null;
