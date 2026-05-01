@@ -81,15 +81,15 @@ const ChessUI = (() => {
 
         return {
             move() {
-                playTone({ type: 'sine', startFreq: 240, endFreq: 180, duration: 0.09, volume: 0.03 });
+                playTone({ type: 'sine', startFreq: 240, endFreq: 180, duration: 0.09, volume: 0.15 });
             },
             capture() {
-                playTone({ type: 'triangle', startFreq: 170, endFreq: 115, duration: 0.07, volume: 0.05 });
-                playTone({ type: 'square', startFreq: 96, endFreq: 72, duration: 0.12, volume: 0.018, delay: 0.04 });
+                playTone({ type: 'triangle', startFreq: 170, endFreq: 115, duration: 0.07, volume: 0.25 });
+                playTone({ type: 'square', startFreq: 96, endFreq: 72, duration: 0.12, volume: 0.08, delay: 0.04 });
             },
             check() {
-                playTone({ type: 'sawtooth', startFreq: 360, endFreq: 540, duration: 0.07, volume: 0.04 });
-                playTone({ type: 'sine', startFreq: 720, endFreq: 640, duration: 0.1, volume: 0.025, delay: 0.05 });
+                playTone({ type: 'sawtooth', startFreq: 360, endFreq: 540, duration: 0.07, volume: 0.18 });
+                playTone({ type: 'sine', startFreq: 720, endFreq: 640, duration: 0.1, volume: 0.12, delay: 0.05 });
             }
         };
     })();
