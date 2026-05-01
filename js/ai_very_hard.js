@@ -3,7 +3,7 @@
  * Uses Iterative Deepening, Null Move Pruning, and History Heuristic.
  */
 
-const ChessAIVeryHard = (() => {
+var ChessAIVeryHard = (() => {
     let nodesVisited = 0;
     const historyTable = {}; // For history heuristic move ordering
 

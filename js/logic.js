@@ -3,7 +3,7 @@
  * Handles board state, move validation, and game rules.
  */
 
-const ChessLogic = (() => {
+var ChessLogic = (() => {
     let board = [];
     let turn = 'w';
     let castlingRights = {};

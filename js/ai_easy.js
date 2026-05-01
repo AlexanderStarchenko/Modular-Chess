@@ -3,7 +3,7 @@
  * Depth 1 with 30% randomness.
  */
 
-const ChessAI_Easy = (() => {
+var ChessAIEasy = (() => {
     // For Node.js/Jest testing
     const _Logic = (typeof require !== 'undefined') ? require('./logic') : (typeof ChessLogic !== 'undefined' ? ChessLogic : null);
     const _Shared = (typeof require !== 'undefined') ? require('./ai_shared') : (typeof ChessAIShared !== 'undefined' ? ChessAIShared : null);

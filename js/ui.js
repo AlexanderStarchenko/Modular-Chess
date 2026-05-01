@@ -834,6 +834,27 @@ const ChessUI = (() => {
 
     let aiWorker = null;
 
+    function getFallbackPCMove(difficulty) {
+        const turn = ChessLogic.getTurn();
+        if (difficulty === '1' && typeof ChessAIEasy !== 'undefined') return ChessAIEasy.getBestMove(turn);
+        if (difficulty === '2' && typeof ChessAIMedium !== 'undefined') return ChessAIMedium.getBestMove(turn);
+        if (difficulty === '3' && typeof ChessAIHard !== 'undefined') return ChessAIHard.getBestMove(turn);
+        if (difficulty === '4' && typeof ChessAIVeryHard !== 'undefined') return ChessAIVeryHard.getBestMove(turn);
+        return null;
+    }
+
+    function applyPCMove(bestMove) {
+        if (!bestMove || gameEnded) {
+            isWaitingForPC = false;
+            renderBoard();
+            return;
+        }
+
+        executeMove(bestMove.fromR, bestMove.fromC, bestMove.toR, bestMove.toC);
+        isWaitingForPC = false;
+        renderBoard();
+    }
+
     function makePCMove() {
         if (gameEnded) return;
         
@@ -845,11 +866,7 @@ const ChessUI = (() => {
             const fen = ChessLogic.getFen();
             ChessAIUnreal.getBestMove(fen).then(bestMove => {
                 if (gameEnded) return;
-                if (bestMove) {
-                    executeMove(bestMove.fromR, bestMove.fromC, bestMove.toR, bestMove.toC);
-                }
-                isWaitingForPC = false;
-                renderBoard();
+                applyPCMove(bestMove);
             });
             return;
         }
@@ -860,17 +877,20 @@ const ChessUI = (() => {
                 if (gameEnded) return;
                 
                 const { bestMove } = e.data;
-                
-                if (bestMove) {
-                    executeMove(bestMove.fromR, bestMove.fromC, bestMove.toR, bestMove.toC);
-                }
-                
-                isWaitingForPC = false;
-                renderBoard();
+                applyPCMove(bestMove);
+            };
+            aiWorker.onerror = function() {
+                aiWorker = null;
+                applyPCMove(getFallbackPCMove(difficulty));
             };
         }
         
-        aiWorker.postMessage({ state, difficulty });
+        try {
+            aiWorker.postMessage({ state, difficulty });
+        } catch (error) {
+            aiWorker = null;
+            applyPCMove(getFallbackPCMove(difficulty));
+        }
     }
 
     function updateCapturesDisplay() {
