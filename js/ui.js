@@ -323,6 +323,17 @@ const ChessUI = (() => {
         });
 
         themeSelect.addEventListener('change', updateTheme);
+        
+        // Subscribe to logic changes
+        ChessLogic.subscribe(state => {
+            renderBoard();
+            updateStatus(state.status);
+            
+            // Auto PC move if it's PC's turn
+            if (pcToggle.checked && state.turn !== playerColor && !gameEnded && !isWaitingForPC) {
+                pcMoveTimeoutId = setTimeout(makePCMove, 500);
+            }
+        });
 
         updateTheme();
         startNewGame();
@@ -766,32 +777,38 @@ const ChessUI = (() => {
         }
     }
 
-    function updateStatus() {
-        if (gameEnded) return;
+    function updateStatus(gameStatus = null) {
+        if (gameEnded && !gameStatus) return;
 
         const turn = ChessLogic.getTurn();
-        const inCheck = ChessLogic.isKingInCheck(turn);
+        const moveColor = turn === 'w' ? 'Белых' : 'Черных';
+        const opponentColor = turn === 'w' ? 'Черные' : 'Белые';
         
-        let statusText = turn === 'w' ? 'Ход белых' : 'Ход черных';
-        if (inCheck) statusText += ' (ШАХ!)';
-        
-        statusElement.textContent = statusText;
-        gameInfoElement.textContent = inCheck ? 'Король под ударом!' : 'Игра продолжается';
+        // Use provided status or check manually
+        const status = gameStatus || (ChessLogic.getAllLegalMoves(turn).length === 0 ? 
+                        (ChessLogic.isKingInCheck(turn) ? 'checkmate' : 'stalemate') : null);
+
+        if (status === 'checkmate') {
+            statusElement.textContent = `МАТ! ${opponentColor} победили!`;
+            gameInfoElement.textContent = 'Игра завершена';
+            finishGame();
+        } else if (status === 'stalemate') {
+            statusElement.textContent = 'НИЧЬЯ! Пат.';
+            gameInfoElement.textContent = 'У игрока нет доступных ходов';
+            finishGame();
+        } else if (status === 'repetition') {
+            statusElement.textContent = 'НИЧЬЯ! Повторение ходов.';
+            gameInfoElement.textContent = 'Позиция повторилась трижды';
+            finishGame();
+        } else {
+            const inCheck = ChessLogic.isKingInCheck(turn);
+            statusElement.textContent = `Ход ${moveColor}${inCheck ? ' (ШАХ!)' : ''}`;
+            gameInfoElement.textContent = inCheck ? 'Король под ударом!' : 'Игра продолжается';
+        }
         updateTimerDisplays();
     }
 
-    function checkGameEnd() {
-        const turn = ChessLogic.getTurn();
-        const legalMoves = ChessLogic.getAllLegalMoves(turn);
-        if (legalMoves.length > 0) return;
-
-        const inCheck = ChessLogic.isKingInCheck(turn);
-        finishGame();
-        statusElement.textContent = inCheck ? 'Мат' : 'Пат';
-        gameInfoElement.textContent = inCheck
-            ? (turn === 'w' ? 'Черные победили' : 'Белые победили')
-            : 'Ничья';
-    }
+    // Removed checkGameEnd as it is now handled by updateStatus
 
     function performUndo(levels) {
         if (pcMoveTimeoutId) {

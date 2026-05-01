@@ -255,3 +255,5 @@ const ChessAIShared = (() => {
         evaluateBoard
     };
 })();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = ChessAIShared;
