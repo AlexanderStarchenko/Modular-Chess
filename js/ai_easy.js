@@ -26,15 +26,11 @@ var ChessAIEasy = (() => {
         moves.sort(() => Math.random() - 0.5);
 
         for (const move of moves) {
-            const piece = board[move.fromR][move.fromC];
-            const target = board[move.toR][move.toC];
-            board[move.toR][move.toC] = piece;
-            board[move.fromR][move.fromC] = null;
+            const undoState = _Shared.applyMove(board, move);
 
             const boardValue = _Shared.minimax(board, 1, color !== 'w', -Infinity, Infinity, _Logic);
 
-            board[move.fromR][move.fromC] = piece;
-            board[move.toR][move.toC] = target;
+            _Shared.undoMove(board, move, undoState);
 
             if (color === 'w') {
                 if (boardValue > bestValue) {

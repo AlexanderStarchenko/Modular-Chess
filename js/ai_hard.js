@@ -35,21 +35,11 @@ var ChessAIHard = (() => {
         moves.sort((a, b) => b.score - a.score);
 
         for (const move of moves) {
-            const origPiece = board[move.fromR][move.fromC];
-            let piece = origPiece;
-            const target = board[move.toR][move.toC];
-            
-            if (piece.toLowerCase() === 'p' && (move.toR === 0 || move.toR === 7)) {
-                piece = piece === 'P' ? 'Q' : 'q';
-            }
+            const undoState = _Shared.applyMove(board, move);
 
-            board[move.toR][move.toC] = piece;
-            board[move.fromR][move.fromC] = null;
+            const boardValue = _Shared.minimax(board, depth, color !== 'w', -Infinity, Infinity, _Logic);
 
-            const boardValue = _Shared.minimax(board, 3, color !== 'w', -Infinity, Infinity, _Logic);
-
-            board[move.fromR][move.fromC] = origPiece;
-            board[move.toR][move.toC] = target;
+            _Shared.undoMove(board, move, undoState);
 
             if (color === 'w') {
                 if (boardValue > bestValue) {

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Модульные Шахматы</title>
-    <link rel="stylesheet" href="css/style.css?v=3">
+    <link rel="stylesheet" href="css/style.css?v=31">
 </head>
 <body>
     <div id="main-layout">
@@ -67,11 +67,6 @@
                 </div>
 
                 <div class="setting-group">
-                    <label>Анализ игры:</label>
-                    <button id="analyze-btn" class="secondary-btn">Анализировать точность</button>
-                </div>
-
-                <div class="setting-group">
                     <label>Контроль времени:</label>
                     <select id="time-control" class="styled-select">
                         <option value="0">Без времени</option>
@@ -109,7 +104,7 @@
                     <div id="game-info" class="sub-status">Игра началась</div>
                 </div>
                 
-                <button id="analyze-btn" class="primary-btn" style="margin-top: 10px; width: 100%; display: none;">Анализировать партию</button>
+                <button id="analyze-btn" class="primary-btn" style="margin-top: 10px; width: 100%;">Анализировать партию</button>
 
                 <div id="move-history">
                     <div class="history-header" style="margin-top: 10px;">История ходов</div>
@@ -148,17 +143,17 @@
         </div>
     </div>
 
-    <script src="js/logic.js?v=3"></script>
-    <script src="js/ai_shared.js?v=3"></script>
-    <script src="js/ai_easy.js?v=3"></script>
-    <script src="js/ai_medium.js?v=3"></script>
-    <script src="js/ai_hard.js?v=3"></script>
-    <script src="js/ai_very_hard.js?v=3"></script>
-    <script src="js/ai_unreal.js?v=3"></script>
-    <script src="js/analysis_manager.js?v=3"></script>
-    <script src="js/network.js?v=3"></script>
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script src="js/transport_socket.js?v=3"></script>
-    <script src="js/ui.js?v=3"></script>
+    <script src="js/logic.js?v=31"></script>
+    <script src="js/ai_shared.js?v=31"></script>
+    <script src="js/ai_easy.js?v=31"></script>
+    <script src="js/ai_medium.js?v=31"></script>
+    <script src="js/ai_hard.js?v=31"></script>
+    <script src="js/ai_very_hard.js?v=31"></script>
+    <script src="js/ai_unreal.js?v=31"></script>
+    <script src="js/analysis_manager.js?v=31"></script>
+    <script src="js/network.js?v=31"></script>
+    <script src="js/lib/socket.io.min.js"></script>
+    <script src="js/transport_socket.js?v=31"></script>
+    <script src="js/ui.js?v=31"></script>
 </body>
 </html>

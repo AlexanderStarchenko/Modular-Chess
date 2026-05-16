@@ -103,21 +103,73 @@ var ChessAIShared = (() => {
         return isWhite ? value : -value;
     }
 
+    function applyMove(board, move) {
+        const orig = board[move.fromR][move.fromC];
+        const target = board[move.toR][move.toC];
+        const isWhite = orig === orig.toUpperCase();
+        
+        let epCaptured = null;
+        let epR = -1;
+        
+        // En Passant
+        if (orig.toLowerCase() === 'p' && target === null && move.fromC !== move.toC) {
+            epR = isWhite ? move.toR + 1 : move.toR - 1;
+            epCaptured = board[epR][move.toC];
+            board[epR][move.toC] = null;
+        }
+        
+        // Castling
+        let rookFromC = -1;
+        let rookToC = -1;
+        if (orig.toLowerCase() === 'k' && Math.abs(move.fromC - move.toC) === 2) {
+            const isKingside = move.toC > move.fromC;
+            rookFromC = isKingside ? 7 : 0;
+            rookToC = isKingside ? 5 : 3;
+            board[move.fromR][rookToC] = board[move.fromR][rookFromC];
+            board[move.fromR][rookFromC] = null;
+        }
+
+        // Promotion
+        let placedPiece = orig;
+        if (orig.toLowerCase() === 'p' && (move.toR === 0 || move.toR === 7)) {
+            placedPiece = isWhite ? 'Q' : 'q';
+        }
+        
+        board[move.toR][move.toC] = placedPiece;
+        board[move.fromR][move.fromC] = null;
+        
+        return { orig, target, epCaptured, epR, rookFromC, rookToC };
+    }
+
+    function undoMove(board, move, undoState) {
+        board[move.fromR][move.fromC] = undoState.orig;
+        board[move.toR][move.toC] = undoState.target;
+        
+        if (undoState.epCaptured) {
+            board[undoState.epR][move.toC] = undoState.epCaptured;
+        }
+        
+        if (undoState.rookFromC !== -1) {
+            board[move.fromR][undoState.rookFromC] = board[move.fromR][undoState.rookToC];
+            board[move.fromR][undoState.rookToC] = null;
+        }
+    }
+
     function quiesce(board, alpha, beta, isMaximizing, logic) {
         let standPat = evaluateBoard(board);
         if (isMaximizing) {
             if (standPat >= beta) return beta;
             if (alpha < standPat) alpha = standPat;
             
-            const moves = logic.getAllLegalMoves('w', true).filter(m => board[m.toR][m.toC] !== null);
+            const moves = logic.getAllLegalMoves('w', true).filter(m => {
+                const orig = board[m.fromR][m.fromC];
+                const isEP = orig && orig.toLowerCase() === 'p' && board[m.toR][m.toC] === null && m.fromC !== m.toC;
+                return board[m.toR][m.toC] !== null || isEP;
+            });
             for (const move of moves) {
-                const orig = board[move.fromR][move.fromC];
-                const target = board[move.toR][move.toC];
-                board[move.toR][move.toC] = orig;
-                board[move.fromR][move.fromC] = null;
+                const undoState = applyMove(board, move);
                 const score = quiesce(board, alpha, beta, false, logic);
-                board[move.fromR][move.fromC] = orig;
-                board[move.toR][move.toC] = target;
+                undoMove(board, move, undoState);
                 
                 if (score >= beta) return beta;
                 if (score > alpha) alpha = score;
@@ -127,15 +179,15 @@ var ChessAIShared = (() => {
             if (standPat <= alpha) return alpha;
             if (beta > standPat) beta = standPat;
             
-            const moves = logic.getAllLegalMoves('b', true).filter(m => board[m.toR][m.toC] !== null);
+            const moves = logic.getAllLegalMoves('b', true).filter(m => {
+                const orig = board[m.fromR][m.fromC];
+                const isEP = orig && orig.toLowerCase() === 'p' && board[m.toR][m.toC] === null && m.fromC !== m.toC;
+                return board[m.toR][m.toC] !== null || isEP;
+            });
             for (const move of moves) {
-                const orig = board[move.fromR][move.fromC];
-                const target = board[move.toR][move.toC];
-                board[move.toR][move.toC] = orig;
-                board[move.fromR][move.fromC] = null;
+                const undoState = applyMove(board, move);
                 const score = quiesce(board, alpha, beta, true, logic);
-                board[move.fromR][move.fromC] = orig;
-                board[move.toR][move.toC] = target;
+                undoMove(board, move, undoState);
                 
                 if (score <= alpha) return alpha;
                 if (score < beta) beta = score;
@@ -145,8 +197,6 @@ var ChessAIShared = (() => {
     }
 
     function minimax(board, depth, isMaximizing, alpha, beta, logic) {
-        if (depth === 0) return quiesce(board, alpha, beta, isMaximizing, logic);
-
         const color = isMaximizing ? 'w' : 'b';
         const moves = logic.getAllLegalMoves(color, true);
 
@@ -154,6 +204,8 @@ var ChessAIShared = (() => {
             if (logic.isKingInCheck(color)) return isMaximizing ? -100000 : 100000;
             return 0;
         }
+
+        if (depth === 0) return quiesce(board, alpha, beta, isMaximizing, logic);
 
         // Simple move ordering: captures first
         moves.sort((a, b) => {
@@ -165,13 +217,9 @@ var ChessAIShared = (() => {
         if (isMaximizing) {
             let maxEval = -Infinity;
             for (const move of moves) {
-                const orig = board[move.fromR][move.fromC];
-                const target = board[move.toR][move.toC];
-                board[move.toR][move.toC] = orig;
-                board[move.fromR][move.fromC] = null;
+                const undoState = applyMove(board, move);
                 const score = minimax(board, depth - 1, false, alpha, beta, logic);
-                board[move.fromR][move.fromC] = orig;
-                board[move.toR][move.toC] = target;
+                undoMove(board, move, undoState);
                 maxEval = Math.max(maxEval, score);
                 alpha = Math.max(alpha, score);
                 if (beta <= alpha) break;
@@ -180,13 +228,9 @@ var ChessAIShared = (() => {
         } else {
             let minEval = Infinity;
             for (const move of moves) {
-                const orig = board[move.fromR][move.fromC];
-                const target = board[move.toR][move.toC];
-                board[move.toR][move.toC] = orig;
-                board[move.fromR][move.fromC] = null;
+                const undoState = applyMove(board, move);
                 const score = minimax(board, depth - 1, true, alpha, beta, logic);
-                board[move.fromR][move.fromC] = orig;
-                board[move.toR][move.toC] = target;
+                undoMove(board, move, undoState);
                 minEval = Math.min(minEval, score);
                 beta = Math.min(beta, score);
                 if (beta <= alpha) break;
@@ -195,7 +239,7 @@ var ChessAIShared = (() => {
         }
     }
 
-    const API = { evaluateBoard, minimax };
+    const API = { evaluateBoard, minimax, applyMove, undoMove };
     if (typeof module !== 'undefined' && module.exports) module.exports = API;
     return API;
 })();

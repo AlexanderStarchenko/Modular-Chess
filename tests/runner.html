@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Chess Engine Test Runner</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f8fafc;
+            --success: #22c55e;
+            --fail: #ef4444;
+            --accent: #3b82f6;
+        }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #334155;
+        }
+        .stats {
+            display: flex;
+            gap: 1rem;
+        }
+        .stat-item {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            background: var(--card);
+            font-weight: bold;
+        }
+        .test-card {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            animation: slideIn 0.3s ease-out forwards;
+            opacity: 0;
+        }
+        @keyframes slideIn {
+            from { transform: translateY(10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .test-info h3 {
+            margin: 0;
+            font-size: 1rem;
+            color: #94a3b8;
+        }
+        .test-info p {
+            margin: 0.25rem 0 0;
+            font-size: 1.1rem;
+        }
+        .status-badge {
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+        .status-pass { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+        .status-fail { background: rgba(239, 68, 68, 0.2); color: var(--fail); }
+        .status-running { background: rgba(59, 130, 246, 0.2); color: var(--accent); }
+        
+        #log {
+            margin-top: 2rem;
+            font-family: monospace;
+            background: #000;
+            padding: 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            max-height: 200px;
+            overflow-y: auto;
+            color: #cbd5e1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Chess Engine Tests</h1>
+            <div class="stats">
+                <div class="stat-item" id="stat-total">Total: 0</div>
+                <div class="stat-item" style="color: var(--success)" id="stat-pass">Pass: 0</div>
+                <div class="stat-item" style="color: var(--fail)" id="stat-fail">Fail: 0</div>
+            </div>
+        </header>
+
+        <div id="test-list">
+            <!-- Tests will appear here -->
+        </div>
+
+        <div id="log">Running tests...</div>
+    </div>
+
+    <!-- Load Engine Scripts -->
+    <script src="../js/wasm_loader.js"></script>
+    <script src="../js/logic.js"></script>
+
+    <script>
+        const testList = document.getElementById('test-list');
+        const log = document.getElementById('log');
+        let passed = 0;
+        let failed = 0;
+        let total = 0;
+
+        function addTestUI(name) {
+            total++;
+            document.getElementById('stat-total').textContent = `Total: ${total}`;
+            const card = document.createElement('div');
+            card.className = 'test-card';
+            card.innerHTML = `
+                <div class="test-info">
+                    <h3>TEST CASE</h3>
+                    <p>${name}</p>
+                </div>
+                <div class="status-badge status-running">Running</div>
+            `;
+            testList.appendChild(card);
+            return card;
+        }
+
+        function updateTestUI(card, success, message) {
+            const badge = card.querySelector('.status-badge');
+            if (success) {
+                passed++;
+                badge.className = 'status-badge status-pass';
+                badge.textContent = 'Passed';
+                document.getElementById('stat-pass').textContent = `Pass: ${passed}`;
+            } else {
+                failed++;
+                badge.className = 'status-badge status-fail';
+                badge.textContent = 'Failed';
+                document.getElementById('stat-fail').textContent = `Fail: ${failed}`;
+                log.innerHTML += `<div style="color: var(--fail)">[FAIL] ${message}</div>`;
+            }
+        }
+
+        async function runTests() {
+            try {
+                // 1. WASM Load Test
+                const wasmCard = addTestUI('WebAssembly Core Initialization');
+                const wasmOk = await ChessWASM.init();
+                updateTestUI(wasmCard, wasmOk, 'Failed to load build/release.wasm');
+
+                if (!wasmOk) return;
+
+                // 2. WASM Material Evaluation
+                const matCard = addTestUI('WASM Material Evaluation Accuracy');
+                const board = Array(8).fill(null).map(() => Array(8).fill(null));
+                board[0][0] = 'Q'; // 90
+                board[0][1] = 'r'; // -50
+                const score = ChessWASM.evaluateMaterial(board);
+                updateTestUI(matCard, score === 40, `Expected 40, got ${score}`);
+
+                // 3. WASM Attack Detection (Knight)
+                const attackCard = addTestUI('WASM Attack Detection (Knight)');
+                const knightBoard = Array(8).fill(null).map(() => Array(8).fill(null));
+                knightBoard[4][4] = 'N'; // White Knight
+                const isAttacked = ChessWASM.isSquareAttacked(2, 3, 'w', knightBoard);
+                updateTestUI(attackCard, isAttacked === true, 'Knight attack at (2,3) not detected');
+
+                // 4. Logic Sync Test
+                const logicCard = addTestUI('Logic Engine Check Integration');
+                knightBoard[2][3] = 'k'; // Place king BEFORE loading state
+                ChessLogic.loadState({ board: knightBoard, turn: 'b', gameHistory: [] });
+                const inCheck = ChessLogic.isKingInCheck('b');
+                updateTestUI(logicCard, inCheck === true, 'ChessLogic failed to detect check via WASM');
+
+                log.innerHTML += '<div style="color: var(--success)">Tests completed!</div>';
+            } catch (err) {
+                log.innerHTML += `<div style="color: var(--fail)">[RUNTIME ERROR] ${err.message}</div>`;
+                console.error(err);
+            }
+        }
+
+        window.onload = runTests;
+    </script>
+</body>
+</html>

@@ -1,0 +1,407 @@
+/**
+ * Chess Logic Module
+ * Handles board state, move validation, and game rules.
+ */
+
+const ChessLogic = (() => {
+    let board = [];
+    let turn = 'w';
+    let castlingRights = {};
+    let listeners = [];
+    let gameHistory = [];
+    let positionHistory = {}; // For three-fold repetition
+    let enPassantSquare = null; // {row, col}
+    let halfMoveClock = 0; // For 50-move rule
+
+    function initBoard() {
+        board = [
+            ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+            ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
+            ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
+        ];
+        turn = 'w';
+        castlingRights = {
+            wKingMoved: false, bKingMoved: false,
+            wRookAMoved: false, wRookHMoved: false,
+            bRookAMoved: false, bRookHMoved: false
+        };
+        gameHistory = [];
+        positionHistory = {};
+        enPassantSquare = null;
+        halfMoveClock = 0;
+        recordPosition();
+        notifyChange();
+    }
+
+    function getBoard() { return board; }
+    function getTurn() { return turn; }
+    function getGameHistory() { return [...gameHistory]; }
+
+    function cloneGameHistory(src = gameHistory) {
+        return src.map(entry => ({
+            ...entry,
+            move: entry.move ? { ...entry.move } : null
+        }));
+    }
+
+    function cloneBoard(src = board) {
+        return src.map(row => row.slice());
+    }
+
+    function getState() {
+        return {
+            board: cloneBoard(),
+            turn,
+            castlingRights: { ...castlingRights },
+            gameHistory: cloneGameHistory(),
+            positionHistory: { ...positionHistory },
+            enPassantSquare: enPassantSquare ? { ...enPassantSquare } : null,
+            halfMoveClock
+        };
+    }
+
+    function loadState(state) {
+        if (!state || !Array.isArray(state.board) || state.board.length !== 8) return false;
+
+        board = cloneBoard(state.board);
+        turn = state.turn === 'b' ? 'b' : 'w';
+        castlingRights = state.castlingRights ? { ...state.castlingRights } : {};
+        gameHistory = Array.isArray(state.gameHistory) ? cloneGameHistory(state.gameHistory) : [];
+        positionHistory = state.positionHistory ? { ...state.positionHistory } : {};
+        enPassantSquare = state.enPassantSquare ? { ...state.enPassantSquare } : null;
+        halfMoveClock = Number.isFinite(state.halfMoveClock) ? state.halfMoveClock : 0;
+
+        if (!Object.keys(positionHistory).length) {
+            recordPosition();
+        }
+
+        return true;
+    }
+
+    function setBoard(newBoard) {
+        board = newBoard;
+    }
+
+    function loadFen(fen, options = {}) {
+        if (typeof fen !== 'string') return false;
+        const parts = fen.trim().split(/\s+/);
+        const rows = (parts[0] || '').split('/');
+        if (rows.length !== 8) return false;
+
+        board = rows.map(row => {
+            const parsed = [];
+            row.split('').forEach(char => {
+                if (/\d/.test(char)) {
+                    for (let i = 0; i < Number(char); i++) parsed.push(null);
+                } else {
+                    parsed.push(char);
+                }
+            });
+            return parsed;
+        });
+
+        turn = parts[1] === 'b' ? 'b' : 'w';
+        const rights = parts[2] || '-';
+        castlingRights = {
+            wKingMoved: !rights.includes('K') && !rights.includes('Q'),
+            bKingMoved: !rights.includes('k') && !rights.includes('q'),
+            wRookAMoved: !rights.includes('Q'),
+            wRookHMoved: !rights.includes('K'),
+            bRookAMoved: !rights.includes('q'),
+            bRookHMoved: !rights.includes('k')
+        };
+
+        const ep = parts[3] || '-';
+        if (ep !== '-') {
+            const f = ep.charCodeAt(0) - 97;
+            const r = 8 - parseInt(ep[1]);
+            enPassantSquare = { row: r, col: f };
+        } else {
+            enPassantSquare = null;
+        }
+
+        halfMoveClock = parseInt(parts[4]) || 0;
+
+        if (!options.keepHistory) {
+            gameHistory = [];
+            positionHistory = {};
+        }
+        recordPosition();
+        notifyChange();
+        return true;
+    }
+
+    function boardToFen() {
+        const rows = board.map(row => {
+            let empty = 0, fenRow = '';
+            row.forEach(piece => {
+                if (!piece) { empty++; return; }
+                if (empty > 0) { fenRow += empty; empty = 0; }
+                fenRow += piece;
+            });
+            return fenRow + (empty > 0 ? empty : '');
+        });
+        const rights = [
+            !castlingRights.wKingMoved && !castlingRights.wRookHMoved && board[7][7] === 'R' ? 'K' : '',
+            !castlingRights.wKingMoved && !castlingRights.wRookAMoved && board[7][0] === 'R' ? 'Q' : '',
+            !castlingRights.bKingMoved && !castlingRights.bRookHMoved && board[0][7] === 'r' ? 'k' : '',
+            !castlingRights.bKingMoved && !castlingRights.bRookAMoved && board[0][0] === 'r' ? 'q' : ''
+        ].join('') || '-';
+        
+        const ep = enPassantSquare ? String.fromCharCode(97 + enPassantSquare.col) + (8 - enPassantSquare.row) : '-';
+        
+        return `${rows.join('/')} ${turn} ${rights} ${ep} ${halfMoveClock} 1`;
+    }
+
+    function getSimpleFen() {
+        const parts = boardToFen().split(' ');
+        return parts.slice(0, 4).join(' '); // board, turn, castling, enpassant
+    }
+
+    function recordPosition() {
+        const fen = getSimpleFen();
+        positionHistory[fen] = (positionHistory[fen] || 0) + 1;
+    }
+
+    function checkDrawConditions() {
+        const legalMoves = getAllLegalMoves(turn);
+        if (legalMoves.length === 0 && !isKingInCheck(turn)) return 'stalemate';
+        if (positionHistory[getSimpleFen()] >= 3) return 'repetition';
+        if (halfMoveClock >= 100) return '50moves'; // 100 half-moves = 50 full moves
+        if (legalMoves.length === 0 && isKingInCheck(turn)) return 'checkmate';
+        return null;
+    }
+
+    function isValidMoveInternal(fR, fC, tR, tC, ignoreTurn = false) {
+        const piece = board[fR][fC];
+        if (!piece) return false;
+        const isWhite = piece === piece.toUpperCase();
+        if (!ignoreTurn && ((isWhite && turn !== 'w') || (!isWhite && turn !== 'b'))) return false;
+        const target = board[tR][tC];
+        if (target && (target === target.toUpperCase()) === isWhite) return false;
+
+        const dR = tR - fR, dC = tC - fC;
+        const p = piece.toLowerCase();
+        if (p === 'p') return validatePawnMove(fR, fC, tR, tC, isWhite);
+        if (p === 'r') return validateRookMove(fR, fC, tR, tC);
+        if (p === 'n') return (Math.abs(dR) === 2 && Math.abs(dC) === 1) || (Math.abs(dR) === 1 && Math.abs(dC) === 2);
+        if (p === 'b') return validateBishopMove(fR, fC, tR, tC);
+        if (p === 'q') return validateRookMove(fR, fC, tR, tC) || validateBishopMove(fR, fC, tR, tC);
+        if (p === 'k') {
+            if (Math.abs(dR) <= 1 && Math.abs(dC) <= 1) return true;
+            if (dR === 0 && Math.abs(dC) === 2) return isCastlingValid(fR, fC, tC, isWhite);
+        }
+        return false;
+    }
+
+    function validatePawnMove(fR, fC, tR, tC, isWhite) {
+        const dir = isWhite ? -1 : 1;
+        const start = isWhite ? 6 : 1;
+        const dR = tR - fR, dC = tC - fC;
+
+        // Normal move
+        if (dC === 0 && !board[tR][tC]) {
+            if (dR === dir) return true;
+            if (fR === start && dR === 2 * dir && !board[fR + dir][fC]) return true;
+        }
+
+        // Normal capture
+        if (Math.abs(dC) === 1 && dR === dir) {
+            if (board[tR][tC]) return true;
+            
+            // En Passant capture
+            if (enPassantSquare && enPassantSquare.row === tR && enPassantSquare.col === tC) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function validateRookMove(fR, fC, tR, tC) {
+        if (fR !== tR && fC !== tC) return false;
+        const sR = fR === tR ? 0 : (tR > fR ? 1 : -1);
+        const sC = fC === tC ? 0 : (tC > fC ? 1 : -1);
+        let cR = fR + sR, cC = fC + sC;
+        while (cR !== tR || cC !== tC) {
+            if (board[cR][cC]) return false;
+            cR += sR; cC += sC;
+        }
+        return true;
+    }
+
+    function validateBishopMove(fR, fC, tR, tC) {
+        if (Math.abs(tR - fR) !== Math.abs(tC - fC)) return false;
+        const sR = tR > fR ? 1 : -1, sC = tC > fC ? 1 : -1;
+        let cR = fR + sR, cC = fC + sC;
+        while (cR !== tR || cC !== tC) {
+            if (board[cR][cC]) return false;
+            cR += sR; cC += sC;
+        }
+        return true;
+    }
+
+    function isCastlingValid(row, kC, tC, isWhite) {
+        const color = isWhite ? 'w' : 'b';
+        if (isWhite && castlingRights.wKingMoved) return false;
+        if (!isWhite && castlingRights.bKingMoved) return false;
+        const isKing = tC > kC, rC = isKing ? 7 : 0;
+        if (isWhite ? (isKing ? castlingRights.wRookHMoved : castlingRights.wRookAMoved) : (isKing ? castlingRights.bRookHMoved : castlingRights.bRookAMoved)) return false;
+        if (board[row][rC] !== (isWhite ? 'R' : 'r')) return false;
+        for (let c = Math.min(kC, rC) + 1; c < Math.max(kC, rC); c++) if (board[row][c]) return false;
+        if (isKingInCheck(color)) return false;
+        const step = isKing ? 1 : -1;
+        for (let c = kC + step; c !== tC + step; c += step) {
+            const old = board[row][kC]; board[row][kC] = null; board[row][c] = old;
+            const check = isKingInCheck(color);
+            board[row][c] = null; board[row][kC] = old;
+            if (check) return false;
+        }
+        return true;
+    }
+
+    function isKingInCheck(color) {
+        let kR = -1, kC = -1, kChar = color === 'w' ? 'K' : 'k';
+        for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (board[r][c] === kChar) { kR = r; kC = c; break; }
+        if (kR === -1) return false;
+
+        // Use high-performance WASM core if available
+        if (typeof ChessWASM !== 'undefined' && ChessWASM.isLoaded()) {
+            try {
+                const attackerColor = color === 'w' ? 'b' : 'w';
+                return ChessWASM.isSquareAttacked(kR, kC, attackerColor, board);
+            } catch (err) {
+                console.warn('[Logic] WASM isSquareAttacked failed, using fallback:', err);
+            }
+        }
+
+        const isW = color === 'w';
+        const knightJumps = [[-2,-1], [-2,1], [-1,-2], [-1,2], [1,-2], [1,2], [2,-1], [2,1]];
+        for (const [dr, dc] of knightJumps) {
+            const r = kR + dr, c = kC + dc;
+            if (r >= 0 && r < 8 && c >= 0 && c < 8 && board[r][c] === (isW ? 'n' : 'N')) return true;
+        }
+        const pDir = isW ? -1 : 1, oP = isW ? 'p' : 'P';
+        if (kR + pDir >= 0 && kR + pDir < 8) {
+            if (kC - 1 >= 0 && board[kR + pDir][kC - 1] === oP) return true;
+            if (kC + 1 < 8 && board[kR + pDir][kC + 1] === oP) return true;
+        }
+        const dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+        for (let i = 0; i < 8; i++) {
+            const [dr, dc] = dirs[i];
+            let r = kR + dr, c = kC + dc, dist = 1;
+            while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                const piece = board[r][c];
+                if (piece) {
+                    if (piece === (isW ? 'q' : 'Q')) return true;
+                    if (i < 4 && piece === (isW ? 'r' : 'R')) return true;
+                    if (i >= 4 && piece === (isW ? 'b' : 'B')) return true;
+                    if (dist === 1 && piece === (isW ? 'k' : 'K')) return true;
+                    break;
+                }
+                r += dr; c += dc; dist++;
+            }
+        }
+        return false;
+    }
+
+    function isLegalMove(fR, fC, tR, tC, ignoreTurn = false) {
+        if (!isValidMoveInternal(fR, fC, tR, tC, ignoreTurn)) return false;
+        const piece = board[fR][fC];
+        const old = board[tR][tC];
+        board[tR][tC] = piece; board[fR][fC] = null;
+        const check = isKingInCheck(piece === piece.toUpperCase() ? 'w' : 'b');
+        board[fR][fC] = piece; board[tR][tC] = old;
+        return !check;
+    }
+
+    function getAllLegalMoves(color) {
+        const moves = [];
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const piece = board[r][c];
+                if (piece && (piece === piece.toUpperCase()) === (color === 'w')) {
+                    for (let tr = 0; tr < 8; tr++) {
+                        for (let tc = 0; tc < 8; tc++) {
+                            if (isLegalMove(r, c, tr, tc)) moves.push({ fromR: r, fromC: c, toR: tr, toC: tc });
+                        }
+                    }
+                }
+            }
+        }
+        return moves;
+    }
+
+    function movePiece(fR, fC, tR, tC) {
+        if (isLegalMove(fR, fC, tR, tC)) {
+            const beforeFen = boardToFen();
+            let piece = board[fR][fC];
+            const target = board[tR][tC];
+            const isPawn = piece.toLowerCase() === 'p';
+            
+            // 50-move rule reset
+            if (isPawn || target) halfMoveClock = 0;
+            else halfMoveClock++;
+
+            // Pawn promotion
+            if (isPawn && (tR === 0 || tR === 7)) piece = piece === 'P' ? 'Q' : 'q';
+            
+            // Handle En Passant removal
+            if (isPawn && !target && enPassantSquare && tR === enPassantSquare.row && tC === enPassantSquare.col) {
+                const epR = piece === 'Q' ? tR + 1 : tR - 1; // piece was 'P'/'p' but might be promoted 'Q'/'q' (though not logically possible in same step)
+                // Correctly identify epR based on color
+                const realEpR = piece === piece.toUpperCase() ? tR + 1 : tR - 1;
+                board[realEpR][tC] = null;
+            }
+
+            // Set next En Passant square
+            if (isPawn && Math.abs(tR - fR) === 2) {
+                enPassantSquare = { row: (fR + tR) / 2, col: fC };
+            } else {
+                enPassantSquare = null;
+            }
+
+            // Handle castling
+            if (piece.toLowerCase() === 'k' && Math.abs(tC - fC) === 2) {
+                const isK = tC > fC, rFC = isK ? 7 : 0, rTC = isK ? 5 : 3;
+                board[fR][rTC] = board[fR][rFC]; board[fR][rFC] = null;
+            }
+            
+            board[tR][tC] = piece; board[fR][fC] = null;
+            if (piece === 'K') castlingRights.wKingMoved = true;
+            if (piece === 'k') castlingRights.bKingMoved = true;
+            if (fR === 7 && fC === 0) castlingRights.wRookAMoved = true;
+            if (fR === 7 && fC === 7) castlingRights.wRookHMoved = true;
+            if (fR === 0 && fC === 0) castlingRights.bRookAMoved = true;
+            if (fR === 0 && fC === 7) castlingRights.bRookHMoved = true;
+            
+            turn = turn === 'w' ? 'b' : 'w';
+            recordPosition();
+            gameHistory.push({ fen: boardToFen(), beforeFen, move: { fR, fC, tR, tC } });
+            notifyChange(checkDrawConditions());
+            return true;
+        }
+        return false;
+    }
+
+    function subscribe(l) { listeners.push(l); return () => listeners = listeners.filter(fn => fn !== l); }
+    function notifyChange(status = null) {
+        const s = { ...getState(), status };
+        listeners.forEach(l => l(s));
+    }
+
+    return {
+        initBoard, getBoard, setBoard, getTurn, getState, loadState, loadFen, getFen: boardToFen,
+        movePiece, getAllLegalMoves, isValidMove: isLegalMove, isKingInCheck, subscribe
+    };
+})();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = ChessLogic;
+if (typeof self !== 'undefined') {
+    self.ChessLogic = ChessLogic;
+    if (typeof ChessLogic.initBoard === 'function') ChessLogic.initBoard();
+}

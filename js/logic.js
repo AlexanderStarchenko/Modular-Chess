@@ -350,10 +350,9 @@ var ChessLogic = (() => {
             
             // Handle En Passant removal
             if (isPawn && !target && enPassantSquare && tR === enPassantSquare.row && tC === enPassantSquare.col) {
-                const epR = piece === 'Q' ? tR + 1 : tR - 1; // piece was 'P'/'p' but might be promoted 'Q'/'q' (though not logically possible in same step)
-                // Correctly identify epR based on color
-                const realEpR = piece === piece.toUpperCase() ? tR + 1 : tR - 1;
-                board[realEpR][tC] = null;
+                // White pawn captures downward (piece was 'P', now 'Q' if promoted — but EP + promotion is impossible)
+                const epR = (piece === piece.toUpperCase()) ? tR + 1 : tR - 1;
+                board[epR][tC] = null;
             }
 
             // Set next En Passant square
@@ -379,7 +378,9 @@ var ChessLogic = (() => {
             
             turn = turn === 'w' ? 'b' : 'w';
             recordPosition();
-            gameHistory.push({ fen: boardToFen(), beforeFen, move: { fR, fC, tR, tC } });
+            const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+            const uci = `${files[fC]}${8 - fR}${files[tC]}${8 - tR}`;
+            gameHistory.push({ fen: boardToFen(), beforeFen, move: { fR, fC, tR, tC, uci } });
             notifyChange(checkDrawConditions());
             return true;
         }
@@ -394,7 +395,8 @@ var ChessLogic = (() => {
 
     return {
         initBoard, getBoard, getTurn, getState, loadState, loadFen, getFen: boardToFen,
-        movePiece, getAllLegalMoves, isValidMove: isLegalMove, isKingInCheck, subscribe
+        movePiece, getAllLegalMoves, isValidMove: isLegalMove, isKingInCheck, subscribe,
+        getGameHistory: () => [...gameHistory]
     };
 })();
 

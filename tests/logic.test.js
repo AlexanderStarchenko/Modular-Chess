@@ -158,4 +158,58 @@ describe('ChessLogic', () => {
         board[6][5] = 'r';
         expect(ChessLogic.isValidMove(7, 4, 7, 6)).toBe(false);
     });
+
+    test('Should successfully perform kingside and queenside castling', () => {
+        // White to castle kingside, Black to castle queenside
+        ChessLogic.loadFen('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1');
+        
+        // White castles kingside (e1 to g1)
+        expect(ChessLogic.isValidMove(7, 4, 7, 6)).toBe(true);
+        expect(ChessLogic.movePiece(7, 4, 7, 6)).toBe(true);
+        
+        const board1 = ChessLogic.getBoard();
+        expect(board1[7][6]).toBe('K'); // King at g1
+        expect(board1[7][5]).toBe('R'); // Rook at f1
+        expect(board1[7][7]).toBeNull(); // Corner is empty
+        
+        // Black castles queenside (e8 to c8)
+        expect(ChessLogic.isValidMove(0, 4, 0, 2)).toBe(true);
+        expect(ChessLogic.movePiece(0, 4, 0, 2)).toBe(true);
+        
+        const board2 = ChessLogic.getBoard();
+        expect(board2[0][2]).toBe('k'); // King at c8
+        expect(board2[0][3]).toBe('r'); // Rook at d8
+        expect(board2[0][0]).toBeNull(); // Corner is empty
+    });
+
+    test('Should return false when movePiece is given an invalid move', () => {
+        ChessLogic.initBoard();
+        // Trying to move a white knight to a white pawn
+        expect(ChessLogic.movePiece(7, 1, 6, 1)).toBe(false);
+    });
+
+    test('Should save and load full state correctly', () => {
+        ChessLogic.initBoard();
+        ChessLogic.movePiece(6, 4, 4, 4); // e4
+        const state = ChessLogic.getState();
+        
+        // Mess up the board
+        ChessLogic.initBoard();
+        
+        // Load the state
+        const loaded = ChessLogic.loadState(state);
+        expect(loaded).toBe(true);
+        
+        expect(ChessLogic.getTurn()).toBe('b');
+        expect(ChessLogic.getBoard()[4][4]).toBe('P');
+        
+        const history = ChessLogic.getGameHistory();
+        expect(history.length).toBe(1);
+        expect(history[0].move.uci).toBe('e2e4');
+    });
+
+    test('Should handle invalid state in loadState', () => {
+        expect(ChessLogic.loadState(null)).toBe(false);
+        expect(ChessLogic.loadState({ board: [] })).toBe(false); // Invalid board
+    });
 });

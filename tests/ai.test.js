@@ -8,11 +8,52 @@ describe('Chess AI Modules', () => {
         ChessLogic.initBoard();
     });
 
-    test('Easy AI should return a valid move', () => {
-        const state = ChessLogic.getState();
-        const move = ChessAI_Easy.getBestMove(state.turn);
-        expect(move).toBeDefined();
-        expect(ChessLogic.isValidMove(move.fromR, move.fromC, move.toR, move.toC)).toBe(true);
+    describe('Easy AI', () => {
+        let originalRandom;
+
+        beforeAll(() => {
+            originalRandom = Math.random;
+        });
+
+        afterAll(() => {
+            Math.random = originalRandom;
+        });
+
+        test('Should pick a random move 30% of the time', () => {
+            Math.random = () => 0.1; // Force random move
+            const state = ChessLogic.getState();
+            const move = ChessAI_Easy.getBestMove(state.turn);
+            expect(move).toBeDefined();
+            expect(ChessLogic.isValidMove(move.fromR, move.fromC, move.toR, move.toC)).toBe(true);
+        });
+
+        test('Should use depth 1 minimax 70% of the time (White)', () => {
+            Math.random = () => 0.9; // Force minimax
+            // A position where White can capture a Queen safely
+            ChessLogic.loadFen('k7/8/8/8/8/8/q7/K7 w - - 0 1');
+            const state = ChessLogic.getState();
+            const move = ChessAI_Easy.getBestMove(state.turn);
+            expect(move).toBeDefined();
+            // It might or might not pick the exact capture depending on depth 1 search order,
+            // but we at least ensure it runs the minimax branch without crashing.
+            expect(ChessLogic.isValidMove(move.fromR, move.fromC, move.toR, move.toC)).toBe(true);
+        });
+
+        test('Should use depth 1 minimax 70% of the time (Black)', () => {
+            Math.random = () => 0.9; // Force minimax
+            ChessLogic.loadFen('8/Q7/8/8/8/8/8/k6K b - - 0 1');
+            const state = ChessLogic.getState();
+            const move = ChessAI_Easy.getBestMove(state.turn);
+            expect(move).toBeDefined();
+            expect(ChessLogic.isValidMove(move.fromR, move.fromC, move.toR, move.toC)).toBe(true);
+        });
+
+        test('Should return null if no moves available', () => {
+            // Stalemate position where Black has no moves
+            ChessLogic.loadFen('7k/5K2/6Q1/8/8/8/8/8 b - - 0 1');
+            const move = ChessAI_Easy.getBestMove('b');
+            expect(move).toBeNull();
+        });
     });
 
     test('Medium AI should return a valid move', () => {

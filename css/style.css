@@ -253,6 +253,29 @@ body {
     transform: scale(1.1);
 }
 
+.coordinate {
+    position: absolute;
+    font-size: 11px;
+    font-weight: 700;
+    pointer-events: none;
+    user-select: none;
+    z-index: 1;
+    opacity: 0.6;
+}
+
+.rank-label {
+    top: 2px;
+    left: 4px;
+}
+
+.file-label {
+    bottom: 2px;
+    right: 4px;
+}
+
+.light .coordinate { color: var(--board-dark); }
+.dark .coordinate { color: var(--board-light); }
+
 .move-animation-layer {
     position: absolute;
     inset: 0;
@@ -518,23 +541,22 @@ input:checked + .slider:before {
     border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
-#history-list {
+.history-list {
     list-style: none;
     padding: 0;
     margin: 0;
 }
 
-#history-list li {
+.history-list li {
     padding: 8px 0;
     border-bottom: 1px solid rgba(255,255,255,0.05);
     font-size: 0.95rem;
-    display: grid;
-    grid-template-columns: 35px 1fr 1fr;
+    display: flex;
     align-items: center;
     transition: background 0.2s;
 }
 
-#history-list li:hover {
+.history-list li:hover {
     background: rgba(255, 255, 255, 0.02);
     border-radius: 6px;
 }

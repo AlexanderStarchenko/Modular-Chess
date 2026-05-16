@@ -23,16 +23,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">86.95% </span>
+                <span class="strong">86.36% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>40/46</span>
+                <span class='fraction'>38/44</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">52.5% </span>
+                <span class="strong">57.5% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>21/40</span>
+                <span class='fraction'>23/40</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">90.47% </span>
+                <span class="strong">90% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>38/42</span>
+                <span class='fraction'>36/40</span>
             </div>
         
             
@@ -135,17 +135,13 @@
 <a name='L70'></a><a href='#L70'>70</a>
 <a name='L71'></a><a href='#L71'>71</a>
 <a name='L72'></a><a href='#L72'>72</a>
-<a name='L73'></a><a href='#L73'>73</a>
-<a name='L74'></a><a href='#L74'>74</a>
-<a name='L75'></a><a href='#L75'>75</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L73'></a><a href='#L73'>73</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -173,7 +169,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">21x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">65x</span>
+<span class="cline-any cline-yes">63x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">21x</span>
@@ -216,19 +212,17 @@
  * Depth 3 search.
  */
 &nbsp;
-const ChessAIHard = (() =&gt; {
+var ChessAIHard = (() =&gt; {
     // For Node.js/Jest testing
-    const _Logic = (typeof require !== 'undefined') ? require('./logic') : (<span class="branch-1 cbranch-no" title="branch not covered" >typeof ChessLogic !== 'undefined' ? ChessLogic : null)</span>;
-    const _Shared = (typeof require !== 'undefined') ? require('./ai_shared') : (<span class="branch-1 cbranch-no" title="branch not covered" >typeof ChessAIShared !== 'undefined' ? ChessAIShared : null)</span>;
-    const ChessLogic = _Logic;
-    const ChessAIShared = _Shared;
+    const _Logic = (typeof ChessLogic !== 'undefined' ? <span class="branch-0 cbranch-no" title="branch not covered" >ChessLogic </span>: (typeof require !== 'undefined' ? require('./logic') : <span class="branch-1 cbranch-no" title="branch not covered" >null)</span>);
+    const _Shared = (typeof ChessAIShared !== 'undefined' ? <span class="branch-0 cbranch-no" title="branch not covered" >ChessAIShared </span>: (typeof require !== 'undefined' ? require('./ai_shared') : <span class="branch-1 cbranch-no" title="branch not covered" >null)</span>);
 &nbsp;
     function getBestMove(color, depth = <span class="branch-0 cbranch-no" title="branch not covered" >3)</span> {
         <span class="missing-if-branch" title="if path not taken" >I</span>if (!_Logic || !_Shared) <span class="cstat-no" title="statement not covered" >return null;</span>
         const moves = _Logic.getAllLegalMoves(color);
         <span class="missing-if-branch" title="if path not taken" >I</span>if (moves.length === 0) <span class="cstat-no" title="statement not covered" >return null;</span>
 &nbsp;
-        const board = ChessLogic.getBoard();
+        const board = _Logic.getBoard();
         let bestMove = null;
         let bestValue = color === 'w' ? -Infinity : <span class="branch-1 cbranch-no" title="branch not covered" >Infinity;</span>
 &nbsp;
@@ -261,7 +255,7 @@ const ChessAIHard = (() =&gt; {
             board[move.toR][move.toC] = piece;
             board[move.fromR][move.fromC] = null;
 &nbsp;
-            const boardValue = ChessAIShared.minimax(board, 3, color !== 'w', -Infinity, Infinity, ChessLogic);
+            const boardValue = _Shared.minimax(board, 3, color !== 'w', -Infinity, Infinity, _Logic);
 &nbsp;
             board[move.fromR][move.fromC] = origPiece;
             board[move.toR][move.toC] = target;
@@ -292,7 +286,7 @@ const ChessAIHard = (() =&gt; {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-01T05:02:37.894Z
+                at 2026-05-16T06:21:09.091Z
             </div>
         <script src="prettify.js"></script>
         <script>

@@ -9,7 +9,8 @@ const AnalysisManager = (() => {
 
     function initWorker() {
         if (!stockfish) {
-            stockfish = new Worker('js/stockfish.js?v=3');
+            console.log("[Analysis] Starting Stockfish Worker v30");
+            stockfish = new Worker('js/stockfish.js?v=30');
             stockfish.onmessage = function(event) {
                 const line = event.data;
                 if (currentTask && typeof currentTask.onMessage === 'function') {
@@ -23,6 +24,15 @@ const AnalysisManager = (() => {
         return new Promise(resolve => {
             initWorker();
             let evalResult = { cp: 0, mate: null, bestmove: null };
+            let resolved = false;
+
+            const timeout = setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    resolve(evalResult);
+                }
+            }, 1500);
+
             currentTask = {
                 onMessage: (line) => {
                     if (line.startsWith('info depth')) {
@@ -33,14 +43,17 @@ const AnalysisManager = (() => {
                         }
                     }
                     if (line.startsWith('bestmove')) {
-                        evalResult.bestmove = line.split(' ')[1];
-                        resolve(evalResult);
+                        if (!resolved) {
+                            clearTimeout(timeout);
+                            resolved = true;
+                            evalResult.bestmove = line.split(' ')[1];
+                            resolve(evalResult);
+                        }
                     }
                 }
             };
-            // Remove ucinewgame to speed up, just position and go
             stockfish.postMessage(`position fen ${fen}`);
-            stockfish.postMessage(`go movetime 400`);
+            stockfish.postMessage(`go movetime 300`);
         });
     }
 
@@ -53,7 +66,17 @@ const AnalysisManager = (() => {
         
         if (total === 0) {
             isAnalyzing = false;
-            if (onComplete) onComplete([]);
+            if (onComplete) {
+                onComplete({
+                    whiteAccuracy: 100,
+                    blackAccuracy: 100,
+                    moves: [],
+                    summary: {
+                        white: { brilliant: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
+                        black: { brilliant: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 }
+                    }
+                });
+            }
             return;
         }
 
@@ -131,8 +154,17 @@ const AnalysisManager = (() => {
         const stats = {
             whiteAccuracy: whiteCount > 0 ? Math.round(whiteSum / whiteCount) : 100,
             blackAccuracy: blackCount > 0 ? Math.round(blackSum / blackCount) : 100,
-            moves: results
+            moves: results,
+            summary: {
+                white: { brilliant: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
+                black: { brilliant: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 }
+            }
         };
+
+        results.forEach((res, idx) => {
+            const side = idx % 2 === 0 ? 'white' : 'black';
+            if (res.qualityClass) stats.summary[side][res.qualityClass]++;
+        });
 
         isAnalyzing = false;
         if (onComplete) onComplete(stats);
@@ -142,3 +174,5 @@ const AnalysisManager = (() => {
         analyzeGame
     };
 })();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = AnalysisManager;

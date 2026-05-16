@@ -1,0 +1,204 @@
+/**
+ * Shared AI Logic
+ * Contains minimax algorithm and board evaluation.
+ */
+
+var ChessAIShared = (() => {
+    const PIECE_VALUES = {
+        'p': 100, 'n': 320, 'b': 330, 'r': 500, 'q': 900, 'k': 20000,
+        'P': 100, 'N': 320, 'B': 330, 'R': 500, 'Q': 900, 'K': 20000
+    };
+
+    const pstPawn = [
+        [0,  0,  0,  0,  0,  0,  0,  0],
+        [50, 50, 50, 50, 50, 50, 50, 50],
+        [10, 10, 20, 30, 30, 20, 10, 10],
+        [5,  5, 10, 25, 25, 10,  5,  5],
+        [0,  0,  0, 20, 20,  0,  0,  0],
+        [5, -5,-10,  0,  0,-10, -5,  5],
+        [5, 10, 10,-20,-20, 10, 10,  5],
+        [0,  0,  0,  0,  0,  0,  0,  0]
+    ];
+
+    const pstKnight = [
+        [-50,-40,-30,-30,-30,-30,-40,-50],
+        [-40,-20,  0,  0,  0,  0,-20,-40],
+        [-30,  0, 10, 15, 15, 10,  0,-30],
+        [-30,  5, 15, 20, 20, 15,  5,-30],
+        [-30,  0, 15, 20, 20, 15,  0,-30],
+        [-30,  5, 10, 15, 15, 10,  5,-30],
+        [-40,-20,  0,  5,  5,  0,-20,-40],
+        [-50,-40,-30,-30,-30,-30,-40,-50]
+    ];
+
+    const pstBishop = [
+        [-20,-10,-10,-10,-10,-10,-10,-20],
+        [-10,  0,  0,  0,  0,  0,  0,-10],
+        [-10,  0,  5, 10, 10,  5,  0,-10],
+        [-10,  5,  5, 10, 10,  5,  5,-10],
+        [-10,  0, 10, 10, 10, 10,  0,-10],
+        [-10, 10, 10, 10, 10, 10, 10,-10],
+        [-10,  5,  0,  0,  0,  0,  5,-10],
+        [-20,-10,-10,-10,-10,-10,-10,-20]
+    ];
+
+    const pstRook = [
+        [0,  0,  0,  0,  0,  0,  0,  0],
+        [5, 10, 10, 10, 10, 10, 10,  5],
+        [-5,  0,  0,  0,  0,  0,  0, -5],
+        [-5,  0,  0,  0,  0,  0,  0, -5],
+        [-5,  0,  0,  0,  0,  0,  0, -5],
+        [-5,  0,  0,  0,  0,  0,  0, -5],
+        [-5,  0,  0,  0,  0,  0,  0, -5],
+        [0,  0,  0,  5,  5,  0,  0,  0]
+    ];
+
+    const pstQueen = [
+        [-20,-10,-10, -5, -5,-10,-10,-20],
+        [-10,  0,  0,  0,  0,  0,  0,-10],
+        [-10,  0,  5,  5,  5,  5,  0,-10],
+        [-5,  0,  5,  5,  5,  5,  0, -5],
+        [0,  0,  5,  5,  5,  5,  0, -5],
+        [-10,  5,  5,  5,  5,  5,  0,-10],
+        [-10,  0,  5,  0,  0,  0,  0,-10],
+        [-20,-10,-10, -5, -5,-10,-10,-20]
+    ];
+
+    const pstKing = [
+        [-30,-40,-40,-50,-50,-40,-40,-30],
+        [-30,-40,-40,-50,-50,-40,-40,-30],
+        [-30,-40,-40,-50,-50,-40,-40,-30],
+        [-30,-40,-40,-50,-50,-40,-40,-30],
+        [-20,-30,-30,-40,-40,-30,-30,-20],
+        [-10,-20,-20,-20,-20,-20,-20,-10],
+        [20, 20,  0,  0,  0,  0, 20, 20],
+        [20, 30, 10,  0,  0, 10, 30, 20]
+    ];
+
+    function evaluateBoard(board) {
+        let totalEvaluation = 0;
+        for (let r = 0; r < 8; r++) {
+            if (!board[r]) continue;
+            for (let c = 0; c < 8; c++) {
+                totalEvaluation += getPieceValue(board[r][c], r, c);
+            }
+        }
+        return totalEvaluation;
+    }
+
+    function getPieceValue(piece, r, c) {
+        if (!piece) return 0;
+        
+        const isWhite = piece === piece.toUpperCase();
+        const type = piece.toLowerCase();
+        let value = PIECE_VALUES[type] || 0;
+
+        // Add positional bonus
+        if (type === 'p') value += isWhite ? pstPawn[r][c] : pstPawn[7-r][c];
+        else if (type === 'n') value += isWhite ? pstKnight[r][c] : pstKnight[7-r][c];
+        else if (type === 'b') value += isWhite ? pstBishop[r][c] : pstBishop[7-r][c];
+        else if (type === 'r') value += isWhite ? pstRook[r][c] : pstRook[7-r][c];
+        else if (type === 'q') value += isWhite ? pstQueen[r][c] : pstQueen[7-r][c];
+        else if (type === 'k') value += isWhite ? pstKing[r][c] : pstKing[7-r][c];
+
+        return isWhite ? value : -value;
+    }
+
+    function quiesce(board, alpha, beta, isMaximizing, logic) {
+        let standPat = evaluateBoard(board);
+        if (isMaximizing) {
+            if (standPat >= beta) return beta;
+            if (alpha < standPat) alpha = standPat;
+            
+            const moves = logic.getAllLegalMoves('w').filter(m => board[m.toR][m.toC] !== null);
+            for (const move of moves) {
+                const orig = board[move.fromR][move.fromC];
+                const target = board[move.toR][move.toC];
+                board[move.toR][move.toC] = orig;
+                board[move.fromR][move.fromC] = null;
+                const score = quiesce(board, alpha, beta, false, logic);
+                board[move.fromR][move.fromC] = orig;
+                board[move.toR][move.toC] = target;
+                
+                if (score >= beta) return beta;
+                if (score > alpha) alpha = score;
+            }
+            return alpha;
+        } else {
+            if (standPat <= alpha) return alpha;
+            if (beta > standPat) beta = standPat;
+            
+            const moves = logic.getAllLegalMoves('b').filter(m => board[m.toR][m.toC] !== null);
+            for (const move of moves) {
+                const orig = board[move.fromR][move.fromC];
+                const target = board[move.toR][move.toC];
+                board[move.toR][move.toC] = orig;
+                board[move.fromR][move.fromC] = null;
+                const score = quiesce(board, alpha, beta, true, logic);
+                board[move.fromR][move.fromC] = orig;
+                board[move.toR][move.toC] = target;
+                
+                if (score <= alpha) return alpha;
+                if (score < beta) beta = score;
+            }
+            return beta;
+        }
+    }
+
+    function minimax(board, depth, isMaximizing, alpha, beta, logic) {
+        const color = isMaximizing ? 'w' : 'b';
+        const moves = logic.getAllLegalMoves(color);
+
+        if (moves.length === 0) {
+            const inCheck = logic.isKingInCheck(color);
+            const res = isMaximizing ? -100000 : 100000;
+            return inCheck ? res : 0;
+        }
+
+        if (depth === 0) return quiesce(board, alpha, beta, isMaximizing, logic);
+
+        // Simple move ordering: captures first
+        moves.sort((a, b) => {
+            const valA = board[a.toR][a.toC] ? PIECE_VALUES[board[a.toR][a.toC].toLowerCase()] : 0;
+            const valB = board[b.toR][b.toC] ? PIECE_VALUES[board[b.toR][b.toC].toLowerCase()] : 0;
+            return valB - valA;
+        });
+
+        if (isMaximizing) {
+            let maxEval = -Infinity;
+            for (const move of moves) {
+                const orig = board[move.fromR][move.fromC];
+                const target = board[move.toR][move.toC];
+                board[move.toR][move.toC] = orig;
+                board[move.fromR][move.fromC] = null;
+                const score = minimax(board, depth - 1, false, alpha, beta, logic);
+                board[move.fromR][move.fromC] = orig;
+                board[move.toR][move.toC] = target;
+                maxEval = Math.max(maxEval, score);
+                alpha = Math.max(alpha, score);
+                if (beta <= alpha) break;
+            }
+            return maxEval;
+        } else {
+            let minEval = Infinity;
+            for (const move of moves) {
+                const orig = board[move.fromR][move.fromC];
+                const target = board[move.toR][move.toC];
+                board[move.toR][move.toC] = orig;
+                board[move.fromR][move.fromC] = null;
+                const score = minimax(board, depth - 1, true, alpha, beta, logic);
+                board[move.fromR][move.fromC] = orig;
+                board[move.toR][move.toC] = target;
+                minEval = Math.min(minEval, score);
+                beta = Math.min(beta, score);
+                if (beta <= alpha) break;
+            }
+            return minEval;
+        }
+    }
+
+    const API = { evaluateBoard, minimax };
+    if (typeof module !== 'undefined' && module.exports) module.exports = API;
+    if (typeof self !== 'undefined') self.ChessAIShared = API;
+    return API;
+})();

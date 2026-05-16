@@ -80,6 +80,7 @@ const ChessUI = (() => {
         }
 
         return {
+            getContext,
             move() {
                 playTone({ type: 'sine', startFreq: 240, endFreq: 180, duration: 0.09, volume: 0.15 });
             },
@@ -88,8 +89,9 @@ const ChessUI = (() => {
                 playTone({ type: 'square', startFreq: 96, endFreq: 72, duration: 0.12, volume: 0.08, delay: 0.04 });
             },
             check() {
-                playTone({ type: 'sawtooth', startFreq: 360, endFreq: 540, duration: 0.07, volume: 0.18 });
-                playTone({ type: 'sine', startFreq: 720, endFreq: 640, duration: 0.1, volume: 0.12, delay: 0.05 });
+                // Более выразительный и громкий звук шаха
+                playTone({ type: 'sawtooth', startFreq: 400, endFreq: 600, duration: 0.12, volume: 0.3 });
+                playTone({ type: 'sine', startFreq: 800, endFreq: 700, duration: 0.15, volume: 0.2, delay: 0.05 });
             }
         };
     })();
@@ -171,7 +173,7 @@ const ChessUI = (() => {
     }
 
     function init() {
-        console.log("Chess UI Initializing...");
+        console.log("Chess UI Initializing... [Version v31]");
         
         boardContainer = document.getElementById('board-container');
         boardElement = document.getElementById('chessboard');
@@ -193,6 +195,20 @@ const ChessUI = (() => {
         analysisList = document.getElementById('analysis-list');
         analysisProgress = document.getElementById('analysis-progress');
         stockfishTip = document.getElementById('analysis-advice');
+        
+        // Аудио-фикс: активируем звук при первом клике пользователя
+        const resumeAudio = () => {
+            const ctx = ChessAudio.getContext ? ChessAudio.getContext() : null;
+            if (ctx && ctx.state === 'suspended') {
+                ctx.resume().then(() => {
+                    console.log('[Audio] Context resumed successfully');
+                });
+            }
+            window.removeEventListener('click', resumeAudio);
+            window.removeEventListener('touchstart', resumeAudio);
+        };
+        window.addEventListener('click', resumeAudio);
+        window.addEventListener('touchstart', resumeAudio);
 
         // Network button logic
         if (networkBtn) {
@@ -501,7 +517,7 @@ const ChessUI = (() => {
         analysisSnapshot = null;
         lastMove = null;
         if (animationLayer) animationLayer.innerHTML = '';
-        if (analysisBtn) analysisBtn.style.display = 'none';
+        // if (analysisBtn) analysisBtn.style.display = 'none'; // Убрал скрытие кнопки
         hideAnalysis();
         capturedByWhite = [];
         capturedByBlack = [];
@@ -682,6 +698,20 @@ const ChessUI = (() => {
                 square.className = `square ${(r + c) % 2 === 0 ? 'light' : 'dark'}`;
                 square.dataset.row = r;
                 square.dataset.col = c;
+
+                // Add coordinates
+                if (ci === 0) {
+                    const rankLabel = document.createElement('div');
+                    rankLabel.className = 'coordinate rank-label';
+                    rankLabel.textContent = 8 - r;
+                    square.appendChild(rankLabel);
+                }
+                if (ri === 7) {
+                    const fileLabel = document.createElement('div');
+                    fileLabel.className = 'coordinate file-label';
+                    fileLabel.textContent = String.fromCharCode(97 + c);
+                    square.appendChild(fileLabel);
+                }
 
                 const piece = board[r][c];
                 if (piece) {
@@ -1068,6 +1098,31 @@ const ChessUI = (() => {
     }
 
     function displayAccuracyStats(stats) {
+        if (analysisProgress) {
+            const w = stats.summary.white;
+            const b = stats.summary.black;
+            
+            const renderStats = (s, color) => `
+                <div style="font-size:0.85em; margin-top:5px; color:${color === 'w' ? '#fff' : '#aaa'}">
+                    <strong>${color === 'w' ? 'Белые' : 'Черные'}:</strong> 
+                    <span class="quality-badge brilliant">${s.brilliant}</span>
+                    <span class="quality-badge good">${s.good}</span>
+                    <span class="quality-badge inaccuracy">${s.inaccuracy}</span>
+                    <span class="quality-badge mistake">${s.mistake}</span>
+                    <span class="quality-badge blunder">${s.blunder}</span>
+                </div>
+            `;
+            
+            analysisProgress.innerHTML = `
+                <div style="font-weight:bold; margin-bottom:10px;">Точность: 
+                    <span style="color:#fff">Б: ${stats.whiteAccuracy}%</span> | 
+                    <span style="color:#aaa">Ч: ${stats.blackAccuracy}%</span>
+                </div>
+                ${renderStats(w, 'w')}
+                ${renderStats(b, 'b')}
+            `;
+        }
+        
         const topAcc = document.getElementById('top-accuracy');
         const bottomAcc = document.getElementById('bottom-accuracy');
         
@@ -1115,12 +1170,19 @@ const ChessUI = (() => {
             
             let qualityHtml = '';
             if (result.quality) {
-                qualityHtml = `<span class="quality-badge ${result.qualityClass}" style="margin-left:5px; font-weight:bold;">${result.quality}</span>`;
+                qualityHtml = `<span class="quality-badge ${result.qualityClass}" style="margin-left:5px;">${result.quality}</span>`;
             }
             
-            const accuracyHtml = `<span style="margin-left: 5px; color: #3b82f6; font-weight: bold;">${result.accuracy}%</span>`;
+            const accuracyHtml = `<span style="margin-left: 5px; color: #3b82f6; font-size:0.85em; font-weight: bold;">${result.accuracy}%</span>`;
             
-            li.innerHTML = `<strong>${num}. ${turnStr}</strong>: ${result.move.uci} <span style="color:gray;font-size:0.8em">[${result.scoreBefore} -> ${result.scoreAfter}]</span> ${accuracyHtml} ${qualityHtml}`;
+            li.innerHTML = `
+                <div style="display:flex; align-items:center; width:100%;">
+                    <strong style="width:30px;">${num}.</strong>
+                    <span style="flex:1;">${result.move.uci}</span>
+                    ${qualityHtml}
+                    ${accuracyHtml}
+                </div>
+            `;
             
             li.addEventListener('click', () => {
                 selectAnalysisMove(index);
