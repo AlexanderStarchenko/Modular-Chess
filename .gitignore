@@ -6,3 +6,4 @@ js/stockfish-18.wasm
 release/
 dist/
 .vscode/
+coverage/

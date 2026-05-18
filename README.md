@@ -29,12 +29,14 @@
 
 ## 🧪 Тестирование и Качество
 
-Проект прошел глубокий аудит безопасности и логики.
+Проект прошел глубокий аудит безопасности, логики и отказоустойчивости.
 
 - **Покрытие кода (Coverage)**:
-  - `logic.js`: **99%**.
-  - `ai_modules` (`easy`, `medium`, `hard`): **100%**.
-  - `ai_shared.js`: **92%+**.
+  - `logic.js` (Ядро правил): **99.11%**
+  - `ai_modules` (`easy`, `medium`, `hard`): **100%**
+  - `ai_unreal.js` (Интеграция Stockfish WASM): **97.36%** (97.56% statements)
+  - `ai_shared.js` (Оценки и Quiescence Search): **100%** (94.85% statements)
+  - `analysis_manager.js` (Анализ и таймауты движка): **100%** (98.05% statements)
 
 - **Запуск тестов**:
 
@@ -45,7 +47,7 @@
 - **Просмотр отчета о покрытии**:
 
   ```bash
-  npx test --coverage
+  npm test -- --coverage
   ```
 
 ## 🛠️ Архитектура

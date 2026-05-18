@@ -56,9 +56,17 @@ describe('Chess AI Modules', () => {
         });
     });
 
-    test('Medium AI should return a valid move', () => {
+    test('Medium AI should return a valid move for White', () => {
         const state = ChessLogic.getState();
         const move = ChessAI_Medium.getBestMove(state.turn);
+        expect(move).toBeDefined();
+        expect(ChessLogic.isValidMove(move.fromR, move.fromC, move.toR, move.toC)).toBe(true);
+    });
+
+    test('Medium AI should return a valid move for Black', () => {
+        // Set up FEN with Black's turn
+        ChessLogic.loadFen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1');
+        const move = ChessAI_Medium.getBestMove('b');
         expect(move).toBeDefined();
         expect(ChessLogic.isValidMove(move.fromR, move.fromC, move.toR, move.toC)).toBe(true);
     });

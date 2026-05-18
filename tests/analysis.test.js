@@ -121,4 +121,33 @@ describe('AnalysisManager', () => {
             done();
         });
     });
+
+    test('evaluateFen handles engine timeout gracefully', async () => {
+        jest.useFakeTimers();
+        
+        let IsolatedAnalysisManager;
+        jest.isolateModules(() => {
+            IsolatedAnalysisManager = require('../js/analysis_manager');
+        });
+
+        // Mock worker to do nothing when receiving messages (never responds)
+        global.Worker.mockImplementationOnce(function() {
+            return {
+                onmessage: null,
+                postMessage: jest.fn(),
+                terminate: jest.fn()
+            };
+        });
+
+        // Trigger evaluation
+        const evalPromise = IsolatedAnalysisManager.evaluateFen('startpos', 8);
+
+        // Fast-forward time past the 1500ms timeout
+        jest.advanceTimersByTime(1600);
+
+        const result = await evalPromise;
+        expect(result).toEqual({ cp: 0, mate: null, bestmove: null });
+        
+        jest.useRealTimers();
+    });
 });

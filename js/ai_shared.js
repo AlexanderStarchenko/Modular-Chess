@@ -239,7 +239,7 @@ var ChessAIShared = (() => {
         }
     }
 
-    const API = { evaluateBoard, minimax, applyMove, undoMove };
+    const API = { evaluateBoard, minimax, applyMove, undoMove, quiesce };
     if (typeof module !== 'undefined' && module.exports) module.exports = API;
     return API;
 })();

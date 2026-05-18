@@ -171,7 +171,8 @@ const AnalysisManager = (() => {
     }
 
     return {
-        analyzeGame
+        analyzeGame,
+        evaluateFen
     };
 })();
 

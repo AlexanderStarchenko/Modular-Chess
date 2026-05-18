@@ -47,15 +47,19 @@ const ChessAIUnreal = (() => {
     }
 
     function parseUCI(moveStr) {
-        if (!moveStr || moveStr.length < 4) return null;
+        if (!moveStr || moveStr.length < 4 || moveStr === '(none)') return null;
         const files = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4, 'f': 5, 'g': 6, 'h': 7 };
-        return {
-            fromR: 8 - parseInt(moveStr[1]),
-            fromC: files[moveStr[0]],
-            toR: 8 - parseInt(moveStr[3]),
-            toC: files[moveStr[2]]
-        };
+        const fromR = 8 - parseInt(moveStr[1]);
+        const fromC = files[moveStr[0]];
+        const toR = 8 - parseInt(moveStr[3]);
+        const toC = files[moveStr[2]];
+        if (isNaN(fromR) || fromC === undefined || isNaN(toR) || toC === undefined) {
+            return null;
+        }
+        return { fromR, fromC, toR, toC };
     }
 
-    return { getBestMove };
+    const API = { getBestMove };
+    if (typeof module !== 'undefined' && module.exports) module.exports = API;
+    return API;
 })();
