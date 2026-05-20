@@ -41,12 +41,12 @@ describe('WebAssembly Chess Core - Safety & Logic', () => {
 
     test('Material Evaluation: Base Accuracy', () => {
         clearBoard();
-        setPiece(0, 0, 'Q'); // +90
-        setPiece(7, 7, 'r'); // -50
-        setPiece(1, 1, 'P'); // +10
+        setPiece(0, 0, 'Q'); // +900 (White Queen at A8, PST: -20 = 880)
+        setPiece(7, 7, 'r'); // -500 (Black Rook at H1, PST: 0 = -500)
+        setPiece(1, 1, 'P'); // +100 (White Pawn at B7, PST: +50 = 150)
         
         const score = wasmInstance.evaluateMaterial(boardPtr);
-        expect(score).toBe(50); // 90 - 50 + 10
+        expect(score).toBe(530); // 880 - 500 + 150 = 530
     });
 
     test('Attack Detection: Knight Leaps', () => {

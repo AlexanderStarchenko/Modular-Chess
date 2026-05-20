@@ -2,8 +2,11 @@
  * WebAssembly Loader for Chess Core
  */
 
-window.ChessWASM = (() => {
+const glob = typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : (typeof window !== 'undefined' ? window : this));
+
+glob.ChessWASM = (() => {
     let instance = null;
+    let memView = null;
 
     async function init() {
         try {
@@ -16,19 +19,18 @@ window.ChessWASM = (() => {
                 try {
                     const fs = require('fs');
                     const path = require('path');
-                    // In Electron __dirname is available
-                    const wasmPath = path.join(__dirname, 'build', 'release.wasm');
+                    
+                    // In a Web Worker, __dirname is not available, so we fallback
+                    const baseDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
+                    const wasmPath = path.join(baseDir, 'build', 'release.wasm');
                     const buffer = fs.readFileSync(wasmPath);
                     wasmBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
                 } catch (e) {
                     console.warn('[WASM] Electron direct load failed, falling back to fetch', e);
-                    const response = await fetch('./build/release.wasm');
-                    wasmBuffer = await response.arrayBuffer();
+                    wasmBuffer = await loadViaFetch();
                 }
             } else {
-                // Standard web fetch
-                const response = await fetch('./build/release.wasm');
-                wasmBuffer = await response.arrayBuffer();
+                wasmBuffer = await loadViaFetch();
             }
 
             const wasm = await WebAssembly.instantiate(wasmBuffer, {
@@ -37,6 +39,7 @@ window.ChessWASM = (() => {
                 }
             });
             instance = wasm.instance.exports;
+            memView = new Uint8Array(instance.memory.buffer);
             console.log('[WASM] Chess Core Loaded Successfully');
             return true;
         } catch (e) {
@@ -45,53 +48,62 @@ window.ChessWASM = (() => {
         }
     }
 
-    /**
-     * Fast material evaluation using WASM
-     * @param {Array} board 2D array
-     */
+    async function loadViaFetch() {
+        let wasmUrl = './build/release.wasm';
+        // In Web Worker inside /js/ folder, adjust relative URL to go up one folder
+        if (typeof self !== 'undefined' && self.location && self.location.pathname.includes('/js/')) {
+            wasmUrl = '../build/release.wasm';
+        }
+        const response = await fetch(wasmUrl);
+        return await response.arrayBuffer();
+    }
+
+    function getMemView() {
+        if (!instance) return null;
+        // Safely recreate view if memory grew
+        if (!memView || memView.buffer !== instance.memory.buffer) {
+            memView = new Uint8Array(instance.memory.buffer);
+        }
+        return memView;
+    }
+
     function getSafePtr(size) {
         if (!instance) return 0;
-        // The user suggested 32768 is safe. 
-        // We will use it as the default base to ensure maximum compatibility.
-        const base = 32768;
+        const base = 32768; // Safe heap base determined by tests
         
         // Ensure memory is large enough
         const required = base + size;
-            if (instance.memory.buffer.byteLength < required) {
-                const pagesNeeded = Math.ceil((required - instance.memory.buffer.byteLength) / 65536);
-                instance.memory.grow(pagesNeeded);
+        if (instance.memory.buffer.byteLength < required) {
+            const pagesNeeded = Math.ceil((required - instance.memory.buffer.byteLength) / 65536);
+            instance.memory.grow(pagesNeeded);
+        }
+        return base;
+    }
+
+    function writeBoardToWASM(board, ptr) {
+        const mem = getMemView();
+        if (!mem) return;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const piece = board[r][c];
+                mem[ptr + (r << 3) + c] = piece ? piece.charCodeAt(0) : 0;
             }
-            return base;
+        }
     }
 
     function evaluateMaterial(board) {
         if (!instance) return 0;
-        const flatBoard = flattenBoard(board);
         const ptr = getSafePtr(64);
-        const mem = new Uint8Array(instance.memory.buffer);
-        mem.set(flatBoard, ptr);
+        writeBoardToWASM(board, ptr);
         return instance.evaluateMaterial(ptr);
     }
 
     function isSquareAttacked(row, col, attackerColor, board) {
         if (!instance) return false;
-        const flatBoard = flattenBoard(board);
         const ptr = getSafePtr(64);
-        const mem = new Uint8Array(instance.memory.buffer);
-        mem.set(flatBoard, ptr);
+        writeBoardToWASM(board, ptr);
         const colorCode = attackerColor === 'w' ? 0 : 128;
         return instance.isSquareAttacked(row, col, colorCode, ptr) === 1;
-    }
-
-    function flattenBoard(board) {
-        const flat = new Uint8Array(64);
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                const piece = board[r][c];
-                flat[r * 8 + c] = piece ? piece.charCodeAt(0) : 0;
-            }
-        }
-        return flat;
     }
 
     return {

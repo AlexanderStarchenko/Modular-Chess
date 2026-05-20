@@ -2,8 +2,17 @@ console.log('[Worker] Script starting...');
 
 try {
     console.log('[Worker] Importing scripts...');
-    importScripts('logic.js', 'ai_shared.js', 'ai_easy.js', 'ai_medium.js', 'ai_hard.js', 'ai_very_hard.js');
+    importScripts('wasm_loader.js', 'logic.js', 'ai_shared.js', 'ai_easy.js', 'ai_medium.js', 'ai_hard.js', 'ai_very_hard.js');
     console.log('[Worker] Scripts imported successfully');
+
+    // Asynchronously initialize WASM inside the Worker
+    if (typeof ChessWASM !== 'undefined') {
+        ChessWASM.init().then(success => {
+            console.log('[Worker] ChessWASM initialized inside worker:', success);
+        }).catch(err => {
+            console.error('[Worker] ChessWASM init failed inside worker:', err);
+        });
+    }
 } catch (e) {
     console.error('[Worker] importScripts failed:', e);
 }

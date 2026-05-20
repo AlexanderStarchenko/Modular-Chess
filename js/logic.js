@@ -262,8 +262,25 @@ var ChessLogic = (() => {
 
     function isKingInCheck(color) {
         let kR = -1, kC = -1, kChar = color === 'w' ? 'K' : 'k';
-        for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (board[r][c] === kChar) { kR = r; kC = c; break; }
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (board[r][c] === kChar) {
+                    kR = r;
+                    kC = c;
+                    break;
+                }
+            }
+            if (kR !== -1) break;
+        }
         if (kR === -1) return false;
+
+        // Optimize using WebAssembly if available
+        if (typeof ChessWASM !== 'undefined' && ChessWASM.isLoaded()) {
+            const attackerColor = color === 'w' ? 'b' : 'w';
+            return ChessWASM.isSquareAttacked(kR, kC, attackerColor, board);
+        }
+
+        // Fallback to JS implementation
         const isW = color === 'w';
         const knightJumps = [[-2,-1], [-2,1], [-1,-2], [-1,2], [1,-2], [1,2], [2,-1], [2,1]];
         for (const [dr, dc] of knightJumps) {

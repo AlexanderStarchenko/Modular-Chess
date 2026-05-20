@@ -1,5 +1,72 @@
 // WebAssembly Chess Core (AssemblyScript)
 
+// Piece-Square Tables (PST) matching the JavaScript engine exactly
+const pstPawn: i32[] = [
+    0,  0,  0,  0,  0,  0,  0,  0,
+    50, 50, 50, 50, 50, 50, 50, 50,
+    10, 10, 20, 30, 30, 20, 10, 10,
+    5,  5, 10, 25, 25, 10,  5,  5,
+    0,  0,  0, 20, 20,  0,  0,  0,
+    5, -5,-10,  0,  0,-10, -5,  5,
+    5, 10, 10,-20,-20, 10, 10,  5,
+    0,  0,  0,  0,  0,  0,  0,  0
+];
+
+const pstKnight: i32[] = [
+    -50,-40,-30,-30,-30,-30,-40,-50,
+    -40,-20,  0,  0,  0,  0,-20,-40,
+    -30,  0, 10, 15, 15, 10,  0,-30,
+    -30,  5, 15, 20, 20, 15,  5,-30,
+    -30,  0, 15, 20, 20, 15,  0,-30,
+    -30,  5, 10, 15, 15, 10,  5,-30,
+    -40,-20,  0,  5,  5,  0,-20,-40,
+    -50,-40,-30,-30,-30,-30,-40,-50
+];
+
+const pstBishop: i32[] = [
+    -20,-10,-10,-10,-10,-10,-10,-20,
+    -10,  0,  0,  0,  0,  0,  0,-10,
+    -10,  0,  5, 10, 10,  5,  0,-10,
+    -10,  5,  5, 10, 10,  5,  5,-10,
+    -10,  0, 10, 10, 10, 10,  0,-10,
+    -10, 10, 10, 10, 10, 10, 10,-10,
+    -10,  5,  0,  0,  0,  0,  5,-10,
+    -20,-10,-10,-10,-10,-10,-10,-20
+];
+
+const pstRook: i32[] = [
+    0,  0,  0,  0,  0,  0,  0,  0,
+    5, 10, 10, 10, 10, 10, 10,  5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    0,  0,  0,  5,  5,  0,  0,  0
+];
+
+const pstQueen: i32[] = [
+    -20,-10,-10, -5, -5,-10,-10,-20,
+    -10,  0,  0,  0,  0,  0,  0,-10,
+    -10,  0,  5,  5,  5,  5,  0,-10,
+    -5,  0,  5,  5,  5,  5,  0, -5,
+    0,  0,  5,  5,  5,  5,  0, -5,
+    -10,  5,  5,  5,  5,  5,  0,-10,
+    -10,  0,  5,  0,  0,  0,  0,-10,
+    -20,-10,-10, -5, -5,-10,-10,-20
+];
+
+const pstKing: i32[] = [
+    -30,-40,-40,-50,-50,-40,-40,-30,
+    -30,-40,-40,-50,-50,-40,-40,-30,
+    -30,-40,-40,-50,-50,-40,-40,-30,
+    -30,-40,-40,-50,-50,-40,-40,-30,
+    -20,-30,-30,-40,-40,-30,-30,-20,
+    -10,-20,-20,-20,-20,-20,-20,-10,
+    20, 20,  0,  0,  0,  0, 20, 20,
+    20, 30, 10,  0,  0, 10, 30, 20
+];
+
 /**
  * Checks if a square is attacked by a certain color.
  */
@@ -78,23 +145,41 @@ function isPathClear(r1: i32, c1: i32, r2: i32, c2: i32, boardPtr: usize): bool 
   return true;
 }
 
+/**
+ * Performs positional & material evaluation using the identical chess heuristic.
+ */
 export function evaluateMaterial(boardPtr: usize): i32 {
   let score: i32 = 0;
-  for (let i: i32 = 0; i < 64; i++) {
-    const piece = load<u8>(boardPtr + i);
-    if (piece === 0) continue;
-    const isWhite = piece >= 65 && piece <= 90;
-    const lower = piece | 32;
-    let val = 0;
-    if (lower === 112) val = 10;
-    else if (lower === 110) val = 30;
-    else if (lower === 98) val = 30;
-    else if (lower === 114) val = 50;
-    else if (lower === 113) val = 90;
-    else if (lower === 107) val = 900;
-    
-    if (isWhite) score += val;
-    else score -= val;
+  for (let r: i32 = 0; r < 8; r++) {
+    for (let c: i32 = 0; c < 8; c++) {
+      const idx = (r << 3) + c;
+      const piece = load<u8>(boardPtr + idx);
+      if (piece === 0) continue;
+      
+      const isWhite = piece >= 65 && piece <= 90;
+      const lower = piece | 32;
+      
+      let val: i32 = 0;
+      if (lower === 112) { // 'p'
+        val = 100 + (isWhite ? pstPawn[idx] : pstPawn[((7 - r) << 3) + c]);
+      } else if (lower === 110) { // 'n'
+        val = 320 + (isWhite ? pstKnight[idx] : pstKnight[((7 - r) << 3) + c]);
+      } else if (lower === 98) { // 'b'
+        val = 330 + (isWhite ? pstBishop[idx] : pstBishop[((7 - r) << 3) + c]);
+      } else if (lower === 114) { // 'r'
+        val = 500 + (isWhite ? pstRook[idx] : pstRook[((7 - r) << 3) + c]);
+      } else if (lower === 113) { // 'q'
+        val = 900 + (isWhite ? pstQueen[idx] : pstQueen[((7 - r) << 3) + c]);
+      } else if (lower === 107) { // 'k'
+        val = 20000 + (isWhite ? pstKing[idx] : pstKing[((7 - r) << 3) + c]);
+      }
+      
+      if (isWhite) {
+        score += val;
+      } else {
+        score -= val;
+      }
+    }
   }
   return score;
 }

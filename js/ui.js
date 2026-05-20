@@ -175,6 +175,14 @@ const ChessUI = (() => {
     function init() {
         console.log("Chess UI Initializing... [Version v31]");
         
+        if (typeof ChessWASM !== 'undefined') {
+            ChessWASM.init().then(success => {
+                console.log('[UI] ChessWASM initialized successfully:', success);
+            }).catch(err => {
+                console.warn('[UI] ChessWASM failed to initialize:', err);
+            });
+        }
+        
         boardContainer = document.getElementById('board-container');
         boardElement = document.getElementById('chessboard');
         statusElement = document.getElementById('status');
