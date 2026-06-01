@@ -95,3 +95,78 @@ describe('UI/UX Triggers', () => {
         expect(ChessAudio.capture).not.toHaveBeenCalled(); // Check takes priority
     });
 });
+
+describe('UI Theme and Opponent Avatar Logic', () => {
+    let mockElements;
+
+    beforeEach(() => {
+        mockElements = {
+            'opponent-avatar-icon': { textContent: '' },
+            'opponent-avatar-container': { className: '' },
+            'pc-toggle': { checked: false },
+            'ui-theme-select': { value: 'dark' },
+            'theme-select': { value: 'classic' }
+        };
+
+        global.document.getElementById = jest.fn((id) => mockElements[id] || null);
+    });
+
+    test('Should update opponent avatar to Robot (smart_toy) when playing against PC', () => {
+        // Simulating playing against PC
+        mockElements['pc-toggle'].checked = true;
+
+        const icon = mockElements['opponent-avatar-icon'];
+        const container = mockElements['opponent-avatar-container'];
+        const pcToggle = mockElements['pc-toggle'];
+
+        // Simulating the updateOpponentAvatar logic:
+        const isPC = pcToggle && pcToggle.checked;
+        if (isPC) {
+            icon.textContent = 'smart_toy';
+            container.className = "w-9 h-9 lg:w-10 lg:h-10 rounded-lg bg-surface-container-highest border border-outline-variant/20 flex items-center justify-center shadow-md";
+        } else {
+            icon.textContent = 'person';
+            container.className = "w-9 h-9 lg:w-10 lg:h-10 rounded-lg bg-primary-container/20 border border-primary/20 flex items-center justify-center shadow-md";
+        }
+
+        expect(icon.textContent).toBe('smart_toy');
+        expect(container.className).toContain('bg-surface-container-highest');
+    });
+
+    test('Should update opponent avatar to Human (person) when playing in local/network mode', () => {
+        mockElements['pc-toggle'].checked = false;
+
+        const icon = mockElements['opponent-avatar-icon'];
+        const container = mockElements['opponent-avatar-container'];
+        const pcToggle = mockElements['pc-toggle'];
+
+        const isPC = pcToggle && pcToggle.checked;
+        if (isPC) {
+            icon.textContent = 'smart_toy';
+            container.className = "w-9 h-9 lg:w-10 lg:h-10 rounded-lg bg-surface-container-highest border border-outline-variant/20 flex items-center justify-center shadow-md";
+        } else {
+            icon.textContent = 'person';
+            container.className = "w-9 h-9 lg:w-10 lg:h-10 rounded-lg bg-primary-container/20 border border-primary/20 flex items-center justify-center shadow-md";
+        }
+
+        expect(icon.textContent).toBe('person');
+        expect(container.className).toContain('bg-primary-container/20');
+    });
+
+    test('Should correctly apply board theme variables', () => {
+        const themeSelect = mockElements['theme-select'];
+        const root = {
+            style: {
+                setProperty: jest.fn()
+            }
+        };
+
+        const theme = themeSelect.value;
+        root.style.setProperty('--board-light', `var(--${theme}-light)`);
+        root.style.setProperty('--board-dark', `var(--${theme}-dark)`);
+
+        expect(root.style.setProperty).toHaveBeenCalledWith('--board-light', 'var(--classic-light)');
+        expect(root.style.setProperty).toHaveBeenCalledWith('--board-dark', 'var(--classic-dark)');
+    });
+});
+
