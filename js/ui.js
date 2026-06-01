@@ -9,6 +9,7 @@ const ChessUI = (() => {
     let topPlayerName, bottomPlayerName, topTimerDisplay, bottomTimerDisplay;
     let analysisBtn, analysisPanel, analysisList, analysisProgress, stockfishTip;
     let networkState = (typeof ChessNetwork !== 'undefined') ? ChessNetwork.getState() : { connected: false };
+    let switchTab;
     
     let selectedSquare = null;
     let lastMove = null;
@@ -301,6 +302,8 @@ const ChessUI = (() => {
                         networkBtn.classList.remove('leave-room-btn');
                     }
                 }
+                
+                updateOpponentAvatar();
             });
             ChessNetwork.on('move', move => {
                 if (move.timers) {
@@ -476,6 +479,112 @@ const ChessUI = (() => {
         });
 
         themeSelect.addEventListener('change', updateTheme);
+
+        // UI Theme Selector (Light / Dark Theme)
+        const uiThemeSelect = document.getElementById('ui-theme-select');
+        if (uiThemeSelect) {
+            uiThemeSelect.addEventListener('change', () => {
+                const uiTheme = uiThemeSelect.value;
+                if (uiTheme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                    localStorage.setItem('ui-theme', 'dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem('ui-theme', 'light');
+                }
+            });
+
+            // Restore from localStorage or default to dark
+            const savedTheme = localStorage.getItem('ui-theme') || 'dark';
+            uiThemeSelect.value = savedTheme;
+            if (savedTheme === 'dark') {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        }
+        
+        // Mobile Settings Drawer Toggle Event Listeners
+        const sidebarDrawer = document.getElementById('sidebar-drawer');
+        const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+        const menuBtn = document.getElementById('menu-btn');
+        const floatingMenuBtn = document.getElementById('floating-menu-btn');
+        const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+
+        if (sidebarDrawer && sidebarBackdrop) {
+            const openDrawer = () => {
+                sidebarDrawer.classList.remove('-translate-x-full');
+                sidebarBackdrop.classList.remove('hidden');
+                // Force reflow
+                sidebarBackdrop.offsetHeight;
+                sidebarBackdrop.classList.add('active');
+            };
+
+            const closeDrawer = () => {
+                sidebarDrawer.classList.add('-translate-x-full');
+                sidebarBackdrop.classList.remove('active');
+                setTimeout(() => {
+                    if (!sidebarBackdrop.classList.contains('active')) {
+                        sidebarBackdrop.classList.add('hidden');
+                    }
+                }, 300);
+            };
+
+            if (menuBtn) menuBtn.addEventListener('click', openDrawer);
+            if (floatingMenuBtn) floatingMenuBtn.addEventListener('click', openDrawer);
+            if (closeSidebarBtn) {
+                closeSidebarBtn.addEventListener('click', closeDrawer);
+            }
+            sidebarBackdrop.addEventListener('click', closeDrawer);
+        }
+        
+        // Tab switching logic for Right Panel
+        const tabBtnNotation = document.getElementById('tab-btn-notation');
+        const tabBtnStats = document.getElementById('tab-btn-stats');
+        const tabBtnAnalysis = document.getElementById('tab-btn-analysis');
+        
+        const tabContentNotation = document.getElementById('tab-content-notation');
+        const tabContentStats = document.getElementById('tab-content-stats');
+        const tabContentAnalysis = document.getElementById('tab-content-analysis');
+        
+        switchTab = function(activeTab) {
+            const btns = [tabBtnNotation, tabBtnStats, tabBtnAnalysis];
+            const contents = [tabContentNotation, tabContentStats, tabContentAnalysis];
+            
+            btns.forEach(btn => {
+                if (btn) {
+                    btn.classList.remove('border-primary', 'text-primary', 'font-bold');
+                    btn.classList.add('border-transparent', 'text-on-surface-variant', 'font-semibold');
+                }
+            });
+            contents.forEach(content => {
+                if (content) content.classList.add('hidden');
+            });
+            
+            if (activeTab === 'notation') {
+                if (tabBtnNotation) {
+                    tabBtnNotation.classList.add('border-primary', 'text-primary', 'font-bold');
+                    tabBtnNotation.classList.remove('border-transparent', 'text-on-surface-variant', 'font-semibold');
+                }
+                if (tabContentNotation) tabContentNotation.classList.remove('hidden');
+            } else if (activeTab === 'stats') {
+                if (tabBtnStats) {
+                    tabBtnStats.classList.add('border-primary', 'text-primary', 'font-bold');
+                    tabBtnStats.classList.remove('border-transparent', 'text-on-surface-variant', 'font-semibold');
+                }
+                if (tabContentStats) tabContentStats.classList.remove('hidden');
+            } else if (activeTab === 'analysis') {
+                if (tabBtnAnalysis) {
+                    tabBtnAnalysis.classList.add('border-primary', 'text-primary', 'font-bold');
+                    tabBtnAnalysis.classList.remove('border-transparent', 'text-on-surface-variant', 'font-semibold');
+                }
+                if (tabContentAnalysis) tabContentAnalysis.classList.remove('hidden');
+            }
+        };
+        
+        if (tabBtnNotation) tabBtnNotation.addEventListener('click', () => switchTab('notation'));
+        if (tabBtnStats) tabBtnStats.addEventListener('click', () => switchTab('stats'));
+        if (tabBtnAnalysis) tabBtnAnalysis.addEventListener('click', () => switchTab('analysis'));
         
         // Subscribe to logic changes
         ChessLogic.subscribe(state => {
@@ -497,6 +606,23 @@ const ChessUI = (() => {
         const root = document.documentElement;
         root.style.setProperty('--board-light', `var(--${theme}-light)`);
         root.style.setProperty('--board-dark', `var(--${theme}-dark)`);
+    }
+
+    function updateOpponentAvatar() {
+        const opponentAvatarIcon = document.getElementById('opponent-avatar-icon');
+        const opponentAvatarContainer = document.getElementById('opponent-avatar-container');
+        
+        if (!opponentAvatarIcon || !opponentAvatarContainer) return;
+        
+        const isPC = (pcToggle && pcToggle.checked);
+        
+        if (isPC) {
+            opponentAvatarIcon.textContent = 'smart_toy';
+            opponentAvatarContainer.className = "w-9 h-9 lg:w-10 lg:h-10 rounded-lg bg-surface-container-highest border border-outline-variant/20 flex items-center justify-center shadow-md";
+        } else {
+            opponentAvatarIcon.textContent = 'person';
+            opponentAvatarContainer.className = "w-9 h-9 lg:w-10 lg:h-10 rounded-lg bg-primary-container/20 border border-primary/20 flex items-center justify-center shadow-md";
+        }
     }
 
     function parseTimeControl() {
@@ -525,10 +651,22 @@ const ChessUI = (() => {
         analysisSnapshot = null;
         lastMove = null;
         if (animationLayer) animationLayer.innerHTML = '';
-        // if (analysisBtn) analysisBtn.style.display = 'none'; // Убрал скрытие кнопки
         hideAnalysis();
         capturedByWhite = [];
         capturedByBlack = [];
+        
+        // Reset accuracies stats
+        const statsWhiteText = document.getElementById('stats-white-accuracy-text');
+        const statsWhiteBar = document.getElementById('stats-white-accuracy-bar');
+        const statsBlackText = document.getElementById('stats-black-accuracy-text');
+        const statsBlackBar = document.getElementById('stats-black-accuracy-bar');
+        
+        if (statsWhiteText) statsWhiteText.textContent = `--%`;
+        if (statsWhiteBar) statsWhiteBar.style.width = `0%`;
+        if (statsBlackText) statsBlackText.textContent = `--%`;
+        if (statsBlackBar) statsBlackBar.style.width = `0%`;
+        
+        if (switchTab) switchTab('notation');
         updateCapturesDisplay();
         
         document.getElementById('top-accuracy').style.display = 'none';
@@ -583,6 +721,8 @@ const ChessUI = (() => {
             statusElement.textContent = 'ПК думает...';
             pcMoveTimeoutId = setTimeout(makePCMove, 600);
         }
+        
+        updateOpponentAvatar();
     }
 
     function formatTime(seconds) {
@@ -1087,6 +1227,7 @@ const ChessUI = (() => {
     }
 
     function startAnalysis() {
+        if (switchTab) switchTab('analysis');
         if (analysisBtn) analysisBtn.style.display = 'none';
         if (analysisPanel) analysisPanel.style.display = 'block';
         if (analysisProgress) analysisProgress.textContent = 'Подготовка к анализу...';
@@ -1150,6 +1291,17 @@ const ChessUI = (() => {
             topAcc.style.display = 'inline-block';
             bottomAcc.style.display = 'inline-block';
         }
+
+        // Set Bento card accuracies in the Stats panel
+        const statsWhiteText = document.getElementById('stats-white-accuracy-text');
+        const statsWhiteBar = document.getElementById('stats-white-accuracy-bar');
+        const statsBlackText = document.getElementById('stats-black-accuracy-text');
+        const statsBlackBar = document.getElementById('stats-black-accuracy-bar');
+        
+        if (statsWhiteText) statsWhiteText.textContent = `${stats.whiteAccuracy}%`;
+        if (statsWhiteBar) statsWhiteBar.style.width = `${stats.whiteAccuracy}%`;
+        if (statsBlackText) statsBlackText.textContent = `${stats.blackAccuracy}%`;
+        if (statsBlackBar) statsBlackBar.style.width = `${stats.blackAccuracy}%`;
     }
 
     function parseUciMove(uci) {
