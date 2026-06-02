@@ -39,13 +39,19 @@ const SocketTransport = (() => {
         // Listen for moves from the server
         socket.on('chess-move', (move) => {
             console.log('Received move via network:', move);
-            ChessNetwork.receiveMove(move);
+            const decodedMove = (move instanceof ArrayBuffer || ArrayBuffer.isView(move) || (typeof Buffer !== 'undefined' && Buffer.isBuffer(move)))
+                ? BinaryProtocol.unpackMove(move)
+                : move;
+            ChessNetwork.receiveMove(decodedMove);
         });
 
         // Listen for state syncs
         socket.on('chess-sync', (state) => {
             console.log('Received state sync via network');
-            ChessNetwork.receiveState(state);
+            const decodedState = (state instanceof ArrayBuffer || ArrayBuffer.isView(state) || (typeof Buffer !== 'undefined' && Buffer.isBuffer(state)))
+                ? BinaryProtocol.unpackState(state)
+                : state;
+            ChessNetwork.receiveState(decodedState);
         });
 
         socket.on('color-assigned', (color) => {
@@ -103,10 +109,12 @@ const SocketTransport = (() => {
         // Attach this transport to the network abstraction
         ChessNetwork.attach({
             sendMove: (move) => {
-                socket.emit('chess-move', { roomId: currentRoom, move });
+                const packedMove = BinaryProtocol.packMove(move);
+                socket.emit('chess-move', { roomId: currentRoom, move: packedMove });
             },
             sendState: (state) => {
-                socket.emit('chess-sync', { roomId: currentRoom, state });
+                const packedState = BinaryProtocol.packState(state);
+                socket.emit('chess-sync', { roomId: currentRoom, state: packedState });
             },
             sendUndoRequest: (levels) => {
                 socket.emit('undo-request', { roomId: currentRoom, levels });
