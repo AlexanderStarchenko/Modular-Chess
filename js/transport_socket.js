@@ -8,6 +8,58 @@ const SocketTransport = (() => {
     let currentRoom = null;
 
     /**
+     * Safely parse binary, JSON, or Blob network payloads.
+     * Keeps server relays fast while resolving platform-specific variations.
+     */
+    function parsePayload(data, unpackFn, callback) {
+        if (!data) return;
+
+        // 1. If it's already an unpacked object (fallback or JSON mode)
+        if ((data.from && data.to) || (data.board && data.turn)) {
+            callback(data);
+            return;
+        }
+
+        // 2. If it's a Blob (commonly received in mobile browsers via websockets)
+        if (typeof Blob !== 'undefined' && data instanceof Blob) {
+            data.arrayBuffer().then(buf => {
+                try {
+                    callback(unpackFn(buf));
+                } catch (err) {
+                    console.error('Failed to unpack Blob payload:', err);
+                }
+            }).catch(err => {
+                console.error('Failed to read Blob as ArrayBuffer:', err);
+            });
+            return;
+        }
+
+        // 3. Node.js Buffer JSON representation { type: 'Buffer', data: [...] }
+        if (data.type === 'Buffer' && Array.isArray(data.data)) {
+            try {
+                const uint8 = new Uint8Array(data.data);
+                callback(unpackFn(uint8.buffer));
+            } catch (err) {
+                console.error('Failed to unpack JSON Buffer payload:', err);
+            }
+            return;
+        }
+
+        // 4. Raw ArrayBuffer, TypedArray view, or Node.js Buffer
+        if (data instanceof ArrayBuffer || ArrayBuffer.isView(data) || (typeof Buffer !== 'undefined' && Buffer.isBuffer(data))) {
+            try {
+                callback(unpackFn(data));
+            } catch (err) {
+                console.error('Failed to unpack binary payload:', err);
+            }
+            return;
+        }
+
+        // Fallback: pass-through
+        callback(data);
+    }
+
+    /**
      * Initializes connection to the server and joins a room.
      * @param {string} roomId 
      */
@@ -39,19 +91,17 @@ const SocketTransport = (() => {
         // Listen for moves from the server
         socket.on('chess-move', (move) => {
             console.log('Received move via network:', move);
-            const decodedMove = (move instanceof ArrayBuffer || ArrayBuffer.isView(move) || (typeof Buffer !== 'undefined' && Buffer.isBuffer(move)))
-                ? BinaryProtocol.unpackMove(move)
-                : move;
-            ChessNetwork.receiveMove(decodedMove);
+            parsePayload(move, BinaryProtocol.unpackMove, (decodedMove) => {
+                ChessNetwork.receiveMove(decodedMove);
+            });
         });
 
         // Listen for state syncs
         socket.on('chess-sync', (state) => {
             console.log('Received state sync via network');
-            const decodedState = (state instanceof ArrayBuffer || ArrayBuffer.isView(state) || (typeof Buffer !== 'undefined' && Buffer.isBuffer(state)))
-                ? BinaryProtocol.unpackState(state)
-                : state;
-            ChessNetwork.receiveState(decodedState);
+            parsePayload(state, BinaryProtocol.unpackState, (decodedState) => {
+                ChessNetwork.receiveState(decodedState);
+            });
         });
 
         socket.on('color-assigned', (color) => {

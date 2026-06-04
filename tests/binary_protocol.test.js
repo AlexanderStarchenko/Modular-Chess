@@ -93,4 +93,27 @@ describe('Universal Binary Protocol', () => {
         const unpacked = BinaryProtocol.unpackState(packed);
         expect(unpacked).toEqual(originalState);
     });
+
+    test('JSON Buffer Unpacking (Node.js Buffer Serialization)', () => {
+        const originalMove = {
+            from: 'e2',
+            to: 'e4',
+            piece: 'wp',
+            promotion: null,
+            timers: { white: 299, black: 300, inc: 2, running: true }
+        };
+
+        const packed = BinaryProtocol.packMove(originalMove);
+        // Simulate JSON representation: { type: 'Buffer', data: [...] }
+        const jsonSerializedBuffer = {
+            type: 'Buffer',
+            data: Array.from(packed)
+        };
+
+        // Convert the JSON representation to Uint8Array/ArrayBuffer as parsePayload does
+        const parsedArrayBuffer = new Uint8Array(jsonSerializedBuffer.data).buffer;
+        const unpacked = BinaryProtocol.unpackMove(parsedArrayBuffer);
+        
+        expect(unpacked).toEqual(originalMove);
+    });
 });
