@@ -40,6 +40,8 @@ body {
     font-weight: 600;
     letter-spacing: 0.05em;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    z-index: 1;
     
     /* Inactive styling (Dark Theme default) */
     background-color: rgba(32, 31, 31, 0.5) !important; /* surface-container/50 */
@@ -48,25 +50,45 @@ body {
     opacity: 0.65;
 }
 
+.timer-container::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    will-change: opacity;
+    z-index: -1;
+}
+
 .timer-container.active {
     background-color: rgba(77, 142, 255, 0.12) !important; /* primary-container/12 */
     border-color: rgba(173, 198, 255, 0.5) !important; /* primary border */
     color: #adc6ff !important; /* primary text */
     opacity: 1;
+}
+
+.timer-container.active::after {
     box-shadow: 0 0 20px rgba(173, 198, 255, 0.2) !important;
+    opacity: 1;
 }
 
 .timer-container.low-time {
     color: #ffb4ab !important; /* error color */
     background: rgba(147, 0, 10, 0.25) !important; /* error-container/25 */
     border-color: rgba(255, 180, 171, 0.5) !important; /* error border */
-    box-shadow: 0 0 20px rgba(255, 180, 171, 0.3) !important;
+}
+
+.timer-container.low-time::after {
+    box-shadow: 0 0 25px rgba(255, 180, 171, 0.45) !important;
     animation: pulseRed 1s infinite alternate;
+    opacity: 1;
 }
 
 @keyframes pulseRed {
-    0% { box-shadow: 0 0 10px rgba(255, 180, 171, 0.2); }
-    100% { box-shadow: 0 0 25px rgba(255, 180, 171, 0.45); }
+    0% { opacity: 0.35; }
+    100% { opacity: 1; }
 }
 
 /* Sidebar Drawer and Backdrop for Tablet / Mobile */
@@ -559,6 +581,9 @@ html:not(.dark) .timer-container.active {
     border-color: rgba(37, 99, 235, 0.25) !important;
     color: #2563eb !important;
     opacity: 1;
+}
+
+html:not(.dark) .timer-container.active::after {
     box-shadow: 0 0 15px rgba(37, 99, 235, 0.15) !important;
 }
 
@@ -566,6 +591,10 @@ html:not(.dark) .timer-container.low-time {
     background-color: rgba(220, 38, 38, 0.1) !important;
     border-color: rgba(220, 38, 38, 0.3) !important;
     color: #dc2626 !important;
+}
+
+html:not(.dark) .timer-container.low-time::after {
+    box-shadow: 0 0 20px rgba(220, 38, 38, 0.3) !important;
 }
 
 /* Buttons overrides */
@@ -663,4 +692,40 @@ html:not(.dark) #network-connect-btn,
 html:not(.dark) #analyze-btn {
     background-color: #2563eb !important;
     color: #ffffff !important;
+}
+
+/* ---------------------------------
+   Mobile Performance & GPU Optimizations
+   --------------------------------- */
+
+/* Promote glass panels and modals to hardware compositor layers */
+.glass-panel,
+.modal,
+.modal-content {
+    will-change: transform, backdrop-filter;
+    transform: translate3d(0, 0, 0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+}
+
+/* Force GPU rendering for interactive chessboard elements */
+.piece,
+.square,
+#chessboard,
+#board-wrapper {
+    will-change: transform;
+    transform: translate3d(0, 0, 0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+}
+
+/* Optimize scrollable lists with independent rendering layers & inertial scrolling */
+.overflow-y-auto,
+#history-list,
+#analysis-list,
+#sidebar-drawer,
+main {
+    will-change: scroll-position;
+    transform: translate3d(0, 0, 0);
+    -webkit-overflow-scrolling: touch;
 }
