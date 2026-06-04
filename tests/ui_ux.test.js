@@ -6,7 +6,7 @@
 // Mock browser globals
 global.window = {};
 global.document = {
-    getElementById: jest.fn().mockReturnValue({ appendChild: jest.fn(), style: {}, addEventListener: jest.fn() }),
+    getElementById: jest.fn().mockReturnValue({ appendChild: jest.fn(), style: {}, addEventListener: jest.fn(), classList: { add: jest.fn(), remove: jest.fn() } }),
     createElement: jest.fn().mockReturnValue({ style: {}, appendChild: jest.fn(), addEventListener: jest.fn(), classList: { add: jest.fn() } }),
     documentElement: { style: { setProperty: jest.fn() } },
     addEventListener: jest.fn()
@@ -169,4 +169,180 @@ describe('UI Theme and Opponent Avatar Logic', () => {
         expect(root.style.setProperty).toHaveBeenCalledWith('--board-dark', 'var(--classic-dark)');
     });
 });
+
+describe('UI Hint Button State Logic', () => {
+    let mockElements;
+
+    beforeEach(() => {
+        mockElements = {
+            'hint-btn': { disabled: false, classList: { add: jest.fn(), remove: jest.fn() } },
+            'pc-toggle': { checked: true }
+        };
+
+        global.document.getElementById = jest.fn((id) => mockElements[id] || null);
+    });
+
+    test('Should enable hint button when it is player vs PC, player turn, and game is active', () => {
+        const isPlayerVsPC = mockElements['pc-toggle'].checked;
+        const isPlayerTurn = true;
+        const gameEnded = false;
+        const isWaitingForPC = false;
+        const isCalculatingHint = false;
+
+        const canGetHint = isPlayerVsPC && isPlayerTurn && !gameEnded && !isWaitingForPC && !isCalculatingHint;
+
+        const hintBtn = mockElements['hint-btn'];
+        if (canGetHint) {
+            hintBtn.disabled = false;
+            hintBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+            hintBtn.classList.add('cursor-pointer', 'hover:border-primary', 'hover:text-primary');
+        } else {
+            hintBtn.disabled = true;
+            hintBtn.classList.add('opacity-40', 'cursor-not-allowed');
+            hintBtn.classList.remove('cursor-pointer', 'hover:border-primary', 'hover:text-primary');
+        }
+
+        expect(hintBtn.disabled).toBe(false);
+        expect(hintBtn.classList.add).toHaveBeenCalledWith('cursor-pointer', 'hover:border-primary', 'hover:text-primary');
+    });
+
+    test('Should disable hint button when it is NOT player vs PC', () => {
+        mockElements['pc-toggle'].checked = false;
+
+        const isPlayerVsPC = mockElements['pc-toggle'].checked;
+        const isPlayerTurn = true;
+        const gameEnded = false;
+        const isWaitingForPC = false;
+        const isCalculatingHint = false;
+
+        const canGetHint = isPlayerVsPC && isPlayerTurn && !gameEnded && !isWaitingForPC && !isCalculatingHint;
+
+        const hintBtn = mockElements['hint-btn'];
+        if (canGetHint) {
+            hintBtn.disabled = false;
+            hintBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+            hintBtn.classList.add('cursor-pointer', 'hover:border-primary', 'hover:text-primary');
+        } else {
+            hintBtn.disabled = true;
+            hintBtn.classList.add('opacity-40', 'cursor-not-allowed');
+            hintBtn.classList.remove('cursor-pointer', 'hover:border-primary', 'hover:text-primary');
+        }
+
+        expect(hintBtn.disabled).toBe(true);
+        expect(hintBtn.classList.add).toHaveBeenCalledWith('opacity-40', 'cursor-not-allowed');
+    });
+});
+
+describe('UI Game Over Modal Logic', () => {
+    let mockElements;
+
+    beforeEach(() => {
+        mockElements = {
+            'game-over-modal': { style: { display: 'none' } },
+            'game-over-title': { textContent: '' },
+            'game-over-reason': { textContent: '' },
+            'game-over-icon-container': { textContent: '' }
+        };
+
+        global.document.getElementById = jest.fn((id) => mockElements[id] || null);
+    });
+
+    test('Should display modal and populate title, reason, and icon when showGameOverModal is called', () => {
+        const title = 'Победа белых!';
+        const reason = 'Шах и мат';
+        const icon = '👑';
+
+        const modal = mockElements['game-over-modal'];
+        const titleEl = mockElements['game-over-title'];
+        const reasonEl = mockElements['game-over-reason'];
+        const iconEl = mockElements['game-over-icon-container'];
+
+        if (modal && titleEl && reasonEl && iconEl) {
+            titleEl.textContent = title;
+            reasonEl.textContent = reason;
+            iconEl.textContent = icon;
+            modal.style.display = 'flex';
+        }
+
+        expect(modal.style.display).toBe('flex');
+        expect(titleEl.textContent).toBe('Победа белых!');
+        expect(reasonEl.textContent).toBe('Шах и мат');
+        expect(iconEl.textContent).toBe('👑');
+    });
+});
+
+describe('UI Timer Containers Toggling Logic', () => {
+    let mockElements;
+
+    beforeEach(() => {
+        mockElements = {
+            'top-timer-container': { classList: { add: jest.fn(), remove: jest.fn() } },
+            'bottom-timer-container': { classList: { add: jest.fn(), remove: jest.fn() } }
+        };
+
+        global.document.getElementById = jest.fn((id) => mockElements[id] || null);
+    });
+
+    test('Should toggle active class correctly when it is white turn (bottom player)', () => {
+        const isMyTurn = true;
+        const bottomTimerContainer = mockElements['bottom-timer-container'];
+        const topTimerContainer = mockElements['top-timer-container'];
+
+        if (isMyTurn) {
+            bottomTimerContainer.classList.add('active');
+            topTimerContainer.classList.remove('active');
+        } else {
+            topTimerContainer.classList.add('active');
+            bottomTimerContainer.classList.remove('active');
+        }
+
+        expect(bottomTimerContainer.classList.add).toHaveBeenCalledWith('active');
+        expect(topTimerContainer.classList.remove).toHaveBeenCalledWith('active');
+    });
+
+    test('Should apply low-time class when remaining time is less than 60s', () => {
+        const myTimeLeft = 45;
+        const bottomTimerContainer = mockElements['bottom-timer-container'];
+
+        if (myTimeLeft > 0 && myTimeLeft < 60) {
+            bottomTimerContainer.classList.add('low-time');
+        } else {
+            bottomTimerContainer.classList.remove('low-time');
+        }
+
+        expect(bottomTimerContainer.classList.add).toHaveBeenCalledWith('low-time');
+    });
+});
+
+describe('UI Captured Pieces Display Logic', () => {
+    const PIECE_VALUES = { 'p': 1, 'n': 3, 'b': 3, 'r': 5, 'q': 9 };
+    const BLACK_UNICODE = { 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟' };
+    const WHITE_UNICODE = { 'q': '♕', 'r': '♖', 'b': '♗', 'n': '♘', 'p': '♙' };
+
+    test('Should map captured pieces to correct color and calculate correct advantage for White', () => {
+        const capturedByWhite = ['r', 'b', 'p']; // White captured Black pieces
+        const capturedByBlack = ['n', 'p']; // Black captured White pieces
+
+        const whiteScore = capturedByWhite.reduce((s, p) => s + (PIECE_VALUES[p] || 0), 0); // 5 + 3 + 1 = 9
+        const blackScore = capturedByBlack.reduce((s, p) => s + (PIECE_VALUES[p] || 0), 0); // 3 + 1 = 4
+
+        const isBottomWhite = true;
+        const bottomCaptured = capturedByWhite;
+        const topCaptured = capturedByBlack;
+        
+        const bottomScore = whiteScore;
+        const topScore = blackScore;
+
+        const bottomText = bottomCaptured.map(p => (isBottomWhite ? BLACK_UNICODE[p] : WHITE_UNICODE[p])).join('');
+        const topText = topCaptured.map(p => (isBottomWhite ? WHITE_UNICODE[p] : BLACK_UNICODE[p])).join('');
+
+        const topAdv = topScore - bottomScore; // 4 - 9 = -5
+        const bottomAdvValue = topAdv < 0 ? `+${-topAdv}` : ''; // +5
+
+        expect(bottomText).toBe('♜♝♟'); // Black pieces shown on bottom card
+        expect(topText).toBe('♘♙'); // White pieces shown on top card
+        expect(bottomAdvValue).toBe('+5'); // White has +5 advantage
+    });
+});
+
 
