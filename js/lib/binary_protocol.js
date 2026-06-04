@@ -33,6 +33,23 @@ const BinaryProtocol = (() => {
         7: 'bp', 8: 'bn', 9: 'bb', 10: 'br', 11: 'bq', 12: 'bk'
     };
 
+    // Helper to map piece characters to code
+    function pieceToCode(piece) {
+        if (!piece) return 0;
+        const color = piece === piece.toUpperCase() ? 'w' : 'b';
+        const type = piece.toLowerCase();
+        return PIECE_TO_BYTE[color + type] || 0;
+    }
+
+    // Helper to map code back to piece character
+    function codeToPiece(code) {
+        const pieceStr = BYTE_TO_PIECE[code];
+        if (!pieceStr) return null;
+        const color = pieceStr[0];
+        const type = pieceStr[1];
+        return color === 'w' ? type.toUpperCase() : type.toLowerCase();
+    }
+
     /**
      * Packs chess move data into a 15-byte Uint8Array
      * @param {Object} move 
@@ -42,12 +59,33 @@ const BinaryProtocol = (() => {
         const buffer = new ArrayBuffer(15);
         const view = new DataView(buffer);
 
+        let fromIdx = 255;
+        let toIdx = 255;
+
+        if (move.fromRow !== undefined && move.fromCol !== undefined) {
+            fromIdx = (7 - move.fromRow) * 8 + move.fromCol;
+        } else if (move.from) {
+            fromIdx = squareToIndex(move.from);
+        }
+
+        if (move.toRow !== undefined && move.toCol !== undefined) {
+            toIdx = (7 - move.toRow) * 8 + move.toCol;
+        } else if (move.to) {
+            toIdx = squareToIndex(move.to);
+        }
+
         // Byte 0: from index
-        view.setUint8(0, squareToIndex(move.from));
+        view.setUint8(0, fromIdx);
         // Byte 1: to index
-        view.setUint8(1, squareToIndex(move.to));
+        view.setUint8(1, toIdx);
+
         // Byte 2: piece byte representation
-        view.setUint8(2, PIECE_TO_BYTE[move.piece] || 0);
+        let pieceByte = 0;
+        if (move.piece) {
+            pieceByte = PIECE_TO_BYTE[move.piece] || pieceToCode(move.piece);
+        }
+        view.setUint8(2, pieceByte);
+
         // Byte 3: promotion piece code (0 if none, else char code)
         let promoByte = 0;
         if (move.promotion) {
@@ -82,8 +120,26 @@ const BinaryProtocol = (() => {
         const arrayBuf = data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data;
         const view = new DataView(arrayBuf);
 
-        const from = indexToSquare(view.getUint8(0));
-        const to = indexToSquare(view.getUint8(1));
+        const fromIdx = view.getUint8(0);
+        const toIdx = view.getUint8(1);
+
+        const from = indexToSquare(fromIdx);
+        const to = indexToSquare(toIdx);
+
+        let fromRow = undefined;
+        let fromCol = undefined;
+        if (fromIdx !== 255) {
+            fromRow = 7 - Math.floor(fromIdx / 8);
+            fromCol = fromIdx % 8;
+        }
+
+        let toRow = undefined;
+        let toCol = undefined;
+        if (toIdx !== 255) {
+            toRow = 7 - Math.floor(toIdx / 8);
+            toCol = toIdx % 8;
+        }
+
         const piece = BYTE_TO_PIECE[view.getUint8(2)] || null;
 
         const promoCode = view.getUint8(3);
@@ -97,6 +153,10 @@ const BinaryProtocol = (() => {
         return {
             from,
             to,
+            fromRow,
+            fromCol,
+            toRow,
+            toCol,
             piece,
             promotion,
             timers: { white, black, inc, running }
@@ -112,39 +172,81 @@ const BinaryProtocol = (() => {
         const buffer = new ArrayBuffer(81);
         const view = new DataView(buffer);
 
+        const boardState = state.boardState || state;
+        const board = boardState.board;
+
         // Bytes 0-63: board (64 bytes)
-        for (let i = 0; i < 64; i++) {
-            const piece = state.board[i];
-            view.setUint8(i, PIECE_TO_BYTE[piece] || 0);
+        if (Array.isArray(board)) {
+            if (Array.isArray(board[0])) {
+                // 2D Array (8x8)
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        const piece = board[r][c];
+                        const idx = (7 - r) * 8 + c;
+                        view.setUint8(idx, pieceToCode(piece));
+                    }
+                }
+            } else {
+                // 1D Array (64 elements)
+                for (let i = 0; i < 64; i++) {
+                    const piece = board[i];
+                    view.setUint8(i, PIECE_TO_BYTE[piece] || pieceToCode(piece));
+                }
+            }
         }
 
         // Byte 64: turn (0: white, 1: black)
-        view.setUint8(64, state.turn === 'b' ? 1 : 0);
+        const turn = boardState.turn || 'w';
+        view.setUint8(64, turn === 'b' ? 1 : 0);
 
         // Byte 65: castling mask
         let castlingMask = 0;
-        if (state.castling) {
-            if (state.castling.wKing) castlingMask |= 1;
-            if (state.castling.wQueen) castlingMask |= 2;
-            if (state.castling.bKing) castlingMask |= 4;
-            if (state.castling.bQueen) castlingMask |= 8;
+        const castlingRights = boardState.castlingRights;
+        const castling = boardState.castling;
+        if (castlingRights) {
+            const wKing = !castlingRights.wKingMoved && !castlingRights.wRookHMoved;
+            const wQueen = !castlingRights.wKingMoved && !castlingRights.wRookAMoved;
+            const bKing = !castlingRights.bKingMoved && !castlingRights.bRookHMoved;
+            const bQueen = !castlingRights.bKingMoved && !castlingRights.bRookAMoved;
+            if (wKing) castlingMask |= 1;
+            if (wQueen) castlingMask |= 2;
+            if (bKing) castlingMask |= 4;
+            if (bQueen) castlingMask |= 8;
+        } else if (castling) {
+            if (castling.wKing) castlingMask |= 1;
+            if (castling.wQueen) castlingMask |= 2;
+            if (castling.bKing) castlingMask |= 4;
+            if (castling.bQueen) castlingMask |= 8;
         }
         view.setUint8(65, castlingMask);
 
         // Byte 66: enPassant index (0-63 or 255)
-        view.setUint8(66, squareToIndex(state.enPassant));
+        let enPassantIdx = 255;
+        const ep = boardState.enPassantSquare || boardState.enPassant;
+        if (ep) {
+            if (typeof ep === 'object' && ep.row !== undefined && ep.col !== undefined) {
+                enPassantIdx = (7 - ep.row) * 8 + ep.col;
+            } else if (typeof ep === 'string') {
+                enPassantIdx = squareToIndex(ep);
+            }
+        }
+        view.setUint8(66, enPassantIdx);
 
         // Byte 67: halfmoveClock
-        view.setUint8(67, state.halfmoveClock || 0);
+        const halfmove = boardState.halfMoveClock !== undefined ? boardState.halfMoveClock : (boardState.halfmoveClock || 0);
+        view.setUint8(67, halfmove);
 
         // Bytes 68-69: fullmoveNumber (Uint16)
-        view.setUint16(68, state.fullmoveNumber || 1, true);
+        const moveCount = state.moveCount !== undefined ? state.moveCount : (boardState.moveCount || 0);
+        const fullmove = boardState.fullmoveNumber || (1 + Math.floor(moveCount / 2));
+        view.setUint16(68, fullmove, true);
 
         // Timers
-        const whiteTime = state.timers ? Math.round(state.timers.white) : 0;
-        const blackTime = state.timers ? Math.round(state.timers.black) : 0;
-        const inc = state.timers ? Math.round(state.timers.inc) : 0;
-        const running = (state.timers && state.timers.running) ? 1 : 0;
+        const timers = state.timers || boardState.timers;
+        const whiteTime = timers ? Math.round(timers.white) : 0;
+        const blackTime = timers ? Math.round(timers.black) : 0;
+        const inc = timers ? Math.round(timers.inc) : 0;
+        const running = (timers && timers.running) ? 1 : 0;
 
         // Bytes 70-73: timers.white
         view.setUint32(70, whiteTime, true);
@@ -167,17 +269,19 @@ const BinaryProtocol = (() => {
         const arrayBuf = data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data;
         const view = new DataView(arrayBuf);
 
-        // Bytes 0-63: board (64 bytes)
-        const board = new Array(64);
+        const board1D = new Array(64);
+        const board2D = Array.from({ length: 8 }, () => new Array(8).fill(null));
+
         for (let i = 0; i < 64; i++) {
             const val = view.getUint8(i);
-            board[i] = BYTE_TO_PIECE[val] || null;
+            board1D[i] = BYTE_TO_PIECE[val] || null;
+            const r = 7 - Math.floor(i / 8);
+            const c = i % 8;
+            board2D[r][c] = codeToPiece(val);
         }
 
-        // Byte 64: turn
         const turn = view.getUint8(64) === 1 ? 'b' : 'w';
 
-        // Byte 65: castling
         const castlingMask = view.getUint8(65);
         const castling = {
             wKing: (castlingMask & 1) !== 0,
@@ -186,29 +290,97 @@ const BinaryProtocol = (() => {
             bQueen: (castlingMask & 8) !== 0
         };
 
-        // Byte 66: enPassant
-        const enPassant = indexToSquare(view.getUint8(66));
+        const castlingRights = {
+            wKingMoved: !(castling.wKing || castling.wQueen),
+            wRookHMoved: !castling.wKing,
+            wRookAMoved: !castling.wQueen,
+            bKingMoved: !(castling.bKing || castling.bQueen),
+            bRookHMoved: !castling.bKing,
+            bRookAMoved: !castling.bQueen
+        };
 
-        // Byte 67: halfmoveClock
+        const enPassantIdx = view.getUint8(66);
+        const enPassant = indexToSquare(enPassantIdx);
+        const enPassantSquare = enPassantIdx !== 255 ? {
+            row: 7 - Math.floor(enPassantIdx / 8),
+            col: enPassantIdx % 8
+        } : null;
+
         const halfmoveClock = view.getUint8(67);
+        const halfMoveClock = halfmoveClock;
 
-        // Bytes 68-69: fullmoveNumber
         const fullmoveNumber = view.getUint16(68, true);
 
-        // Timers
         const white = view.getUint32(70, true);
         const black = view.getUint32(74, true);
         const inc = view.getUint16(78, true);
         const running = view.getUint8(80) === 1;
 
+        // Reconstruct captures dynamically from board state
+        const standardCounts = {
+            'P': 8, 'N': 2, 'B': 2, 'R': 2, 'Q': 1, 'K': 1,
+            'p': 8, 'n': 2, 'b': 2, 'r': 2, 'q': 1, 'k': 1
+        };
+        const actualCounts = {
+            'P': 0, 'N': 0, 'B': 0, 'R': 0, 'Q': 0, 'K': 0,
+            'p': 0, 'n': 0, 'b': 0, 'r': 0, 'q': 0, 'k': 0
+        };
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const piece = board2D[r][c];
+                if (piece && actualCounts[piece] !== undefined) {
+                    actualCounts[piece]++;
+                }
+            }
+        }
+
+        const capturedByWhite = [];
+        const capturedByBlack = [];
+
+        const blackPieceTypes = ['p', 'n', 'b', 'r', 'q'];
+        blackPieceTypes.forEach(p => {
+            const missing = standardCounts[p] - actualCounts[p];
+            for (let i = 0; i < missing; i++) {
+                capturedByWhite.push(p);
+            }
+        });
+
+        const whitePieceTypes = ['P', 'N', 'B', 'R', 'Q'];
+        whitePieceTypes.forEach(p => {
+            const missing = standardCounts[p] - actualCounts[p];
+            for (let i = 0; i < missing; i++) {
+                capturedByBlack.push(p.toLowerCase());
+            }
+        });
+
+        const captures = {
+            white: capturedByWhite,
+            black: capturedByBlack
+        };
+
+        const boardState = {
+            board: board2D,
+            turn,
+            castlingRights,
+            enPassantSquare,
+            halfMoveClock,
+            gameHistory: []
+        };
+
         return {
-            board,
+            board: board1D,
             turn,
             castling,
             enPassant,
             halfmoveClock,
             fullmoveNumber,
-            timers: { white, black, inc, running }
+            timers: { white, black, inc, running },
+
+            // Properties for client state synchronization
+            boardState,
+            captures,
+            history: '',
+            moveCount: (fullmoveNumber - 1) * 2 + (turn === 'b' ? 1 : 0)
         };
     }
 

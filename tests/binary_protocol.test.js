@@ -32,7 +32,7 @@ describe('Universal Binary Protocol', () => {
         expect(packed.length).toBe(15);
 
         const unpacked = BinaryProtocol.unpackMove(packed);
-        expect(unpacked).toEqual(originalMove);
+        expect(unpacked).toMatchObject(originalMove);
     });
 
     test('Move Packing and Unpacking with Promotion', () => {
@@ -53,7 +53,7 @@ describe('Universal Binary Protocol', () => {
         expect(packed.length).toBe(15);
 
         const unpacked = BinaryProtocol.unpackMove(packed);
-        expect(unpacked).toEqual(promoMove);
+        expect(unpacked).toMatchObject(promoMove);
     });
 
     test('Full State Sync Packing and Unpacking', () => {
@@ -91,7 +91,7 @@ describe('Universal Binary Protocol', () => {
         expect(packed.length).toBe(81);
 
         const unpacked = BinaryProtocol.unpackState(packed);
-        expect(unpacked).toEqual(originalState);
+        expect(unpacked).toMatchObject(originalState);
     });
 
     test('JSON Buffer Unpacking (Node.js Buffer Serialization)', () => {
@@ -114,6 +114,79 @@ describe('Universal Binary Protocol', () => {
         const parsedArrayBuffer = new Uint8Array(jsonSerializedBuffer.data).buffer;
         const unpacked = BinaryProtocol.unpackMove(parsedArrayBuffer);
         
-        expect(unpacked).toEqual(originalMove);
+        expect(unpacked).toMatchObject(originalMove);
+    });
+
+    test('2D Move Packing and Unpacking (Row/Col Representation)', () => {
+        const move2D = {
+            fromRow: 6,
+            fromCol: 4,
+            toRow: 4,
+            toCol: 4,
+            timers: { white: 299, black: 300, inc: 2, running: true }
+        };
+
+        const packed = BinaryProtocol.packMove(move2D);
+        expect(packed.length).toBe(15);
+
+        const unpacked = BinaryProtocol.unpackMove(packed);
+        expect(unpacked.fromRow).toBe(6);
+        expect(unpacked.fromCol).toBe(4);
+        expect(unpacked.toRow).toBe(4);
+        expect(unpacked.toCol).toBe(4);
+        expect(unpacked.from).toBe('e2');
+        expect(unpacked.to).toBe('e4');
+        expect(unpacked.timers).toEqual(move2D.timers);
+    });
+
+    test('2D State Packing and Unpacking (getState/loadState representation)', () => {
+        const board2D = Array.from({ length: 8 }, () => new Array(8).fill(null));
+        board2D[7][4] = 'K'; // White King (e1)
+        board2D[7][0] = 'R'; // White Rook (a1)
+        board2D[0][4] = 'k'; // Black King (e8)
+
+        const state2D = {
+            boardState: {
+                board: board2D,
+                turn: 'w',
+                castlingRights: {
+                    wKingMoved: false,
+                    wRookHMoved: true, // King side rook moved, no king side castling
+                    wRookAMoved: false,
+                    bKingMoved: true, // Black king moved, no castling
+                    bRookHMoved: false,
+                    bRookAMoved: false
+                },
+                enPassantSquare: { row: 5, col: 4 }, // e3
+                halfMoveClock: 3
+            },
+            moveCount: 15,
+            timers: { white: 180, black: 120, inc: 3, running: true }
+        };
+
+        const packed = BinaryProtocol.packState(state2D);
+        expect(packed.length).toBe(81);
+
+        const unpacked = BinaryProtocol.unpackState(packed);
+        
+        // Check that unpacked 2D board matches original
+        expect(unpacked.boardState.board[7][4]).toBe('K');
+        expect(unpacked.boardState.board[7][0]).toBe('R');
+        expect(unpacked.boardState.board[0][4]).toBe('k');
+        
+        // Check castlingRights mapping
+        expect(unpacked.boardState.castlingRights.wKingMoved).toBe(false);
+        expect(unpacked.boardState.castlingRights.wRookHMoved).toBe(true);
+        expect(unpacked.boardState.castlingRights.wRookAMoved).toBe(false);
+        expect(unpacked.boardState.castlingRights.bKingMoved).toBe(true);
+
+        // Check enPassant and clocks
+        expect(unpacked.boardState.enPassantSquare).toEqual({ row: 5, col: 4 });
+        expect(unpacked.boardState.halfMoveClock).toBe(3);
+        
+        // Check captures (White has captured standard set except 1 white Rook and 1 white King; Black captured nothing)
+        // 32 standard pieces, only K, R, k are on the board, so captures lists are populated
+        expect(unpacked.captures.white.length).toBe(15); // Black has only king left, 15 black pieces captured by White
+        expect(unpacked.captures.black.length).toBe(14); // White has king and rook left, 14 white pieces captured by Black
     });
 });
