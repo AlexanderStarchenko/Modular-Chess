@@ -32,6 +32,8 @@ express.static.mime.define({'application/wasm': ['wasm']});
 // Serve static files from the current directory
 app.use(express.static(__dirname));
 
+const rooms = new Map();
+
 io.on('connection', (socket) => {
     if (process.env.NODE_ENV !== 'test') {
         console.log('A user connected:', socket.id);
@@ -48,8 +50,13 @@ io.on('connection', (socket) => {
         const numClients = room ? room.size : 0;
         
         let assignedColor = 'w';
-        if (numClients === 2) {
-            assignedColor = 'b';
+        if (numClients === 1) {
+            assignedColor = Math.random() < 0.5 ? 'w' : 'b';
+            rooms.set(roomId, { firstColor: assignedColor });
+        } else if (numClients === 2) {
+            const roomData = rooms.get(roomId);
+            const firstColor = roomData ? roomData.firstColor : 'w';
+            assignedColor = firstColor === 'w' ? 'b' : 'w';
         } else if (numClients > 2) {
             assignedColor = 'spectator';
         }
@@ -95,6 +102,16 @@ io.on('connection', (socket) => {
             clientTime: clientTime,
             serverTime: Date.now()
         });
+    });
+
+    socket.on('disconnecting', () => {
+        for (const roomId of socket.rooms) {
+            if (roomId === socket.id) continue;
+            const room = io.sockets.adapter.rooms.get(roomId);
+            if (room && room.size <= 1) {
+                rooms.delete(roomId);
+            }
+        }
     });
 
     socket.on('disconnect', () => {

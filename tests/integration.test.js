@@ -48,56 +48,61 @@ describe('Full System Integration: UI -> Logic -> Network -> AI', () => {
     });
 
     test('Full Loop: Player moves -> Network -> AI calculates -> Network -> Board updates', (done) => {
-        let loopStep = 0;
+        let whiteSocket, blackSocket;
         
-        clientBlack.on('chess-move', (move) => {
-            try {
-                loopStep = 3;
-                expect(move).toEqual({ fromR: 6, fromC: 4, toR: 4, toC: 4 });
-                expect(ChessLogic.getTurn()).toBe('b');
+        function runTest() {
+            if (!whiteSocket || !blackSocket) return;
 
-                const aiMove = ChessAIHard.getBestMove('b', 2);
-                expect(aiMove).toBeDefined();
+            blackSocket.on('chess-move', (move) => {
+                try {
+                    expect(move).toEqual({ fromR: 6, fromC: 4, toR: 4, toC: 4 });
+                    expect(ChessLogic.getTurn()).toBe('b');
 
-                ChessLogic.movePiece(aiMove.fromR, aiMove.fromC, aiMove.toR, aiMove.toC);
-                clientBlack.emit('chess-move', { roomId: 'integration-room', move: aiMove });
-            } catch (err) {
-                done(err);
-            }
-        });
+                    const aiMove = ChessAIHard.getBestMove('b', 2);
+                    expect(aiMove).toBeDefined();
 
-        clientWhite.on('chess-move', (move) => {
-            try {
-                loopStep = 4;
-                expect(move).toBeDefined();
-                expect(ChessLogic.getTurn()).toBe('w');
-                done();
-            } catch (err) {
-                done(err);
-            }
-        });
+                    ChessLogic.movePiece(aiMove.fromR, aiMove.fromC, aiMove.toR, aiMove.toC);
+                    blackSocket.emit('chess-move', { roomId: 'integration-room', move: aiMove });
+                } catch (err) {
+                    done(err);
+                }
+            });
+
+            whiteSocket.on('chess-move', (move) => {
+                try {
+                    expect(move).toBeDefined();
+                    expect(ChessLogic.getTurn()).toBe('w');
+                    done();
+                } catch (err) {
+                    done(err);
+                }
+            });
+
+            // Start white move
+            const whiteMove = { fromR: 6, fromC: 4, toR: 4, toC: 4 };
+            expect(ChessLogic.isValidMove(whiteMove.fromR, whiteMove.fromC, whiteMove.toR, whiteMove.toC)).toBe(true);
+            ChessLogic.movePiece(whiteMove.fromR, whiteMove.fromC, whiteMove.toR, whiteMove.toC);
+            whiteSocket.emit('chess-move', { roomId: 'integration-room', move: whiteMove });
+        }
 
         clientWhite.on('color-assigned', (color) => {
-            loopStep = 1;
-            expect(color).toBe('w');
+            if (color === 'w') {
+                whiteSocket = clientWhite;
+            } else {
+                blackSocket = clientWhite;
+            }
             clientBlack.emit('join-room', 'integration-room');
         });
 
         clientBlack.on('color-assigned', (color) => {
-            loopStep = 2;
-            expect(color).toBe('b');
+            if (color === 'w') {
+                whiteSocket = clientBlack;
+            } else {
+                blackSocket = clientBlack;
+            }
             
             // Give server a tiny bit of time to register the room
-            setTimeout(() => {
-                try {
-                    const whiteMove = { fromR: 6, fromC: 4, toR: 4, toC: 4 };
-                    expect(ChessLogic.isValidMove(whiteMove.fromR, whiteMove.fromC, whiteMove.toR, whiteMove.toC)).toBe(true);
-                    ChessLogic.movePiece(whiteMove.fromR, whiteMove.fromC, whiteMove.toR, whiteMove.toC);
-                    clientWhite.emit('chess-move', { roomId: 'integration-room', move: whiteMove });
-                } catch (err) {
-                    done(err);
-                }
-            }, 50);
+            setTimeout(runTest, 50);
         });
 
         clientWhite.emit('join-room', 'integration-room');
