@@ -703,7 +703,6 @@ html:not(.dark) #analyze-btn {
 .modal,
 .modal-content {
     will-change: transform, backdrop-filter;
-    transform: translate3d(0, 0, 0);
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
 }
@@ -714,7 +713,6 @@ html:not(.dark) #analyze-btn {
 #chessboard,
 #board-wrapper {
     will-change: transform;
-    transform: translate3d(0, 0, 0);
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
 }
@@ -726,6 +724,5 @@ html:not(.dark) #analyze-btn {
 #sidebar-drawer,
 main {
     will-change: scroll-position;
-    transform: translate3d(0, 0, 0);
     -webkit-overflow-scrolling: touch;
 }
