@@ -1406,7 +1406,11 @@ const ChessUI = (() => {
             whiteTimeLeft = previousState.timers.white;
             blackTimeLeft = previousState.timers.black;
             increment = previousState.timers.inc;
-            if (!previousState.timers.running) stopTimer();
+            if (previousState.timers.running) {
+                startTimer();
+            } else {
+                stopTimer();
+            }
             historyListElement.innerHTML = previousState.history;
             moveCount = previousState.moveCount;
             capturedByWhite = previousState.captures.white;
@@ -1421,6 +1425,7 @@ const ChessUI = (() => {
             
             updateCapturesDisplay();
             renderBoard();
+            updateTimerDisplays();
         }
     }
 
