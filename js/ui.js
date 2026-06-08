@@ -256,11 +256,10 @@ const ChessUI = (() => {
                         startNewGame();
                     }
                 } else {
-                    // Extract room ID from URL hash or generate a random 6-digit room ID
+                    // Extract room ID from URL hash or default to '123'
                     let roomId = window.location.hash.replace('#', '').trim();
                     if (!roomId) {
-                        roomId = String(Math.floor(100000 + Math.random() * 900000));
-                        window.location.hash = roomId;
+                        roomId = '123';
                     }
                     connectToRoom(roomId);
                 }
