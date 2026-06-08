@@ -18,6 +18,10 @@ var ChessAIEasy = (() => {
             return moves[Math.floor(Math.random() * moves.length)];
         }
 
+        if (typeof ChessWASM !== 'undefined' && ChessWASM.isLoaded()) {
+            return ChessWASM.searchWASM(1, color === 'w', -Infinity, Infinity, _Logic.getState());
+        }
+
         const board = _Logic.getBoard();
         let bestMove = null;
         let bestValue = color === 'w' ? -Infinity : Infinity;

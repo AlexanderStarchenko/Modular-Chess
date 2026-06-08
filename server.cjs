@@ -84,6 +84,11 @@ io.on('connection', (socket) => {
         socket.to(data.roomId).emit('chess-sync', data.state);
     });
 
+    // WebRTC signaling relay
+    socket.on('webrtc-signal', (data) => {
+        socket.to(data.roomId).emit('webrtc-signal', data.signal);
+    });
+
     socket.on('resign', (data) => {
         socket.to(data.roomId).emit('resign');
     });

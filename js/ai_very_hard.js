@@ -17,6 +17,22 @@ var ChessAIVeryHard = (() => {
         const startTime = Date.now();
         const timeLimit = 2500; // 2.5 seconds per move
 
+        if (typeof ChessWASM !== 'undefined' && ChessWASM.isLoaded()) {
+            const gameState = _Logic.getState();
+            let bestMoveGlobal = null;
+            let depth = 1;
+            while (depth <= 10) {
+                const bestMove = ChessWASM.searchWASM(depth, color === 'w', -Infinity, Infinity, gameState);
+                const value = ChessWASM.getSearchScore();
+                if (Date.now() - startTime > timeLimit && depth >= 3 && bestMoveGlobal) break;
+                bestMoveGlobal = bestMove;
+                if (Math.abs(value) > 90000) break;
+                depth++;
+            }
+            console.log(`Extra Hard AI (WASM): Depth ${depth-1}`);
+            return bestMoveGlobal;
+        }
+
         let bestMoveGlobal = null;
         let depth = 1;
 

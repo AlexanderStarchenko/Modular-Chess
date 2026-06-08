@@ -13,6 +13,10 @@ var ChessAIHard = (() => {
         const moves = _Logic.getAllLegalMoves(color);
         if (moves.length === 0) return null;
 
+        if (typeof ChessWASM !== 'undefined' && ChessWASM.isLoaded()) {
+            return ChessWASM.searchWASM(depth, color === 'w', -Infinity, Infinity, _Logic.getState());
+        }
+
         const board = _Logic.getBoard();
         let bestMove = null;
         let bestValue = color === 'w' ? -Infinity : Infinity;

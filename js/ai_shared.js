@@ -200,6 +200,14 @@ var ChessAIShared = (() => {
     }
 
     function minimax(board, depth, isMaximizing, alpha, beta, logic) {
+        if (typeof ChessWASM !== 'undefined' && ChessWASM.isLoaded()) {
+            const state = logic.getState();
+            state.board = board;
+            state.turn = isMaximizing ? 'w' : 'b';
+            ChessWASM.searchWASM(depth, isMaximizing, alpha, beta, state);
+            return ChessWASM.getSearchScore();
+        }
+
         const color = isMaximizing ? 'w' : 'b';
         const moves = logic.getAllLegalMoves(color, true);
 

@@ -106,10 +106,67 @@ glob.ChessWASM = (() => {
         return instance.isSquareAttacked(row, col, colorCode, ptr) === 1;
     }
 
+    function getCastlingMask(rights) {
+        if (!rights) return 0;
+        let mask = 0;
+        const wKing = !rights.wKingMoved && !rights.wRookHMoved;
+        const wQueen = !rights.wKingMoved && !rights.wRookAMoved;
+        const bKing = !rights.bKingMoved && !rights.bRookHMoved;
+        const bQueen = !rights.bKingMoved && !rights.bRookAMoved;
+        if (wKing) mask |= 1;
+        if (wQueen) mask |= 2;
+        if (bKing) mask |= 4;
+        if (bQueen) mask |= 8;
+        return mask;
+    }
+
+    function getEpIndex(ep) {
+        if (!ep) return -1;
+        return ep.row * 8 + ep.col;
+    }
+
+    function searchWASM(depth, isMaximizing, alpha, beta, gameState) {
+        if (!instance) return null;
+        
+        const board = gameState.board;
+        const ptr = getSafePtr(64);
+        writeBoardToWASM(board, ptr);
+        
+        const turnCode = gameState.turn === 'w' ? 0 : 1;
+        const castlingMask = getCastlingMask(gameState.castlingRights);
+        const epIndex = getEpIndex(gameState.enPassantSquare);
+        const halfMove = gameState.halfMoveClock || 0;
+        
+        instance.setGameState(turnCode, castlingMask, epIndex, halfMove);
+        const moveVal = instance.searchWASM(depth, isMaximizing ? 1 : 0, alpha, beta);
+        
+        if (moveVal === 0) return null;
+        
+        const from = moveVal & 0x3F;
+        const to = (moveVal >> 6) & 0x3F;
+        const type = (moveVal >> 12) & 0x0F;
+        
+        const fromR = from >> 3;
+        const fromC = from & 7;
+        const toR = to >> 3;
+        const toC = to & 7;
+        
+        const promotion = (type === 5) ? 'q' : null;
+        
+        return { fromR, fromC, toR, toC, promotion };
+    }
+
+    function getSearchScore() {
+        if (!instance) return 0;
+        return instance.getSearchScore();
+    }
+
     return {
         init,
         evaluateMaterial,
         isSquareAttacked,
+        searchWASM,
+        getSearchScore,
         isLoaded: () => !!instance
     };
 })();
