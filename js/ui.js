@@ -309,14 +309,15 @@ const ChessUI = (() => {
                 updateOpponentAvatar();
             });
             ChessNetwork.on('move', move => {
-                if (move.timers) {
-                    whiteTimeLeft = move.timers.white;
-                    blackTimeLeft = move.timers.black;
-                    increment = move.timers.inc;
-                    if (!isTimerRunning && move.timers.running) startTimer();
+                const timersToUpdate = move.timers ? { ...move.timers } : null;
+                executeMove(move.fromRow, move.fromCol, move.toRow, move.toCol, true);
+                if (timersToUpdate) {
+                    whiteTimeLeft = timersToUpdate.white;
+                    blackTimeLeft = timersToUpdate.black;
+                    increment = timersToUpdate.inc;
+                    if (!isTimerRunning && timersToUpdate.running) startTimer();
                     updateTimerDisplays();
                 }
-                executeMove(move.fromRow, move.fromCol, move.toRow, move.toCol, true);
                 renderBoard();
             });
             ChessNetwork.on('sync', data => {
@@ -1396,21 +1397,43 @@ const ChessUI = (() => {
         if (stateHistory.length < levels) levels = stateHistory.length;
         if (levels === 0) return;
 
+        // Stop the timer during the rollback process
+        stopTimer();
+
         let previousState;
+        const gameHasTimeControl = parseTimeControl().time > 0;
+
         for (let i = 0; i < levels; i++) {
             previousState = stateHistory.pop();
+            // Subtract the increment that was added to the player when they made the move
+            if (previousState && gameHasTimeControl) {
+                const turn = previousState.boardState.turn || 'w';
+                if (turn === 'w') {
+                    whiteTimeLeft = Math.max(0.1, whiteTimeLeft - increment);
+                } else {
+                    blackTimeLeft = Math.max(0.1, blackTimeLeft - increment);
+                }
+            }
         }
 
         if (previousState) {
             ChessLogic.loadState(previousState.boardState);
-            whiteTimeLeft = previousState.timers.white;
-            blackTimeLeft = previousState.timers.black;
-            increment = previousState.timers.inc;
+            
+            // If we have completely rolled back to the initial state (before the first move),
+            // reset the timers to the full starting time.
+            if (stateHistory.length === 0 && gameHasTimeControl) {
+                const tc = parseTimeControl();
+                whiteTimeLeft = tc.time;
+                blackTimeLeft = tc.time;
+                increment = tc.inc;
+            } else {
+                increment = previousState.timers.inc;
+            }
+
             if (previousState.timers.running) {
                 startTimer();
-            } else {
-                stopTimer();
             }
+            
             historyListElement.innerHTML = previousState.history;
             moveCount = previousState.moveCount;
             capturedByWhite = previousState.captures.white;
