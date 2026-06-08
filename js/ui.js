@@ -223,11 +223,19 @@ const ChessUI = (() => {
         // Network button logic
         if (networkBtn) {
             console.log('[UI] Network button found, setting up listeners...');
-            const modal = document.getElementById('network-modal');
-            const connectBtn = document.getElementById('network-connect-btn');
-            const cancelBtn = document.getElementById('network-cancel-btn');
-            const ipInput = document.getElementById('network-ip-input');
-            const roomInput = document.getElementById('network-room-input');
+            
+            function connectToRoom(roomId) {
+                try {
+                    pcToggle.checked = false;
+                    const diffContainer = document.getElementById('difficulty-container');
+                    if (diffContainer) diffContainer.style.display = 'none';
+                    startNewGame(); 
+                    
+                    SocketTransport.init(roomId);
+                } catch (e) {
+                    console.error('Network Error:', e);
+                }
+            }
 
             networkBtn.addEventListener('click', () => {
                 const currentStatus = (typeof ChessNetwork !== 'undefined') ? ChessNetwork.getState() : { connected: false };
@@ -235,6 +243,11 @@ const ChessUI = (() => {
                 
                 if (currentStatus.connected) {
                     if (confirm('Покинуть комнату и вернуться в одиночную игру?')) {
+                        // Clear hash
+                        if (window.location.hash) {
+                            history.replaceState(null, null, ' ');
+                        }
+                        
                         if (typeof SocketTransport !== 'undefined') {
                             SocketTransport.disconnect();
                         } else if (typeof ChessNetwork !== 'undefined') {
@@ -242,34 +255,25 @@ const ChessUI = (() => {
                         }
                         startNewGame();
                     }
-                } else if (modal) {
-                    modal.style.display = 'flex';
+                } else {
+                    // Extract room ID from URL hash or generate a random 6-digit room ID
+                    let roomId = window.location.hash.replace('#', '').trim();
+                    if (!roomId) {
+                        roomId = String(Math.floor(100000 + Math.random() * 900000));
+                        window.location.hash = roomId;
+                    }
+                    connectToRoom(roomId);
                 }
             });
 
-            if (cancelBtn) {
-                cancelBtn.onclick = () => {
-                    modal.style.display = 'none';
-                };
-            }
-
-            if (connectBtn) {
-                connectBtn.onclick = () => {
-                    const serverIp = ipInput.value.trim() || '192.168.0.105';
-                    const roomId = roomInput.value.trim() || '123';
-                    
-                    try {
-                        modal.style.display = 'none';
-                        pcToggle.checked = false;
-                        document.getElementById('difficulty-container').style.display = 'none';
-                        startNewGame(); 
-                        
-                        const fullUrl = serverIp.includes(':') ? serverIp : `http://${serverIp}:3000`;
-                        SocketTransport.init(roomId, fullUrl);
-                    } catch (e) {
-                        console.error('Network Error:', e);
-                    }
-                };
+            // Automatically connect on page load if hash is present in URL
+            const initialHash = window.location.hash.replace('#', '').trim();
+            if (initialHash) {
+                console.log('[UI] Auto-connecting to room from URL hash:', initialHash);
+                // Delay slightly to ensure full initialization of other systems
+                setTimeout(() => {
+                    connectToRoom(initialHash);
+                }, 100);
             }
         } else {
             console.error('[UI] network-btn element not found in DOM!');
