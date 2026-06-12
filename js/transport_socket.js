@@ -228,7 +228,7 @@ const SocketTransport = (() => {
             return;
         }
 
-        const serverUrl = customUrl || (window.location.protocol === 'file:' ? 'http://192.168.0.105:3000' : undefined);
+        const serverUrl = customUrl || (window.location.protocol === 'file:' ? 'http://localhost:3000' : undefined);
         console.log('Connecting to:', serverUrl);
         socket = io(serverUrl);
         currentRoom = roomId;

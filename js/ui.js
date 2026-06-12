@@ -224,14 +224,14 @@ const ChessUI = (() => {
         if (networkBtn) {
             console.log('[UI] Network button found, setting up listeners...');
             
-            function connectToRoom(roomId) {
+            function connectToRoom(roomId, serverUrl = null) {
                 try {
                     pcToggle.checked = false;
                     const diffContainer = document.getElementById('difficulty-container');
                     if (diffContainer) diffContainer.style.display = 'none';
                     startNewGame(); 
                     
-                    SocketTransport.init(roomId);
+                    SocketTransport.init(roomId, serverUrl);
                 } catch (e) {
                     console.error('Network Error:', e);
                 }
@@ -259,9 +259,15 @@ const ChessUI = (() => {
                     // Extract room ID from URL hash or default to '123'
                     let roomId = window.location.hash.replace('#', '').trim();
                     if (!roomId) {
-                        roomId = '123';
+                        roomId = prompt("Введите ID комнаты для игры (латиница/цифры):", "123");
+                        if (!roomId) return;
                     }
-                    connectToRoom(roomId);
+                    
+                    const defaultUrl = 'http://localhost:3000';
+                    const serverUrl = prompt("Введите адрес игрового сервера (IP-адрес хоста или домен):", defaultUrl);
+                    if (!serverUrl) return;
+                    
+                    connectToRoom(roomId, serverUrl);
                 }
             });
 
@@ -343,6 +349,11 @@ const ChessUI = (() => {
                     blackTimeLeft = data.timers.black;
                     increment = data.timers.inc;
                     updateTimerDisplays();
+                    if (data.timers.running && !isTimerRunning && !gameEnded) {
+                        startTimer();
+                    } else if (!data.timers.running && isTimerRunning) {
+                        stopTimer();
+                    }
                 }
                 if (data.history) {
                     historyListElement.innerHTML = data.history;
@@ -904,6 +915,12 @@ const ChessUI = (() => {
             title = 'Ничья';
             sub = 'Правило 50 ходов';
             icon = '🤝';
+        } else if (reason === 'material') {
+            statusElement.textContent = 'Ничья! Недостаточно фигур.';
+            gameInfoElement.textContent = 'Невозможно поставить мат';
+            title = 'Ничья';
+            sub = 'Недостаточно фигурного материала';
+            icon = '🤝';
         }
 
         // Show game over modal to notify the user
@@ -1274,6 +1291,8 @@ const ChessUI = (() => {
             finishGame('repetition');
         } else if (status === '50moves') {
             finishGame('50moves');
+        } else if (status === 'material') {
+            finishGame('material');
         } else {
             const inCheck = ChessLogic.isKingInCheck(turn);
             statusElement.textContent = `Ход ${moveColor}${inCheck ? ' (ШАХ!)' : ''}`;

@@ -7,3 +7,5 @@ release/
 dist/
 .vscode/
 coverage/
+.agents/
+ORIGINAL_REQUEST.md

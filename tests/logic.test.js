@@ -135,8 +135,8 @@ describe('ChessLogic', () => {
     });
 
     test('Should detect 50-move rule draw', () => {
-        // Start with a position where we have 99 half-moves
-        ChessLogic.loadFen('k7/8/8/8/8/8/8/K7 w - - 99 50');
+        // Start with a position where we have 99 half-moves (with pawns to avoid insufficient material)
+        ChessLogic.loadFen('k7/8/8/8/p7/8/P7/K7 w - - 99 50');
         
         let gameStatus = null;
         ChessLogic.subscribe(state => gameStatus = state.status);
@@ -211,5 +211,40 @@ describe('ChessLogic', () => {
     test('Should handle invalid state in loadState', () => {
         expect(ChessLogic.loadState(null)).toBe(false);
         expect(ChessLogic.loadState({ board: [] })).toBe(false); // Invalid board
+    });
+
+    test('Should detect insufficient material draw', () => {
+        // King vs King
+        ChessLogic.loadFen('k7/8/8/8/8/8/8/K7 w - - 0 1');
+        let gameStatus = null;
+        ChessLogic.subscribe(state => gameStatus = state.status);
+        ChessLogic.movePiece(7, 0, 7, 1);
+        expect(gameStatus).toBe('material');
+
+        // King + Knight vs King
+        ChessLogic.loadFen('k7/8/8/8/8/8/8/K1N5 w - - 0 1');
+        gameStatus = null;
+        ChessLogic.movePiece(7, 0, 7, 1);
+        expect(gameStatus).toBe('material');
+
+        // King + Bishop vs King + Bishop (same color squares)
+        ChessLogic.loadFen('k4b2/8/8/8/8/8/8/K1B5 w - - 0 1');
+        gameStatus = null;
+        ChessLogic.movePiece(7, 0, 7, 1);
+        expect(gameStatus).toBe('material');
+    });
+
+    test('Should lose castling rights when rook is captured on starting square', () => {
+        // White: King on e1, Rook on a1. Black: Bishop on f6 (can capture on a1)
+        ChessLogic.loadFen('r3k2r/8/5b2/8/8/8/8/R3K2R b KQkq - 0 1');
+        
+        // Black captures White's rook on a1 (Bxa1)
+        // a1 is row 7, col 0. f6 is row 2, col 5
+        const success = ChessLogic.movePiece(2, 5, 7, 0); 
+        expect(success).toBe(true);
+        
+        const state = ChessLogic.getState();
+        // White's queenside rook is captured, so castling right is lost (wRookAMoved should be true)
+        expect(state.castlingRights.wRookAMoved).toBe(true);
     });
 });

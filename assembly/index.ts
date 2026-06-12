@@ -688,6 +688,9 @@ function orderMovesWASM(searchDepth: i32, count: i32, ttMove: u32): void {
 
 function quiesceWASM(alpha: i32, beta: i32, isMaximizing: boolean, searchDepth: i32): i32 {
   const standPat = evaluateMaterial(boardPtr);
+  if (searchDepth >= MAX_SEARCH_DEPTH - 1) {
+    return standPat;
+  }
   
   if (isMaximizing) {
     if (standPat >= beta) return beta;
@@ -744,6 +747,9 @@ function quiesceWASM(alpha: i32, beta: i32, isMaximizing: boolean, searchDepth: 
 let bestMoveRoot: u32 = 0;
 
 function minimaxInternal(depth: i32, isMaximizing: boolean, alpha: i32, beta: i32, searchDepth: i32): i32 {
+  if (searchDepth >= MAX_SEARCH_DEPTH - 1) {
+    return evaluateMaterial(boardPtr);
+  }
   const color: u8 = isMaximizing ? 0 : 1;
   
   // Transposition Table lookup

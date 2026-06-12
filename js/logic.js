@@ -164,12 +164,56 @@ var ChessLogic = (() => {
         positionHistory[fen] = (positionHistory[fen] || 0) + 1;
     }
 
+    function isInsufficientMaterial() {
+        let whitePieces = [];
+        let blackPieces = [];
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const piece = board[r][c];
+                if (!piece) continue;
+                const isWhite = piece === piece.toUpperCase();
+                const type = piece.toLowerCase();
+                if (type === 'k') continue; // Kings are always on board
+                if (isWhite) {
+                    whitePieces.push({ type, r, c });
+                } else {
+                    blackPieces.push({ type, r, c });
+                }
+            }
+        }
+        
+        const wCount = whitePieces.length;
+        const bCount = blackPieces.length;
+        
+        // 1. King vs King
+        if (wCount === 0 && bCount === 0) return true;
+        
+        // 2. King + Bishop vs King
+        if (wCount === 1 && whitePieces[0].type === 'b' && bCount === 0) return true;
+        if (bCount === 1 && blackPieces[0].type === 'b' && wCount === 0) return true;
+        
+        // 3. King + Knight vs King
+        if (wCount === 1 && whitePieces[0].type === 'n' && bCount === 0) return true;
+        if (bCount === 1 && blackPieces[0].type === 'n' && wCount === 0) return true;
+        
+        // 4. King + Bishop vs King + Bishop (Bishops on same color squares)
+        if (wCount === 1 && whitePieces[0].type === 'b' && bCount === 1 && blackPieces[0].type === 'b') {
+            const wSquareColor = (whitePieces[0].r + whitePieces[0].c) % 2;
+            const bSquareColor = (blackPieces[0].r + blackPieces[0].c) % 2;
+            return wSquareColor === bSquareColor;
+        }
+        
+        return false;
+    }
+
     function checkDrawConditions() {
         const legalMoves = getAllLegalMoves(turn);
-        if (legalMoves.length === 0 && !isKingInCheck(turn)) return 'stalemate';
+        if (legalMoves.length === 0) {
+            return isKingInCheck(turn) ? 'checkmate' : 'stalemate';
+        }
+        if (isInsufficientMaterial()) return 'material';
         if (positionHistory[getSimpleFen()] >= 3) return 'repetition';
         if (halfMoveClock >= 100) return '50moves'; // 100 half-moves = 50 full moves
-        if (legalMoves.length === 0 && isKingInCheck(turn)) return 'checkmate';
         return null;
     }
 
@@ -388,10 +432,10 @@ var ChessLogic = (() => {
             board[tR][tC] = piece; board[fR][fC] = null;
             if (piece === 'K') castlingRights.wKingMoved = true;
             if (piece === 'k') castlingRights.bKingMoved = true;
-            if (fR === 7 && fC === 0) castlingRights.wRookAMoved = true;
-            if (fR === 7 && fC === 7) castlingRights.wRookHMoved = true;
-            if (fR === 0 && fC === 0) castlingRights.bRookAMoved = true;
-            if (fR === 0 && fC === 7) castlingRights.bRookHMoved = true;
+            if (fR === 7 && fC === 0 || tR === 7 && tC === 0) castlingRights.wRookAMoved = true;
+            if (fR === 7 && fC === 7 || tR === 7 && tC === 7) castlingRights.wRookHMoved = true;
+            if (fR === 0 && fC === 0 || tR === 0 && tC === 0) castlingRights.bRookAMoved = true;
+            if (fR === 0 && fC === 7 || tR === 0 && tC === 7) castlingRights.bRookHMoved = true;
             
             turn = turn === 'w' ? 'b' : 'w';
             recordPosition();
