@@ -604,6 +604,65 @@ function applyMoveWASM(move: u32, depth: i32): boolean {
     store<u8>(boardPtr + to, promoPiece);
   }
   
+  // Incremental Zobrist Hash Update (O(1))
+  let newHash = currentHash;
+  
+  // 1. Piece leaves 'from'
+  newHash ^= zobristPieces[getPieceIndex(piece) * 64 + from];
+  
+  // 2. Captured piece leaves destination
+  if (captured !== 0) {
+    const capIdx = getPieceIndex(captured);
+    if (type === 4) { // En Passant
+      const epCapSq = to + (piece === 80 ? 8 : -8);
+      newHash ^= zobristPieces[capIdx * 64 + epCapSq];
+    } else { // Normal capture
+      newHash ^= zobristPieces[capIdx * 64 + to];
+    }
+  }
+  
+  // 3. Piece arrives at 'to'
+  if (type === 5) { // Promotion
+    const promoPiece: u8 = piece === 80 ? 81 : 113; // 'Q' or 'q'
+    newHash ^= zobristPieces[getPieceIndex(promoPiece) * 64 + to];
+  } else {
+    newHash ^= zobristPieces[getPieceIndex(piece) * 64 + to];
+  }
+  
+  // 4. Castling rook moves
+  if (type === 2) {
+    const rFrom = from + 3;
+    const rTo = from + 1;
+    const rook = load<u8>(boardPtr + rTo);
+    const rookIdx = getPieceIndex(rook);
+    newHash ^= zobristPieces[rookIdx * 64 + rFrom];
+    newHash ^= zobristPieces[rookIdx * 64 + rTo];
+  } else if (type === 3) {
+    const rFrom = from - 4;
+    const rTo = from - 1;
+    const rook = load<u8>(boardPtr + rTo);
+    const rookIdx = getPieceIndex(rook);
+    newHash ^= zobristPieces[rookIdx * 64 + rFrom];
+    newHash ^= zobristPieces[rookIdx * 64 + rTo];
+  }
+  
+  // 5. Toggle turn
+  newHash ^= zobristBlackToMove;
+  
+  // 6. Castling rights change
+  newHash ^= zobristCastling[undoCastlingRights[depth]];
+  newHash ^= zobristCastling[castlingRights];
+  
+  // 7. En Passant square change
+  if (undoEnPassantSquare[depth] !== -1) {
+    newHash ^= zobristEnPassant[undoEnPassantSquare[depth] & 7];
+  }
+  if (enPassantSquare !== -1) {
+    newHash ^= zobristEnPassant[enPassantSquare & 7];
+  }
+  
+  currentHash = newHash;
+  
   turn = 1 - turn;
   
   const moverColor: u8 = <u8>(1 - turn);
@@ -640,7 +699,7 @@ function undoMoveWASM(move: u32, depth: i32): void {
 }
 
 // Transposition Table arrays (TT_SIZE must be power of two)
-const TT_SIZE: u32 = 65536;
+const TT_SIZE: u32 = 262144;
 const tt_hash = new Uint64Array(TT_SIZE);
 const tt_depth = new Int32Array(TT_SIZE);
 const tt_score = new Int32Array(TT_SIZE);
@@ -803,11 +862,9 @@ function minimaxInternal(depth: i32, isMaximizing: boolean, alpha: i32, beta: i3
       continue;
     }
     
-    currentHash = computeZobristHash();
     const score = minimaxInternal(depth - 1, !isMaximizing, alpha, beta, searchDepth + 1);
     
     undoMoveWASM(move, searchDepth);
-    currentHash = computeZobristHash();
     
     if (isMaximizing) {
       if (score > bestVal) {
