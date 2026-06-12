@@ -1,4 +1,4 @@
-const { app, server } = require('../server.cjs');
+const { app, server } = require('../server.js');
 const { io: Client } = require('socket.io-client');
 const ChessLogic = require('../js/logic');
 const ChessAIHard = require('../js/ai_hard');

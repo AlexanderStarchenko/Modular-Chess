@@ -9,8 +9,25 @@ const io = new Server(server, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"]
-    }
+    },
+    transports: ['websocket', 'polling'],
+    allowUpgrades: true,
+    perMessageDeflate: true,
+    httpCompression: true,
+    pingInterval: 5000,
+    pingTimeout: 2000,
+    cookie: false
 });
+
+// Security headers for SharedArrayBuffer and Service Worker
+app.use((req, res, next) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    next();
+});
+
+// Explicitly set MIME type for WASM files
+express.static.mime.define({'application/wasm': ['wasm']});
 
 // Serve static files from the current directory
 app.use(express.static(__dirname));
@@ -18,12 +35,16 @@ app.use(express.static(__dirname));
 const rooms = new Map();
 
 io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+    if (process.env.NODE_ENV !== 'test') {
+        console.log('A user connected:', socket.id);
+    }
 
     // Join a specific game room
     socket.on('join-room', (roomId) => {
         socket.join(roomId);
-        console.log(`User ${socket.id} joined room: ${roomId}`);
+        if (process.env.NODE_ENV !== 'test') {
+            console.log(`User ${socket.id} joined room: ${roomId}`);
+        }
         
         const room = io.sockets.adapter.rooms.get(roomId);
         const numClients = room ? room.size : 0;
@@ -80,6 +101,14 @@ io.on('connection', (socket) => {
         socket.to(data.roomId).emit('draw-response', data.accepted);
     });
 
+    // NTP-like time sync
+    socket.on('chess-ping', (clientTime) => {
+        socket.emit('chess-pong', {
+            clientTime: clientTime,
+            serverTime: Date.now()
+        });
+    });
+
     socket.on('disconnecting', () => {
         for (const roomId of socket.rooms) {
             if (roomId === socket.id) continue;
@@ -91,7 +120,9 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        console.log('User disconnected');
+        if (process.env.NODE_ENV !== 'test') {
+            console.log('User disconnected');
+        }
     });
 });
 
@@ -113,10 +144,14 @@ function getLocalIp() {
 const PORT = 3000;
 const LOCAL_IP = getLocalIp();
 
-server.listen(PORT, '0.0.0.0', () => {
-    console.log('-----------------------------------');
-    console.log(`Chess server is running!`);
-    console.log(`Local:   http://localhost:${PORT}`);
-    console.log(`Network: http://${LOCAL_IP}:${PORT}`);
-    console.log('-----------------------------------');
-});
+if (require.main === module) {
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log('-----------------------------------');
+        console.log(`Chess server is running!`);
+        console.log(`Local:   http://localhost:${PORT}`);
+        console.log(`Network: http://${LOCAL_IP}:${PORT}`);
+        console.log('-----------------------------------');
+    });
+}
+
+module.exports = { app, server };

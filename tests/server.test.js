@@ -1,5 +1,5 @@
 const request = require('supertest');
-const { app, server } = require('../server.cjs');
+const { app, server } = require('../server.js');
 const { io: Client } = require('socket.io-client');
 
 describe('Server Headers and Static Files', () => {
