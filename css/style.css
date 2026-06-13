@@ -151,6 +151,7 @@ body {
     height: 100%;
     border: none;
     overflow: hidden;
+    background-color: var(--board-dark);
 }
 
 /* Responsive Squares and Piece Scaling via Container Queries */
