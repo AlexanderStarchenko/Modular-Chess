@@ -11,6 +11,9 @@ const ChessUI = (() => {
     let networkState = (typeof ChessNetwork !== 'undefined') ? ChessNetwork.getState() : { connected: false };
     let switchTab;
     
+    const isElectron = navigator.userAgent.toLowerCase().includes(' electron/');
+    const isFileProtocol = window.location.protocol === 'file:' && !isElectron;
+    
     let selectedSquare = null;
     let lastMove = null;
     let moveCount = 1;
@@ -1194,9 +1197,6 @@ const ChessUI = (() => {
         
         const topPlayerName = document.getElementById('top-player-name');
         
-        const isElectron = navigator.userAgent.toLowerCase().includes(' electron/');
-        const isFileProtocol = window.location.protocol === 'file:' && !isElectron;
-        
         // Stockfish Level Mapping: [Skill Level, Move Time]
         const stockfishSettings = {
             '1': [0, 500],   // Easy
@@ -1497,6 +1497,14 @@ const ChessUI = (() => {
         if (switchTab) switchTab('analysis');
         if (analysisBtn) analysisBtn.style.display = 'none';
         if (analysisPanel) analysisPanel.style.display = 'block';
+        
+        if (isFileProtocol) {
+            if (analysisProgress) {
+                analysisProgress.innerHTML = `<span class="text-error font-semibold block text-center py-4">Анализ недоступен при открытии файла напрямую через браузер.<br>Пожалуйста, запустите через Electron (npm start) или локальный веб-сервер.</span>`;
+            }
+            return;
+        }
+
         if (analysisProgress) analysisProgress.textContent = 'Подготовка к анализу...';
         if (analysisList) analysisList.innerHTML = '';
         if (stockfishTip) stockfishTip.textContent = '';
