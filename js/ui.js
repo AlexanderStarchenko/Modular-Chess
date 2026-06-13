@@ -46,6 +46,16 @@ const ChessUI = (() => {
         'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚'
     };
 
+    function convertToUiMove(move) {
+        if (!move) return null;
+        return {
+            fromRow: move.fromRow !== undefined ? move.fromRow : move.fR,
+            fromCol: move.fromCol !== undefined ? move.fromCol : move.fC,
+            toRow: move.toRow !== undefined ? move.toRow : move.tR,
+            toCol: move.toCol !== undefined ? move.toCol : move.tC
+        };
+    }
+
     const ChessAudio = (() => {
         let context = null;
 
@@ -342,7 +352,7 @@ const ChessUI = (() => {
                 if (data.boardState) {
                     ChessLogic.loadState(data.boardState);
                     const history = data.boardState.gameHistory || [];
-                    lastMove = history.length ? { ...history[history.length - 1].move } : null;
+                    lastMove = history.length ? convertToUiMove(history[history.length - 1].move) : null;
                 }
                 if (data.timers) {
                     whiteTimeLeft = data.timers.white;
@@ -1460,9 +1470,9 @@ const ChessUI = (() => {
             moveCount = previousState.moveCount;
             capturedByWhite = previousState.captures.white;
             capturedByBlack = previousState.captures.black;
-            lastMove = previousState.lastMove || (previousState.boardState && previousState.boardState.gameHistory && previousState.boardState.gameHistory.length
-                ? { ...previousState.boardState.gameHistory[previousState.boardState.gameHistory.length - 1].move }
-                : null);
+            lastMove = convertToUiMove(previousState.lastMove || (previousState.boardState && previousState.boardState.gameHistory && previousState.boardState.gameHistory.length
+                ? previousState.boardState.gameHistory[previousState.boardState.gameHistory.length - 1].move
+                : null));
             
             selectedSquare = null;
             gameEnded = false;
@@ -1619,7 +1629,8 @@ const ChessUI = (() => {
         
         ChessLogic.loadFen(result.beforeFen, { keepHistory: true });
         analysisSnapshot = { turn: ChessLogic.getTurn() };
-        lastMove = result.move ? { ...result.move } : null;
+        const uiMove = result.move ? convertToUiMove(result.move) : null;
+        lastMove = uiMove;
         
         if (result.bestmove && result.bestmove !== '(none)') {
             suggestedMove = parseUciMove(result.bestmove);
@@ -1629,12 +1640,12 @@ const ChessUI = (() => {
             if (stockfishTip) stockfishTip.textContent = 'Нет совета';
         }
         
-        selectedSquare = { row: result.move.fromRow, col: result.move.fromCol };
+        selectedSquare = uiMove ? { row: uiMove.fromRow, col: uiMove.fromCol } : null;
         
         renderBoard();
         
         // Temporarily highlight the actual move destination
-        const destSquare = boardElement.querySelector(`[data-row="${result.move.toRow}"][data-col="${result.move.toCol}"]`);
+        const destSquare = uiMove ? boardElement.querySelector(`[data-row="${uiMove.toRow}"][data-col="${uiMove.toCol}"]`) : null;
         if (destSquare) {
             destSquare.classList.add('highlight');
         }
@@ -1660,7 +1671,7 @@ const ChessUI = (() => {
             isRemoteAction = false;
             if (ok) {
                 const history = state && state.gameHistory ? state.gameHistory : [];
-                lastMove = history.length ? { ...history[history.length - 1].move } : null;
+                lastMove = history.length ? convertToUiMove(history[history.length - 1].move) : null;
                 renderBoard();
             }
             return ok;
