@@ -28,15 +28,27 @@ global.AudioContext = jest.fn().mockImplementation(() => ({
 }));
 global.requestAnimationFrame = jest.fn(cb => cb());
 
+let mockSubscribeCallback = null;
+
 // Mock ChessLogic
 const ChessLogic = require('../js/logic');
 jest.mock('../js/logic', () => ({
     getBoard: jest.fn().mockReturnValue(Array.from({ length: 8 }, () => new Array(8).fill(null))),
     getTurn: jest.fn().mockReturnValue('w'),
-    movePiece: jest.fn().mockReturnValue(true),
+    movePiece: jest.fn().mockImplementation((fromR, fromC, toR, toC) => {
+        if (mockSubscribeCallback) {
+            mockSubscribeCallback({
+                turn: require('../js/logic').getTurn(),
+                status: null
+            });
+        }
+        return true;
+    }),
     isKingInCheck: jest.fn().mockReturnValue(false),
     getState: jest.fn().mockReturnValue({}),
-    subscribe: jest.fn(),
+    subscribe: jest.fn().mockImplementation((cb) => {
+        mockSubscribeCallback = cb;
+    }),
     initBoard: jest.fn(),
     loadState: jest.fn(),
     getGameHistory: jest.fn().mockReturnValue([]),
@@ -361,15 +373,20 @@ describe('ChessUI Integration', () => {
     let originalClearTimeout;
     let originalSetInterval;
     let originalClearInterval;
+    let mockCtx;
+
+    let originalMathRandom;
 
     afterEach(() => {
         global.setTimeout = originalSetTimeout;
         global.clearTimeout = originalClearTimeout;
         global.setInterval = originalSetInterval;
         global.clearInterval = originalClearInterval;
+        Math.random = originalMathRandom;
     });
 
     beforeEach(() => {
+        mockSubscribeCallback = null;
         clickHandlers = {};
         changeHandlers = {};
         networkListeners = {};
@@ -379,7 +396,14 @@ describe('ChessUI Integration', () => {
         originalClearTimeout = global.clearTimeout;
         originalSetInterval = global.setInterval;
         originalClearInterval = global.clearInterval;
+        originalMathRandom = Math.random;
 
+        let randomCounter = 0;
+        Math.random = jest.fn().mockImplementation(() => {
+            randomCounter++;
+            return 0.1 + (randomCounter / 1000); // 0.101, 0.102, ...
+        });
+        
         global.setTimeout = jest.fn((cb, ms) => {
             const id = Math.random();
             timeouts[id] = cb;
@@ -397,16 +421,49 @@ describe('ChessUI Integration', () => {
             delete timeouts[id];
         });
         
+        mockCtx = {
+            scale: jest.fn(),
+            clearRect: jest.fn(),
+            fillRect: jest.fn(),
+            fillText: jest.fn(),
+            strokeText: jest.fn(),
+            save: jest.fn(),
+            restore: jest.fn(),
+            translate: jest.fn(),
+            fillStyle: '',
+            strokeStyle: '',
+            lineWidth: 1,
+            font: '',
+            textAlign: '',
+            textBaseline: '',
+            shadowColor: '',
+            shadowBlur: 0,
+            shadowOffsetY: 0
+        };
+
         const createMockElement = (id, overrides = {}) => {
+            const isCanvas = id === 'chess-canvas' || id === 'canvas';
             const el = {
                 id,
                 appendChild: jest.fn(),
                 style: {},
                 dataset: {},
-                getBoundingClientRect: jest.fn().mockReturnValue({ top: 0, left: 0, width: 50, height: 50 }),
+                getBoundingClientRect: jest.fn().mockReturnValue({
+                    top: 0,
+                    left: 0,
+                    width: isCanvas ? 400 : 50,
+                    height: isCanvas ? 400 : 50
+                }),
                 addEventListener: jest.fn((event, handler) => {
                     if (event === 'click') clickHandlers[id] = handler;
                     else if (event === 'change') changeHandlers[id] = handler;
+                    else if (event === 'mousemove') {
+                        if (!clickHandlers[id + '_mousemove']) clickHandlers[id + '_mousemove'] = [];
+                        clickHandlers[id + '_mousemove'].push(handler);
+                    } else if (event === 'mouseleave') {
+                        if (!clickHandlers[id + '_mouseleave']) clickHandlers[id + '_mouseleave'] = [];
+                        clickHandlers[id + '_mouseleave'].push(handler);
+                    }
                 }),
                 classList: {
                     add: jest.fn(),
@@ -420,6 +477,13 @@ describe('ChessUI Integration', () => {
                 querySelectorAll: jest.fn().mockReturnValue([]),
                 ...overrides
             };
+            if (isCanvas) {
+                el.getContext = jest.fn().mockReturnValue(mockCtx);
+                el.width = 400;
+                el.height = 400;
+                el.clientWidth = 400;
+                el.clientHeight = 400;
+            }
             el.parentElement = el;
             return el;
         };
@@ -438,7 +502,8 @@ describe('ChessUI Integration', () => {
             'sidebar-backdrop', 'menu-btn', 'floating-menu-btn', 'close-sidebar-btn',
             'tab-btn-notation', 'tab-btn-stats', 'tab-btn-analysis',
             'tab-content-notation', 'tab-content-stats', 'tab-content-analysis',
-            'game-over-title', 'game-over-reason', 'game-over-icon-container', 'opponent-avatar-container'
+            'game-over-title', 'game-over-reason', 'game-over-icon-container', 'opponent-avatar-container',
+            'chess-canvas'
         ];
         
         mockElements = {};
@@ -480,6 +545,9 @@ describe('ChessUI Integration', () => {
 
         global.confirm = jest.fn().mockReturnValue(true);
         global.alert = jest.fn();
+        global.getComputedStyle = jest.fn().mockReturnValue({
+            getPropertyValue: jest.fn().mockReturnValue('')
+        });
 
         global.ChessLogic = ChessLogic;
         global.ChessNetwork = {
@@ -548,7 +616,8 @@ describe('ChessUI Integration', () => {
         };
 
         ChessUI.syncState(state);
-        expect(global.document.createElement).toHaveBeenCalled();
+        // Canvas rendering draws squares using fillRect
+        expect(mockCtx.fillRect).toHaveBeenCalled();
     });
 
     test('Should handle reset button click to reset the game', () => {
@@ -807,6 +876,7 @@ describe('ChessUI Integration', () => {
     });
 
     test('Should trigger PC Move fallback if stockfish fails', async () => {
+        const spyError = jest.spyOn(console, 'error').mockImplementation(() => {});
         global.ChessAIUnreal.getBestMove.mockRejectedValue(new Error('Stockfish crash'));
         ChessUI.init();
 
@@ -817,14 +887,74 @@ describe('ChessUI Integration', () => {
         
         ChessUI.applyRemoteMove({ fromRow: 6, fromCol: 4, toRow: 4, toCol: 4 });
         
-        // Trigger the scheduled timeout manually
+        // Manually trigger subscriber callback to simulate turn end and schedule PC move
+        if (mockSubscribeCallback) {
+            mockSubscribeCallback({ turn: 'b', status: null });
+        }
+        
+        // Trigger all scheduled timeouts manually
         const keys = Object.keys(timeouts);
         expect(keys.length).toBeGreaterThan(0);
-        timeouts[keys[0]]();
+        Object.values(timeouts).forEach(cb => cb());
 
         // Wait using the original real timeout to let the promise rejection catch block run
         await new Promise(resolve => originalSetTimeout(resolve, 10));
         expect(global.ChessAIHard.getBestMove).toHaveBeenCalled();
+        spyError.mockRestore();
+    });
+
+    test('Should handle click on chess canvas and trigger move/selection', () => {
+        ChessUI.init();
+        expect(clickHandlers['chess-canvas']).toBeDefined();
+
+        const boardSnap = Array.from({ length: 8 }, () => new Array(8).fill(null));
+        boardSnap[6][4] = 'P'; // White Pawn at e2
+        ChessLogic.getBoard.mockReturnValue(boardSnap);
+        ChessLogic.getTurn.mockReturnValue('w');
+
+        // Click e2 (row 6, col 4) to select it
+        // clientX = 4 * 50 + 25 = 225
+        // clientY = 6 * 50 + 25 = 325
+        clickHandlers['chess-canvas']({ clientX: 225, clientY: 325 });
+        
+        // e4: clientX = 4 * 50 + 25 = 225, clientY = 4 * 50 + 25 = 225
+        clickHandlers['chess-canvas']({ clientX: 225, clientY: 225 });
+
+        expect(ChessLogic.movePiece).toHaveBeenCalledWith(6, 4, 4, 4);
+    });
+
+    test('Should handle mousemove and mouseleave on canvas to update hover state', () => {
+        ChessUI.init();
+        
+        const mousemoveHandlers = clickHandlers['chess-canvas_mousemove'];
+        const mouseleaveHandlers = clickHandlers['chess-canvas_mouseleave'];
+        
+        expect(mousemoveHandlers).toBeDefined();
+        expect(mousemoveHandlers.length).toBeGreaterThan(0);
+        expect(mouseleaveHandlers).toBeDefined();
+        expect(mouseleaveHandlers.length).toBeGreaterThan(0);
+
+        mockCtx.fillRect.mockClear();
+
+        // Hover over e2 (row 6, col 4)
+        mousemoveHandlers[0]({ clientX: 225, clientY: 325 });
+
+        expect(mockCtx.fillRect).toHaveBeenCalled();
+
+        mockCtx.fillRect.mockClear();
+        mouseleaveHandlers[0]();
+        expect(mockCtx.fillRect).toHaveBeenCalled();
+    });
+
+    test('Should trigger renderBoard on window resize', () => {
+        ChessUI.init();
+        
+        expect(global.window.addEventListener).toHaveBeenCalledWith('resize', expect.any(Function));
+        const resizeHandler = global.window.addEventListener.mock.calls.find(call => call[0] === 'resize')[1];
+        
+        mockCtx.fillRect.mockClear();
+        resizeHandler();
+        expect(mockCtx.fillRect).toHaveBeenCalled();
     });
 });
 

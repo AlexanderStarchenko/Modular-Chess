@@ -10,6 +10,7 @@ const ChessUI = (() => {
     let analysisBtn, analysisPanel, analysisList, analysisProgress, stockfishTip;
     let networkState = (typeof ChessNetwork !== 'undefined') ? ChessNetwork.getState() : { connected: false };
     let switchTab;
+    let canvas = null, ctx = null, hoverSquare = null;
     
     const isElectron = navigator.userAgent.toLowerCase().includes(' electron/');
     const isFileProtocol = window.location.protocol === 'file:' && !isElectron;
@@ -151,30 +152,40 @@ const ChessUI = (() => {
     function animateMove(fromRow, fromCol, toRow, toCol, piece) {
         if (!boardElement || !boardContainer || !piece) return;
 
-        const fromSquare = boardElement.querySelector(`[data-row="${fromRow}"][data-col="${fromCol}"]`);
-        const toSquare = boardElement.querySelector(`[data-row="${toRow}"][data-col="${toCol}"]`);
-        if (!fromSquare || !toSquare) return;
+        const size = boardElement.clientWidth;
+        if (size <= 0) return;
+        const squareSize = size / 8;
+        const flipped = playerColor === 'b';
+        
+        const fR = flipped ? 7 - fromRow : fromRow;
+        const fC = flipped ? 7 - fromCol : fromCol;
+        const tR = flipped ? 7 - toRow : toRow;
+        const tC = flipped ? 7 - toCol : toCol;
 
-        const fromRect = fromSquare.getBoundingClientRect();
-        const toRect = toSquare.getBoundingClientRect();
-        const boardRect = boardElement.getBoundingClientRect();
         const layer = getBoardOverlay();
         if (!layer) return;
 
         const flyPiece = document.createElement('div');
         flyPiece.className = `piece piece-fly ${piece === piece.toLowerCase() ? 'black-piece' : ''}`;
         flyPiece.textContent = PIECE_UNICODE[piece];
-        flyPiece.style.width = `${fromRect.width}px`;
-        flyPiece.style.height = `${fromRect.height}px`;
-        flyPiece.style.left = `${fromRect.left - boardRect.left}px`;
-        flyPiece.style.top = `${fromRect.top - boardRect.top}px`;
+        flyPiece.style.width = `${squareSize}px`;
+        flyPiece.style.height = `${squareSize}px`;
+        flyPiece.style.left = `${fC * squareSize}px`;
+        flyPiece.style.top = `${fR * squareSize}px`;
         flyPiece.style.transform = 'translate3d(0, 0, 0)';
         flyPiece.style.opacity = '1';
+        
+        // Font size settings to match pieces
+        flyPiece.style.fontSize = `${squareSize * 0.75}px`;
+        flyPiece.style.display = 'flex';
+        flyPiece.style.alignItems = 'center';
+        flyPiece.style.justifyContent = 'center';
+        
         layer.appendChild(flyPiece);
 
         requestAnimationFrame(() => {
-            const dx = toRect.left - fromRect.left;
-            const dy = toRect.top - fromRect.top;
+            const dx = (tC - fC) * squareSize;
+            const dy = (tR - fR) * squareSize;
             flyPiece.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.02)`;
         });
 
@@ -200,6 +211,82 @@ const ChessUI = (() => {
         
         boardContainer = document.getElementById('board-container');
         boardElement = document.getElementById('chessboard');
+        
+        // Initialize Canvas
+        if (boardElement) {
+            canvas = document.getElementById('chess-canvas');
+            if (!canvas) {
+                canvas = document.createElement('canvas');
+                canvas.id = 'chess-canvas';
+                boardElement.appendChild(canvas);
+            }
+            ctx = canvas.getContext('2d');
+            
+            // Bind Canvas Events
+            canvas.addEventListener('click', (event) => {
+                if (isWaitingForPC || gameEnded || analysisSnapshot) return;
+                const rect = canvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                
+                const squareSize = rect.width / 8;
+                const col = Math.floor(x / squareSize);
+                const row = Math.floor(y / squareSize);
+                
+                const flipped = playerColor === 'b';
+                const r = flipped ? 7 - row : row;
+                const c = flipped ? 7 - col : col;
+                
+                if (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                    handleSquareClick(r, c);
+                }
+            });
+            
+            canvas.addEventListener('mousemove', (event) => {
+                if (isWaitingForPC || gameEnded || analysisSnapshot) {
+                    if (hoverSquare) {
+                        hoverSquare = null;
+                        renderBoard();
+                    }
+                    return;
+                }
+                const rect = canvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                
+                const squareSize = rect.width / 8;
+                const col = Math.floor(x / squareSize);
+                const row = Math.floor(y / squareSize);
+                
+                const flipped = playerColor === 'b';
+                const r = flipped ? 7 - row : row;
+                const c = flipped ? 7 - col : col;
+                
+                if (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                    if (!hoverSquare || hoverSquare.row !== r || hoverSquare.col !== c) {
+                        hoverSquare = { row: r, col: c };
+                        renderBoard();
+                    }
+                } else {
+                    if (hoverSquare) {
+                        hoverSquare = null;
+                        renderBoard();
+                    }
+                }
+            });
+            
+            canvas.addEventListener('mouseleave', () => {
+                if (hoverSquare) {
+                    hoverSquare = null;
+                    renderBoard();
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                renderBoard();
+            });
+        }
+
         statusElement = document.getElementById('status');
         gameInfoElement = document.getElementById('game-info');
         historyListElement = document.getElementById('history-list');
@@ -964,76 +1051,160 @@ const ChessUI = (() => {
     }
 
     function renderBoard() {
-        boardElement.innerHTML = '';
+        if (!ctx) return;
+        
+        // Resize canvas to match boardElement size
+        const size = boardElement.clientWidth;
+        if (size > 0 && (canvas.width !== size || canvas.height !== size)) {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = size * dpr;
+            canvas.height = size * dpr;
+            canvas.style.width = `${size}px`;
+            canvas.style.height = `${size}px`;
+            ctx.scale(dpr, dpr);
+        }
+        
+        const squareSize = canvas.clientWidth / 8;
+        ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+        
         const board = ChessLogic.getBoard();
         const flipped = playerColor === 'b';
-
+        
+        // Read theme colors
+        const style = getComputedStyle(document.documentElement);
+        const lightColor = style.getPropertyValue('--board-light').trim() || '#f0d9b5';
+        const darkColor = style.getPropertyValue('--board-dark').trim() || '#b58863';
+        
+        // 1. Draw Squares & Highlights
         for (let ri = 0; ri < 8; ri++) {
             for (let ci = 0; ci < 8; ci++) {
                 const r = flipped ? 7 - ri : ri;
                 const c = flipped ? 7 - ci : ci;
-
-                const square = document.createElement('div');
-                square.className = `square ${(r + c) % 2 === 0 ? 'light' : 'dark'}`;
-                square.dataset.row = r;
-                square.dataset.col = c;
-
-                // Add coordinates
-                if (ci === 0) {
-                    const rankLabel = document.createElement('div');
-                    rankLabel.className = 'coordinate rank-label';
-                    rankLabel.textContent = 8 - r;
-                    square.appendChild(rankLabel);
-                }
-                if (ri === 7) {
-                    const fileLabel = document.createElement('div');
-                    fileLabel.className = 'coordinate file-label';
-                    fileLabel.textContent = String.fromCharCode(97 + c);
-                    square.appendChild(fileLabel);
-                }
-
-                const piece = board[r][c];
-                if (piece) {
-                    const pieceSpan = document.createElement('span');
-                    const isBlack = piece === piece.toLowerCase();
-                    pieceSpan.className = `piece ${isBlack ? 'black-piece' : ''}`;
-                    pieceSpan.textContent = PIECE_UNICODE[piece];
-                    square.appendChild(pieceSpan);
-                }
-
+                
+                const x = ci * squareSize;
+                const y = ri * squareSize;
+                
+                // Base Square
+                ctx.fillStyle = (r + c) % 2 === 0 ? lightColor : darkColor;
+                ctx.fillRect(x, y, squareSize, squareSize);
+                
+                // Selected Square Highlight
                 if (selectedSquare && selectedSquare.row === r && selectedSquare.col === c) {
-                    square.classList.add('highlight');
-                }
-
-                if (lastMove && lastMove.fromRow === r && lastMove.fromCol === c) {
-                    square.classList.add('last-move-from');
-                }
-
-                if (lastMove && lastMove.toRow === r && lastMove.toCol === c) {
-                    square.classList.add('last-move-to');
-                }
-
-                if (suggestedMove && suggestedMove.fromRow === r && suggestedMove.fromCol === c) {
-                    square.classList.add('suggested-from');
-                }
-
-                if (suggestedMove && suggestedMove.toRow === r && suggestedMove.toCol === c) {
-                    square.classList.add('suggested-to');
+                    ctx.fillStyle = 'rgba(255, 255, 0, 0.4)';
+                    ctx.fillRect(x, y, squareSize, squareSize);
                 }
                 
+                // Last Move Highlights
+                if (lastMove && lastMove.fromRow === r && lastMove.fromCol === c) {
+                    ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
+                    ctx.fillRect(x, y, squareSize, squareSize);
+                }
+                if (lastMove && lastMove.toRow === r && lastMove.toCol === c) {
+                    ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
+                    ctx.fillRect(x, y, squareSize, squareSize);
+                }
+                
+                // Suggested Best Move Highlights
+                if (suggestedMove && suggestedMove.fromRow === r && suggestedMove.fromCol === c) {
+                    ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+                    ctx.fillRect(x, y, squareSize, squareSize);
+                }
+                if (suggestedMove && suggestedMove.toRow === r && suggestedMove.toCol === c) {
+                    ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+                    ctx.fillRect(x, y, squareSize, squareSize);
+                }
+                
+                // Check Highlight
+                const piece = board[r][c];
                 const currentTurn = analysisSnapshot ? analysisSnapshot.turn : ChessLogic.getTurn();
                 const isCurrentTurnKing = (currentTurn === 'w' && piece === 'K') || (currentTurn === 'b' && piece === 'k');
                 if (isCurrentTurnKing && ChessLogic.isKingInCheck(currentTurn)) {
-                    square.classList.add('in-check');
+                    ctx.fillStyle = 'rgba(255, 0, 0, 0.4)';
+                    ctx.fillRect(x, y, squareSize, squareSize);
                 }
-
-                square.addEventListener('click', () => {
-                    if (!isWaitingForPC && !gameEnded && !analysisSnapshot) handleSquareClick(r, c);
-                });
-                boardElement.appendChild(square);
+                
+                // Hover square overlay
+                if (hoverSquare && hoverSquare.row === r && hoverSquare.col === c && !isWaitingForPC && !gameEnded && !analysisSnapshot) {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+                    ctx.fillRect(x, y, squareSize, squareSize);
+                }
             }
         }
-
+        
+        // 2. Draw Coordinates & Pieces
+        for (let ri = 0; ri < 8; ri++) {
+            for (let ci = 0; ci < 8; ci++) {
+                const r = flipped ? 7 - ri : ri;
+                const c = flipped ? 7 - ci : ci;
+                
+                const x = ci * squareSize;
+                const y = ri * squareSize;
+                
+                // Coordinates
+                ctx.font = 'bold 10px Inter, Outfit, sans-serif';
+                ctx.fillStyle = (r + c) % 2 === 0 ? darkColor : lightColor;
+                
+                if (ci === 0) { // Rank Label (left edge)
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'top';
+                    ctx.fillText(8 - r, x + 4, y + 4);
+                }
+                if (ri === 7) { // File Label (bottom edge)
+                    ctx.textAlign = 'right';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(String.fromCharCode(97 + c), x + squareSize - 4, y + squareSize - 4);
+                }
+                
+                // Piece
+                const piece = board[r][c];
+                if (piece) {
+                    const isBlack = piece === piece.toLowerCase();
+                    const isHovered = hoverSquare && hoverSquare.row === r && hoverSquare.col === c && !isWaitingForPC && !gameEnded && !analysisSnapshot;
+                    
+                    ctx.save();
+                    
+                    // Shadow effect
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+                    ctx.shadowBlur = isHovered ? 8 : 4;
+                    ctx.shadowOffsetY = isHovered ? 5 : 3;
+                    
+                    // Centering
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    
+                    // Hover scaling and vertical float
+                    const scale = isHovered ? 1.12 : 1.0;
+                    const floatY = isHovered ? -2 : 0;
+                    
+                    ctx.translate(x + squareSize / 2, y + squareSize / 2 + floatY);
+                    ctx.scale(scale, scale);
+                    
+                    // Font size based on cqw equivalent: ~75% of square size
+                    const fontSize = squareSize * 0.75;
+                    ctx.font = `${fontSize}px Outfit, "Arial Unicode MS", sans-serif`;
+                    
+                    const text = PIECE_UNICODE[piece];
+                    
+                    // Render outlines & fill
+                    if (isBlack) {
+                        ctx.fillStyle = '#0d0d0d';
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = Math.max(1.5, squareSize / 30);
+                        ctx.strokeText(text, 0, 0);
+                        ctx.fillText(text, 0, 0);
+                    } else {
+                        ctx.fillStyle = '#ffffff';
+                        ctx.strokeStyle = '#000000';
+                        ctx.lineWidth = Math.max(1.5, squareSize / 30);
+                        ctx.strokeText(text, 0, 0);
+                        ctx.fillText(text, 0, 0);
+                    }
+                    
+                    ctx.restore();
+                }
+            }
+        }
+        
         updateStatus();
     }
 
@@ -1652,11 +1823,7 @@ const ChessUI = (() => {
         
         renderBoard();
         
-        // Temporarily highlight the actual move destination
-        const destSquare = uiMove ? boardElement.querySelector(`[data-row="${uiMove.toRow}"][data-col="${uiMove.toCol}"]`) : null;
-        if (destSquare) {
-            destSquare.classList.add('highlight');
-        }
+        // Highlight selection is handled by lastMove in renderBoard
     }
 
     return {
