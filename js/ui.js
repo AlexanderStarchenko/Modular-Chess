@@ -1687,6 +1687,10 @@ const ChessUI = (() => {
     };
 })();
 
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = ChessUI;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     ChessUI.init();
 });

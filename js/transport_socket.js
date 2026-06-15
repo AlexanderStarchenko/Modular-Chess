@@ -397,8 +397,12 @@ const SocketTransport = (() => {
         ChessNetwork.disconnect();
     }
 
-    return {
+    const API = {
         init,
         disconnect
     };
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = API;
+    }
+    return API;
 })();

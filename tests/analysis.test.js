@@ -150,4 +150,55 @@ describe('AnalysisManager', () => {
         
         jest.useRealTimers();
     });
+
+    test('analyzeGame should return immediately if already analyzing', () => {
+        // Mock worker to do nothing when receiving messages (never responds)
+        global.Worker.mockImplementationOnce(function() {
+            return {
+                onmessage: null,
+                postMessage: jest.fn(),
+                terminate: jest.fn()
+            };
+        });
+
+        let IsolatedAnalysisManager;
+        jest.isolateModules(() => {
+            IsolatedAnalysisManager = require('../js/analysis_manager');
+        });
+
+        const history = [{ beforeFen: 'pos1', fen: 'pos2', move: { uci: 'a1' } }];
+        let callCount = 0;
+        
+        IsolatedAnalysisManager.analyzeGame(history, null, () => {
+            callCount++;
+        });
+
+        // Call while isAnalyzing is true
+        IsolatedAnalysisManager.analyzeGame(history, null, () => {
+            callCount++;
+        });
+
+        expect(callCount).toBe(0);
+    });
+
+    test('getScoreValue correctly formats negative mate values', (done) => {
+        let IsolatedAnalysisManager;
+        jest.isolateModules(() => {
+            IsolatedAnalysisManager = require('../js/analysis_manager');
+        });
+
+        const history = [
+            { beforeFen: 'pos1', fen: 'pos2', move: { uci: 'a1' } }
+        ];
+
+        global.mockStockfishResponses = [
+            { cp: 0 },
+            { mate: -2 }
+        ];
+
+        IsolatedAnalysisManager.analyzeGame(history, null, (stats) => {
+            expect(stats.moves[0].scoreAfter).toBe(9998);
+            done();
+        });
+    });
 });

@@ -83,7 +83,7 @@ const ChessNetwork = (() => {
         emit('sync', snapshot);
     }
 
-    return {
+    const API = {
         attach,
         connect,
         disconnect,
@@ -116,4 +116,8 @@ const ChessNetwork = (() => {
         receiveDrawResponse: (accepted) => emit('drawResponse', accepted),
         getState: () => ({ ...state })
     };
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = API;
+    }
+    return API;
 })();

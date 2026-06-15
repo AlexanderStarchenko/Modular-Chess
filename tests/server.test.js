@@ -166,4 +166,92 @@ describe('Socket.IO Multiplayer Logic', () => {
 
         runNext();
     });
+
+    describe('Multiplayer signaling relays', () => {
+        beforeEach((done) => {
+            clientSocket1.emit('join-room', 'relay-room');
+            clientSocket2.emit('join-room', 'relay-room');
+            setTimeout(done, 100);
+        });
+
+        test('undo-request is relayed', (done) => {
+            clientSocket2.on('undo-request', (levels) => {
+                expect(levels).toBe(2);
+                done();
+            });
+            clientSocket1.emit('undo-request', { roomId: 'relay-room', levels: 2 });
+        });
+
+        test('undo-response is relayed', (done) => {
+            clientSocket2.on('undo-response', (accepted) => {
+                expect(accepted).toBe(true);
+                done();
+            });
+            clientSocket1.emit('undo-response', { roomId: 'relay-room', accepted: true });
+        });
+
+        test('chess-sync is relayed', (done) => {
+            const sampleState = { fen: 'some-fen' };
+            clientSocket2.on('chess-sync', (state) => {
+                expect(state).toEqual(sampleState);
+                done();
+            });
+            clientSocket1.emit('chess-sync', { roomId: 'relay-room', state: sampleState });
+        });
+
+        test('webrtc-signal is relayed', (done) => {
+            const sampleSignal = { sdp: 'some-sdp' };
+            clientSocket2.on('webrtc-signal', (signal) => {
+                expect(signal).toEqual(sampleSignal);
+                done();
+            });
+            clientSocket1.emit('webrtc-signal', { roomId: 'relay-room', signal: sampleSignal });
+        });
+
+        test('resign is relayed', (done) => {
+            clientSocket2.on('resign', () => {
+                done();
+            });
+            clientSocket1.emit('resign', { roomId: 'relay-room' });
+        });
+
+        test('draw-offer is relayed', (done) => {
+            clientSocket2.on('draw-offer', () => {
+                done();
+            });
+            clientSocket1.emit('draw-offer', { roomId: 'relay-room' });
+        });
+
+        test('draw-response is relayed', (done) => {
+            clientSocket2.on('draw-response', (accepted) => {
+                expect(accepted).toBe(false);
+                done();
+            });
+            clientSocket1.emit('draw-response', { roomId: 'relay-room', accepted: false });
+        });
+    });
 });
+
+describe('Server Utility Functions', () => {
+    test('getLocalIp should return a string representing IP or localhost', () => {
+        const { getLocalIp } = require('../server.js');
+        const ip = getLocalIp();
+        expect(typeof ip).toBe('string');
+        expect(ip.length).toBeGreaterThan(0);
+    });
+
+    test('getLocalIp should fallback to localhost when networkInterfaces returns empty or local only', () => {
+        const os = require('os');
+        const originalNetworkInterfaces = os.networkInterfaces;
+        os.networkInterfaces = () => ({
+            'lo': [{ family: 'IPv4', address: '127.0.0.1', internal: true }]
+        });
+        
+        const { getLocalIp } = require('../server.js');
+        const ip = getLocalIp();
+        expect(ip).toBe('localhost');
+        
+        os.networkInterfaces = originalNetworkInterfaces;
+    });
+});
+

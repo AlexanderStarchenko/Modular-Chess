@@ -127,5 +127,7 @@ var ChessAIVeryHard = (() => {
         return vals[p.toLowerCase()] || 0;
     }
 
-    return { getBestMove };
+    const API = { getBestMove };
+    if (typeof module !== 'undefined' && module.exports) module.exports = API;
+    return API;
 })();

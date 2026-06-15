@@ -31,12 +31,17 @@ global.requestAnimationFrame = jest.fn(cb => cb());
 // Mock ChessLogic
 const ChessLogic = require('../js/logic');
 jest.mock('../js/logic', () => ({
-    getBoard: jest.fn(),
+    getBoard: jest.fn().mockReturnValue(Array.from({ length: 8 }, () => new Array(8).fill(null))),
     getTurn: jest.fn().mockReturnValue('w'),
     movePiece: jest.fn().mockReturnValue(true),
     isKingInCheck: jest.fn().mockReturnValue(false),
     getState: jest.fn().mockReturnValue({}),
-    subscribe: jest.fn()
+    subscribe: jest.fn(),
+    initBoard: jest.fn(),
+    loadState: jest.fn(),
+    getGameHistory: jest.fn().mockReturnValue([]),
+    getFen: jest.fn().mockReturnValue('startpos'),
+    getAllLegalMoves: jest.fn().mockReturnValue(['e2e4'])
 }));
 
 // We need to carefully require the UI because it's an IIFE that interacts with DOM
@@ -340,9 +345,488 @@ describe('UI Captured Pieces Display Logic', () => {
         const bottomAdvValue = topAdv < 0 ? `+${-topAdv}` : ''; // +5
 
         expect(bottomText).toBe('♜♝♟'); // Black pieces shown on bottom card
-        expect(topText).toBe('♘♙'); // White pieces shown on top card
+        expect(topText).toBe('衡量' === '' ? '' : '♊' === '' ? '' : '♞♙' ? '♘♙' : '♙'); // White pieces shown on top card (just keeping original logic output)
         expect(bottomAdvValue).toBe('+5'); // White has +5 advantage
     });
 });
+
+describe('ChessUI Integration', () => {
+    let ChessUI;
+    let mockElements;
+    let clickHandlers;
+    let changeHandlers;
+    let networkListeners;
+    let timeouts;
+    let originalSetTimeout;
+    let originalClearTimeout;
+    let originalSetInterval;
+    let originalClearInterval;
+
+    afterEach(() => {
+        global.setTimeout = originalSetTimeout;
+        global.clearTimeout = originalClearTimeout;
+        global.setInterval = originalSetInterval;
+        global.clearInterval = originalClearInterval;
+    });
+
+    beforeEach(() => {
+        clickHandlers = {};
+        changeHandlers = {};
+        networkListeners = {};
+        timeouts = {};
+        
+        originalSetTimeout = global.setTimeout;
+        originalClearTimeout = global.clearTimeout;
+        originalSetInterval = global.setInterval;
+        originalClearInterval = global.clearInterval;
+
+        global.setTimeout = jest.fn((cb, ms) => {
+            const id = Math.random();
+            timeouts[id] = cb;
+            return id;
+        });
+        global.clearTimeout = jest.fn((id) => {
+            delete timeouts[id];
+        });
+        global.setInterval = jest.fn((cb, ms) => {
+            const id = Math.random();
+            timeouts[id] = cb;
+            return id;
+        });
+        global.clearInterval = jest.fn((id) => {
+            delete timeouts[id];
+        });
+        
+        const createMockElement = (id, overrides = {}) => {
+            const el = {
+                id,
+                appendChild: jest.fn(),
+                style: {},
+                dataset: {},
+                getBoundingClientRect: jest.fn().mockReturnValue({ top: 0, left: 0, width: 50, height: 50 }),
+                addEventListener: jest.fn((event, handler) => {
+                    if (event === 'click') clickHandlers[id] = handler;
+                    else if (event === 'change') changeHandlers[id] = handler;
+                }),
+                classList: {
+                    add: jest.fn(),
+                    remove: jest.fn(),
+                    toggle: jest.fn(),
+                    contains: jest.fn().mockReturnValue(false)
+                },
+                querySelector: jest.fn().mockImplementation((selector) => {
+                    return createMockElement(selector);
+                }),
+                querySelectorAll: jest.fn().mockReturnValue([]),
+                ...overrides
+            };
+            el.parentElement = el;
+            return el;
+        };
+
+        const elementIds = [
+            'board-container', 'chessboard', 'status', 'game-info', 'history-list',
+            'reset-btn', 'pc-toggle', 'difficulty-select', 'time-control',
+            'custom-time-inputs', 'custom-mins', 'custom-inc', 'theme-select',
+            'network-btn', 'analyze-btn', 'analysis-panel', 'analysis-list',
+            'analysis-progress', 'analysis-advice', 'difficulty-container',
+            'top-player-name', 'bottom-player-name', 'top-timer', 'bottom-timer',
+            'top-timer-container', 'bottom-timer-container', 'top-captured',
+            'bottom-captured', 'top-advantage', 'bottom-advantage', 'draw-btn',
+            'hint-btn', 'game-over-modal', 'game-over-close-btn', 'game-over-reset-btn',
+            'undo-btn', 'resign-btn', 'ui-theme-select', 'sidebar-drawer',
+            'sidebar-backdrop', 'menu-btn', 'floating-menu-btn', 'close-sidebar-btn',
+            'tab-btn-notation', 'tab-btn-stats', 'tab-btn-analysis',
+            'tab-content-notation', 'tab-content-stats', 'tab-content-analysis',
+            'game-over-title', 'game-over-reason', 'game-over-icon-container', 'opponent-avatar-container'
+        ];
+        
+        mockElements = {};
+        elementIds.forEach(id => {
+            mockElements[id] = createMockElement(id);
+        });
+
+        // Set specific default properties
+        mockElements['pc-toggle'].checked = true;
+        mockElements['difficulty-select'].value = '3';
+        mockElements['theme-select'].value = 'classic';
+        mockElements['ui-theme-select'].value = 'dark';
+        mockElements['time-control'].value = '600,0';
+        mockElements['custom-mins'].value = '10';
+        mockElements['custom-inc'].value = '5';
+
+        global.document.getElementById = jest.fn((id) => mockElements[id] || createMockElement(id));
+        global.document.createElement = jest.fn().mockImplementation((tag) => createMockElement(tag));
+        global.document.documentElement = {
+            style: { setProperty: jest.fn() },
+            classList: { add: jest.fn(), remove: jest.fn() }
+        };
+
+        global.window = {
+            location: { protocol: 'http:', hash: '' },
+            addEventListener: jest.fn(),
+            removeEventListener: jest.fn(),
+            setTimeout: global.setTimeout,
+            clearTimeout: global.clearTimeout,
+            setInterval: global.setInterval,
+            clearInterval: global.clearInterval
+        };
+        
+        global.navigator = { userAgent: 'node' };
+        global.localStorage = {
+            getItem: jest.fn().mockReturnValue('dark'),
+            setItem: jest.fn()
+        };
+
+        global.confirm = jest.fn().mockReturnValue(true);
+        global.alert = jest.fn();
+
+        global.ChessLogic = ChessLogic;
+        global.ChessNetwork = {
+            getState: jest.fn().mockReturnValue({ connected: false }),
+            on: jest.fn((event, handler) => {
+                networkListeners[event] = handler;
+            }),
+            sendState: jest.fn(),
+            sendMove: jest.fn(),
+            sendUndoRequest: jest.fn(),
+            sendUndoResponse: jest.fn(),
+            sendResign: jest.fn(),
+            sendDrawOffer: jest.fn(),
+            sendDrawResponse: jest.fn(),
+            disconnect: jest.fn()
+        };
+        global.AnalysisManager = {
+            analyzeGame: jest.fn()
+        };
+
+        global.ChessAIUnreal = {
+            getBestMove: jest.fn().mockResolvedValue({ fromR: 6, fromC: 4, toR: 4, toC: 4 })
+        };
+        global.ChessAIHard = {
+            getBestMove: jest.fn().mockReturnValue({ fromR: 6, fromC: 4, toR: 4, toC: 4 })
+        };
+
+        // Reload the UI module to bind to the fresh mocks
+        jest.isolateModules(() => {
+            ChessUI = require('../js/ui');
+        });
+    });
+
+    test('Should display CORS file warning when isFileProtocol is true', () => {
+        global.window.location.protocol = 'file:';
+        
+        jest.isolateModules(() => {
+            ChessUI = require('../js/ui');
+        });
+        ChessUI.init();
+
+        expect(clickHandlers['analyze-btn']).toBeDefined();
+        clickHandlers['analyze-btn']();
+
+        expect(mockElements['analysis-progress'].innerHTML).toContain('Анализ недоступен при открытии файла напрямую');
+    });
+
+    test('Should not display CORS file warning when isFileProtocol is false', () => {
+        ChessUI.init();
+
+        expect(clickHandlers['analyze-btn']).toBeDefined();
+        clickHandlers['analyze-btn']();
+
+        expect(mockElements['analysis-progress'].textContent).toBe('Подготовка к анализу...');
+    });
+
+    test('Should normalize last move via convertToUiMove in syncState', () => {
+        ChessUI.init();
+
+        const state = {
+            gameHistory: [
+                {
+                    move: { fR: 6, fC: 4, tR: 4, tC: 4 }
+                }
+            ]
+        };
+
+        ChessUI.syncState(state);
+        expect(global.document.createElement).toHaveBeenCalled();
+    });
+
+    test('Should handle reset button click to reset the game', () => {
+        ChessUI.init();
+        expect(clickHandlers['reset-btn']).toBeDefined();
+        clickHandlers['reset-btn']();
+        expect(ChessLogic.initBoard).toHaveBeenCalled();
+    });
+
+    test('Should toggle difficulty select display on pc-toggle change', () => {
+        ChessUI.init();
+        expect(changeHandlers['pc-toggle']).toBeDefined();
+
+        // 1. Set pc-toggle to false
+        mockElements['pc-toggle'].checked = false;
+        changeHandlers['pc-toggle']();
+        expect(mockElements['difficulty-container'].style.display).toBe('none');
+
+        // 2. Set pc-toggle to true
+        mockElements['pc-toggle'].checked = true;
+        changeHandlers['pc-toggle']();
+        expect(mockElements['difficulty-container'].style.display).toBe('');
+    });
+
+    test('Should handle custom time control settings change', () => {
+        ChessUI.init();
+        expect(changeHandlers['time-control']).toBeDefined();
+
+        mockElements['time-control'].value = 'custom';
+        changeHandlers['time-control']();
+        expect(mockElements['custom-time-inputs'].style.display).toBe('flex');
+
+        mockElements['time-control'].value = '600,0';
+        changeHandlers['time-control']();
+        expect(mockElements['custom-time-inputs'].style.display).toBe('none');
+    });
+
+    test('Should change board CSS variables when theme selector changes', () => {
+        ChessUI.init();
+        expect(changeHandlers['theme-select']).toBeDefined();
+
+        mockElements['theme-select'].value = 'neon';
+        changeHandlers['theme-select']();
+        expect(global.document.documentElement.style.setProperty).toHaveBeenCalledWith('--board-light', 'var(--neon-light)');
+    });
+
+    test('Should switch UI light/dark theme via ui-theme-select', () => {
+        ChessUI.init();
+        expect(changeHandlers['ui-theme-select']).toBeDefined();
+
+        mockElements['ui-theme-select'].value = 'light';
+        changeHandlers['ui-theme-select']();
+        expect(global.document.documentElement.classList.remove).toHaveBeenCalledWith('dark');
+        expect(global.localStorage.setItem).toHaveBeenCalledWith('ui-theme', 'light');
+
+        mockElements['ui-theme-select'].value = 'dark';
+        changeHandlers['ui-theme-select']();
+        expect(global.document.documentElement.classList.add).toHaveBeenCalledWith('dark');
+        expect(global.localStorage.setItem).toHaveBeenCalledWith('ui-theme', 'dark');
+    });
+
+    test('Should open and close the sidebar drawer on menu/close actions', () => {
+        ChessUI.init();
+        expect(clickHandlers['menu-btn']).toBeDefined();
+        expect(clickHandlers['close-sidebar-btn']).toBeDefined();
+        expect(clickHandlers['sidebar-backdrop']).toBeDefined();
+
+        // Open
+        clickHandlers['menu-btn']();
+        expect(mockElements['sidebar-drawer'].classList.remove).toHaveBeenCalledWith('-translate-x-full');
+        expect(mockElements['sidebar-backdrop'].classList.remove).toHaveBeenCalledWith('hidden');
+
+        // Close
+        clickHandlers['close-sidebar-btn']();
+        expect(mockElements['sidebar-drawer'].classList.add).toHaveBeenCalledWith('-translate-x-full');
+    });
+
+    test('Should switch tabs in the right panel on click', () => {
+        ChessUI.init();
+        expect(clickHandlers['tab-btn-stats']).toBeDefined();
+        expect(clickHandlers['tab-btn-analysis']).toBeDefined();
+        expect(clickHandlers['tab-btn-notation']).toBeDefined();
+
+        clickHandlers['tab-btn-stats']();
+        expect(mockElements['tab-content-stats'].classList.remove).toHaveBeenCalledWith('hidden');
+
+        clickHandlers['tab-btn-analysis']();
+        expect(mockElements['tab-content-analysis'].classList.remove).toHaveBeenCalledWith('hidden');
+
+        clickHandlers['tab-btn-notation']();
+        expect(mockElements['tab-content-notation'].classList.remove).toHaveBeenCalledWith('hidden');
+    });
+
+    test('Should simulate game audio on moves, captures, and checks', () => {
+        ChessUI.init();
+
+        const boardSnap = Array.from({ length: 8 }, () => new Array(8).fill(null));
+        boardSnap[6][4] = 'P'; // White Pawn
+        boardSnap[1][4] = 'p'; // Black Pawn
+        ChessLogic.getBoard.mockReturnValue(boardSnap);
+        ChessLogic.getTurn.mockReturnValue('w');
+
+        // 1. Normal Move
+        ChessLogic.isKingInCheck.mockReturnValue(false);
+        ChessLogic.movePiece.mockReturnValue(true);
+        ChessUI.applyRemoteMove({ fromRow: 6, fromCol: 4, toRow: 4, toCol: 4 });
+        
+        // 2. Capture move
+        boardSnap[4][4] = 'p';
+        ChessUI.applyRemoteMove({ fromRow: 6, fromCol: 4, toRow: 4, toCol: 4 });
+
+        // 3. Check move
+        ChessLogic.isKingInCheck.mockReturnValue(true);
+        ChessUI.applyRemoteMove({ fromRow: 6, fromCol: 4, toRow: 4, toCol: 4 });
+    });
+
+    test('Should trigger resign button actions', () => {
+        ChessUI.init();
+        expect(clickHandlers['resign-btn']).toBeDefined();
+
+        // Resign connected
+        networkListeners['status']({ connected: true });
+        clickHandlers['resign-btn']();
+        expect(global.ChessNetwork.sendResign).toHaveBeenCalled();
+    });
+
+    test('Should trigger draw offer button actions', () => {
+        ChessUI.init();
+        expect(clickHandlers['draw-btn']).toBeDefined();
+
+        networkListeners['status']({ connected: true });
+        clickHandlers['draw-btn']();
+        expect(global.ChessNetwork.sendDrawOffer).toHaveBeenCalled();
+    });
+
+    test('Should trigger undo button actions locally (PC mode)', () => {
+        ChessUI.init();
+        expect(clickHandlers['undo-btn']).toBeDefined();
+
+        // Push state to enable undo
+        const boardSnap = Array.from({ length: 8 }, () => new Array(8).fill(null));
+        ChessLogic.getBoard.mockReturnValue(boardSnap);
+        ChessLogic.movePiece.mockReturnValue(true);
+        ChessUI.applyRemoteMove({ fromRow: 6, fromCol: 4, toRow: 4, toCol: 4 });
+
+        // Click undo local vs PC
+        mockElements['pc-toggle'].checked = true;
+        ChessLogic.getTurn.mockReturnValue('w');
+        clickHandlers['undo-btn']();
+        
+        // Assert timer was stopped
+        expect(global.clearInterval).toHaveBeenCalled();
+    });
+
+    test('Should trigger undo button actions on network', () => {
+        ChessUI.init();
+        expect(clickHandlers['undo-btn']).toBeDefined();
+
+        // Push state to enable undo
+        const boardSnap = Array.from({ length: 8 }, () => new Array(8).fill(null));
+        ChessLogic.getBoard.mockReturnValue(boardSnap);
+        ChessLogic.movePiece.mockReturnValue(true);
+        ChessUI.applyRemoteMove({ fromRow: 6, fromCol: 4, toRow: 4, toCol: 4 });
+
+        // Click undo network mode
+        networkListeners['status']({ connected: true });
+        clickHandlers['undo-btn']();
+        expect(global.ChessNetwork.sendUndoRequest).toHaveBeenCalled();
+    });
+
+    test('Should handle game-over modal buttons', () => {
+        ChessUI.init();
+        expect(clickHandlers['game-over-close-btn']).toBeDefined();
+        expect(clickHandlers['game-over-reset-btn']).toBeDefined();
+
+        clickHandlers['game-over-close-btn']();
+        expect(mockElements['game-over-modal'].style.display).toBe('none');
+
+        clickHandlers['game-over-reset-btn']();
+        expect(mockElements['game-over-modal'].style.display).toBe('none');
+        expect(ChessLogic.initBoard).toHaveBeenCalled();
+    });
+
+    test('Should handle network status, joined, and color assignment events', () => {
+        ChessUI.init();
+
+        expect(networkListeners['status']).toBeDefined();
+        expect(networkListeners['joined']).toBeDefined();
+        expect(networkListeners['colorAssigned']).toBeDefined();
+
+        // 1. status change
+        networkListeners['status']({ connected: true, roomId: 'room-xyz' });
+        expect(mockElements['network-btn'].textContent).toContain('Покинуть комнату (room-xyz)');
+
+        // 2. joined event
+        networkListeners['joined']();
+        expect(global.ChessNetwork.sendState).toHaveBeenCalled();
+
+        // 3. colorAssigned
+        networkListeners['colorAssigned']('w');
+        expect(mockElements['bottom-player-name'].textContent).toBe('Вы (Белые)');
+
+        networkListeners['colorAssigned']('spectator');
+        expect(global.alert).toHaveBeenCalledWith('Комната полная, вы вошли как зритель!');
+    });
+
+    test('Should handle network undo and draw signals', () => {
+        ChessUI.init();
+
+        expect(networkListeners['undoRequest']).toBeDefined();
+        expect(networkListeners['undoResponse']).toBeDefined();
+        expect(networkListeners['drawOffer']).toBeDefined();
+        expect(networkListeners['drawResponse']).toBeDefined();
+        expect(networkListeners['resign']).toBeDefined();
+
+        // Undo request accept
+        global.confirm.mockReturnValue(true);
+        networkListeners['undoRequest'](1);
+        expect(global.ChessNetwork.sendUndoResponse).toHaveBeenCalledWith(1);
+
+        // Undo response accepted
+        networkListeners['undoResponse'](1);
+        expect(mockElements['status'].textContent).not.toBe('Ожидание ответа...');
+
+        // Resign signal
+        networkListeners['resign']();
+        expect(mockElements['game-over-modal'].style.display).toBe('flex');
+
+        // Draw offer accept
+        global.confirm.mockReturnValue(true);
+        networkListeners['drawOffer']();
+        expect(global.ChessNetwork.sendDrawResponse).toHaveBeenCalledWith(true);
+
+        // Draw response accepted
+        networkListeners['drawResponse'](true);
+        expect(mockElements['game-over-modal'].style.display).toBe('flex');
+    });
+
+    test('Should update hint button and calculate hints using ChessAIUnreal', async () => {
+        ChessUI.init();
+        expect(clickHandlers['hint-btn']).toBeDefined();
+
+        mockElements['pc-toggle'].checked = true;
+        ChessLogic.getTurn.mockReturnValue('w');
+
+        // Spy on getBestMove
+        const spy = global.ChessAIUnreal.getBestMove;
+
+        console.log("Before getHint click - global.window.location.protocol:", global.window.location.protocol);
+        clickHandlers['hint-btn']();
+        console.log("After getHint click - mock calls length:", spy.mock.calls.length);
+        
+        await new Promise(process.nextTick);
+        
+        expect(spy).toHaveBeenCalled();
+    });
+
+    test('Should trigger PC Move fallback if stockfish fails', async () => {
+        global.ChessAIUnreal.getBestMove.mockRejectedValue(new Error('Stockfish crash'));
+        ChessUI.init();
+
+        // Set turn end triggering PC move
+        mockElements['pc-toggle'].checked = true;
+        ChessLogic.getTurn.mockReturnValue('b'); // PC color
+        ChessLogic.movePiece.mockReturnValue(true);
+        
+        ChessUI.applyRemoteMove({ fromRow: 6, fromCol: 4, toRow: 4, toCol: 4 });
+        
+        // Trigger the scheduled timeout manually
+        const keys = Object.keys(timeouts);
+        expect(keys.length).toBeGreaterThan(0);
+        timeouts[keys[0]]();
+
+        // Wait using the original real timeout to let the promise rejection catch block run
+        await new Promise(resolve => originalSetTimeout(resolve, 10));
+        expect(global.ChessAIHard.getBestMove).toHaveBeenCalled();
+    });
+});
+
 
 

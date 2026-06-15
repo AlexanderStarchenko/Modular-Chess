@@ -189,4 +189,63 @@ describe('Universal Binary Protocol', () => {
         expect(unpacked.captures.white.length).toBe(15); // Black has only king left, 15 black pieces captured by White
         expect(unpacked.captures.black.length).toBe(14); // White has king and rook left, 14 white pieces captured by Black
     });
+
+    test('Move Packing and Unpacking without timers', () => {
+        const moveNoTimers = {
+            from: 'e2',
+            to: 'e4',
+            piece: 'wp',
+            promotion: null
+        };
+        const packed = BinaryProtocol.packMove(moveNoTimers);
+        const unpacked = BinaryProtocol.unpackMove(packed);
+        expect(unpacked.from).toBe('e2');
+        expect(unpacked.to).toBe('e4');
+        expect(unpacked.timers.white).toBe(0);
+        expect(unpacked.timers.black).toBe(0);
+        expect(unpacked.timers.inc).toBe(0);
+        expect(unpacked.timers.running).toBe(false);
+    });
+
+    test('State Packing with castling, enPassant string, and timers in boardState', () => {
+        const board = new Array(64).fill(null);
+        board[4] = 'wk';
+        board[60] = 'bk';
+        const state = {
+            boardState: {
+                board,
+                turn: 'w',
+                castling: {
+                    wKing: true,
+                    wQueen: true,
+                    bKing: false,
+                    bQueen: false
+                },
+                enPassant: 'e3',
+                halfmoveClock: 2,
+                timers: {
+                    white: 100,
+                    black: 150,
+                    inc: 0,
+                    running: false
+                }
+            }
+        };
+
+        const packed = BinaryProtocol.packState(state);
+        const unpacked = BinaryProtocol.unpackState(packed);
+        expect(unpacked.boardState.enPassantSquare).toEqual({ row: 5, col: 4 });
+        expect(unpacked.boardState.castlingRights.wKingMoved).toBe(false);
+        expect(unpacked.boardState.castlingRights.bKingMoved).toBe(true);
+        expect(unpacked.timers.white).toBe(100);
+        expect(unpacked.timers.black).toBe(150);
+    });
+
+    test('Helper functions with invalid/edge piece inputs', () => {
+        const board = new Array(64).fill('invalid-piece');
+        const state = { board, turn: 'w' };
+        const packed = BinaryProtocol.packState(state);
+        const unpacked = BinaryProtocol.unpackState(packed);
+        expect(unpacked.boardState.board.every(row => row.every(cell => cell === null))).toBe(true);
+    });
 });
