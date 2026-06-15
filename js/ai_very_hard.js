@@ -69,21 +69,11 @@ var ChessAIVeryHard = (() => {
         for (const move of moves) {
             if (Date.now() - startTime > timeLimit && depth >= 3 && bestMoves.length > 0) break;
 
-            const origPiece = board[move.fromR][move.fromC];
-            let piece = origPiece;
-            const target = board[move.toR][move.toC];
-            
-            if (piece.toLowerCase() === 'p' && (move.toR === 0 || move.toR === 7)) {
-                piece = piece === 'P' ? 'Q' : 'q';
-            }
-
-            board[move.toR][move.toC] = piece;
-            board[move.fromR][move.fromC] = null;
+            const undoState = _Shared.applyMove(board, move);
 
             const value = _Shared.minimax(board, depth - 1, !isMaximizing, -Infinity, Infinity, _Logic);
 
-            board[move.fromR][move.fromC] = origPiece;
-            board[move.toR][move.toC] = target;
+            _Shared.undoMove(board, move, undoState);
 
             if (isMaximizing) {
                 if (value > bestValue) {
