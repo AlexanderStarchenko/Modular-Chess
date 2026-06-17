@@ -192,6 +192,10 @@ const SocketTransport = (() => {
                         if (typeof ChessNetwork.receiveDrawResponse === 'function') {
                             ChessNetwork.receiveDrawResponse(msg.accepted);
                         }
+                    } else if (msg.type === 'chat') {
+                        if (typeof ChessNetwork.receiveChatMessage === 'function') {
+                            ChessNetwork.receiveChatMessage(msg.text);
+                        }
                     }
                 } catch (err) {
                     console.error('[WebRTC] Failed to parse control message:', err);
@@ -317,6 +321,13 @@ const SocketTransport = (() => {
             }
         });
 
+        socket.on('chat-message', (text) => {
+            if (dataChannel && dataChannel.readyState === 'open') return;
+            if (typeof ChessNetwork.receiveChatMessage === 'function') {
+                ChessNetwork.receiveChatMessage(text);
+            }
+        });
+
         socket.on('connect_error', (error) => {
             console.error('Connection Error:', error.message);
         });
@@ -382,6 +393,13 @@ const SocketTransport = (() => {
                     dataChannel.send(JSON.stringify({ type: 'draw-response', accepted }));
                 } else {
                     socket.emit('draw-response', { roomId: currentRoom, accepted });
+                }
+            },
+            sendChatMessage: (text) => {
+                if (dataChannel && dataChannel.readyState === 'open') {
+                    dataChannel.send(JSON.stringify({ type: 'chat', text }));
+                } else {
+                    socket.emit('chat-message', { roomId: currentRoom, text });
                 }
             }
         });

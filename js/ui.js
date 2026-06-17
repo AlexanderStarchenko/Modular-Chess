@@ -23,6 +23,12 @@ const ChessUI = (() => {
     let playerColor = 'w'; 
     let pcColor = 'b';     
     let stateHistory = [];     
+    let isSoundMuted = false;
+    let soundVolume = 0.5;
+
+    function isFlipped() {
+        return playerColor === 'b';
+    }
     let analysisResults = [];
     let selectedAnalysisIndex = null;
     let suggestedMove = null;
@@ -72,6 +78,7 @@ const ChessUI = (() => {
         }
 
         function playTone({ type, startFreq, endFreq, duration, volume, delay = 0 }) {
+            if (isSoundMuted) return;
             const ctx = getContext();
             if (!ctx) return;
 
@@ -85,8 +92,9 @@ const ChessUI = (() => {
                 osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), startAt + duration);
             }
 
+            const targetVolume = volume * soundVolume;
             gain.gain.setValueAtTime(0.0001, startAt);
-            gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.015);
+            gain.gain.exponentialRampToValueAtTime(targetVolume, startAt + 0.015);
             gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
 
             osc.connect(gain);
@@ -155,7 +163,7 @@ const ChessUI = (() => {
         const size = boardElement.clientWidth;
         if (size <= 0) return;
         const squareSize = size / 8;
-        const flipped = playerColor === 'b';
+        const flipped = isFlipped();
         
         const fR = flipped ? 7 - fromRow : fromRow;
         const fC = flipped ? 7 - fromCol : fromCol;
@@ -233,7 +241,7 @@ const ChessUI = (() => {
                 const col = Math.floor(x / squareSize);
                 const row = Math.floor(y / squareSize);
                 
-                const flipped = playerColor === 'b';
+                const flipped = isFlipped();
                 const r = flipped ? 7 - row : row;
                 const c = flipped ? 7 - col : col;
                 
@@ -258,7 +266,7 @@ const ChessUI = (() => {
                 const col = Math.floor(x / squareSize);
                 const row = Math.floor(y / squareSize);
                 
-                const flipped = playerColor === 'b';
+                const flipped = isFlipped();
                 const r = flipped ? 7 - row : row;
                 const c = flipped ? 7 - col : col;
                 
@@ -616,7 +624,11 @@ const ChessUI = (() => {
             startNewGame();
         });
 
-        themeSelect.addEventListener('change', updateTheme);
+        if (themeSelect) {
+            themeSelect.addEventListener('change', updateTheme);
+            const savedBoardTheme = localStorage.getItem('board-theme') || 'classic';
+            themeSelect.value = savedBoardTheme;
+        }
 
         // UI Theme Selector (Light / Dark Theme)
         const uiThemeSelect = document.getElementById('ui-theme-select');
@@ -675,19 +687,126 @@ const ChessUI = (() => {
             }
             sidebarBackdrop.addEventListener('click', closeDrawer);
         }
+
+        // Sound Settings
+        const soundToggle = document.getElementById('sound-toggle');
+        const soundVolumeSlider = document.getElementById('sound-volume');
+        const volumeValDisplay = document.getElementById('volume-val-display');
+
+        // Restore sound settings from localStorage
+        const savedSoundMuted = localStorage.getItem('sound-muted') === 'true';
+        const savedSoundVolume = localStorage.getItem('sound-volume');
         
+        isSoundMuted = savedSoundMuted;
+        if (savedSoundVolume !== null) {
+            soundVolume = parseFloat(savedSoundVolume);
+        } else {
+            soundVolume = 0.5;
+        }
+
+        if (soundToggle) {
+            soundToggle.checked = !isSoundMuted;
+            soundToggle.addEventListener('change', () => {
+                isSoundMuted = !soundToggle.checked;
+                localStorage.setItem('sound-muted', isSoundMuted);
+            });
+        }
+        if (soundVolumeSlider && volumeValDisplay) {
+            soundVolumeSlider.value = Math.round(soundVolume * 100);
+            volumeValDisplay.textContent = `${soundVolumeSlider.value}%`;
+            soundVolumeSlider.addEventListener('input', () => {
+                soundVolume = parseInt(soundVolumeSlider.value) / 100;
+                volumeValDisplay.textContent = `${soundVolumeSlider.value}%`;
+                localStorage.setItem('sound-volume', soundVolume);
+            });
+        }
+
+
+        // Chat messaging logic
+        const chatInput = document.getElementById('chat-input');
+        const chatSendBtn = document.getElementById('chat-send-btn');
+        const chatMessages = document.getElementById('chat-messages');
+
+        function appendChatMessage(sender, text) {
+            if (!chatMessages) return;
+            const msgEl = document.createElement('div');
+            msgEl.className = 'p-1 rounded bg-surface-container/20 border border-outline-variant/5 mb-1';
+            
+            const senderSpan = document.createElement('strong');
+            senderSpan.className = sender === 'Вы' ? 'text-primary' : 'text-outline';
+            senderSpan.textContent = `${sender}: `;
+            
+            const textSpan = document.createElement('span');
+            textSpan.textContent = text;
+            
+            msgEl.appendChild(senderSpan);
+            msgEl.appendChild(textSpan);
+            chatMessages.appendChild(msgEl);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function sendChat() {
+            if (!chatInput) return;
+            const text = chatInput.value.trim();
+            if (!text) return;
+            chatInput.value = '';
+            
+            appendChatMessage('Вы', text);
+            
+            if (networkState && networkState.connected && typeof ChessNetwork !== 'undefined') {
+                ChessNetwork.sendChatMessage(text);
+            }
+        }
+
+        if (chatSendBtn) {
+            chatSendBtn.addEventListener('click', sendChat);
+        }
+        if (chatInput) {
+            chatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    sendChat();
+                }
+            });
+        }
+
+        // Quick Emojis
+        if (typeof document.querySelectorAll === 'function') {
+            const emojiBtns = document.querySelectorAll('.emoji-btn');
+            if (emojiBtns) {
+                emojiBtns.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const text = btn.textContent;
+                        appendChatMessage('Вы', text);
+                        if (networkState && networkState.connected && typeof ChessNetwork !== 'undefined') {
+                            ChessNetwork.sendChatMessage(text);
+                        }
+                    });
+                });
+            }
+        }
+
+        // Set receiver for chat messages
+        if (typeof ChessNetwork !== 'undefined') {
+            ChessNetwork.receiveChatMessage = (text) => {
+                appendChatMessage('Соперник', text);
+                switchTab('chat');
+            };
+        }
+
         // Tab switching logic for Right Panel
         const tabBtnNotation = document.getElementById('tab-btn-notation');
         const tabBtnStats = document.getElementById('tab-btn-stats');
         const tabBtnAnalysis = document.getElementById('tab-btn-analysis');
+        const tabBtnChat = document.getElementById('tab-btn-chat');
         
         const tabContentNotation = document.getElementById('tab-content-notation');
         const tabContentStats = document.getElementById('tab-content-stats');
         const tabContentAnalysis = document.getElementById('tab-content-analysis');
+        const tabContentChat = document.getElementById('tab-content-chat');
         
         switchTab = function(activeTab) {
-            const btns = [tabBtnNotation, tabBtnStats, tabBtnAnalysis];
-            const contents = [tabContentNotation, tabContentStats, tabContentAnalysis];
+            const btns = [tabBtnNotation, tabBtnStats, tabBtnAnalysis, tabBtnChat];
+            const contents = [tabContentNotation, tabContentStats, tabContentAnalysis, tabContentChat];
             
             btns.forEach(btn => {
                 if (btn) {
@@ -717,12 +836,19 @@ const ChessUI = (() => {
                     tabBtnAnalysis.classList.remove('border-transparent', 'text-on-surface-variant', 'font-semibold');
                 }
                 if (tabContentAnalysis) tabContentAnalysis.classList.remove('hidden');
+            } else if (activeTab === 'chat') {
+                if (tabBtnChat) {
+                    tabBtnChat.classList.add('border-primary', 'text-primary', 'font-bold');
+                    tabBtnChat.classList.remove('border-transparent', 'text-on-surface-variant', 'font-semibold');
+                }
+                if (tabContentChat) tabContentChat.classList.remove('hidden');
             }
         };
         
         if (tabBtnNotation) tabBtnNotation.addEventListener('click', () => switchTab('notation'));
         if (tabBtnStats) tabBtnStats.addEventListener('click', () => switchTab('stats'));
         if (tabBtnAnalysis) tabBtnAnalysis.addEventListener('click', () => switchTab('analysis'));
+        if (tabBtnChat) tabBtnChat.addEventListener('click', () => switchTab('chat'));
         
         // Subscribe to logic changes
         ChessLogic.subscribe(state => {
@@ -744,6 +870,7 @@ const ChessUI = (() => {
         const root = document.documentElement;
         root.style.setProperty('--board-light', `var(--${theme}-light)`);
         root.style.setProperty('--board-dark', `var(--${theme}-dark)`);
+        localStorage.setItem('board-theme', theme);
     }
 
     function updateOpponentAvatar() {
@@ -783,6 +910,9 @@ const ChessUI = (() => {
         stateHistory = [];
         if (pcMoveTimeoutId) clearTimeout(pcMoveTimeoutId);
         historyListElement.innerHTML = '';
+        
+        const chatMessages = document.getElementById('chat-messages');
+        if (chatMessages) chatMessages.innerHTML = '';
         selectedSquare = null;
         isWaitingForPC = false;
         gameEnded = false;
@@ -1068,7 +1198,7 @@ const ChessUI = (() => {
         ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
         
         const board = ChessLogic.getBoard();
-        const flipped = playerColor === 'b';
+        const flipped = isFlipped();
         
         // Read theme colors
         const style = getComputedStyle(document.documentElement);
@@ -1336,6 +1466,14 @@ const ChessUI = (() => {
 
     function getFallbackPCMove(difficulty) {
         const turn = ChessLogic.getTurn();
+        if (typeof ChessAIShared !== 'undefined' && typeof ChessAIShared.getOpeningBookMove === 'function') {
+            const currentFen = ChessLogic.getFen();
+            const bookMove = ChessAIShared.getOpeningBookMove(currentFen);
+            if (bookMove) {
+                console.log('[UI] Opening book move found:', bookMove);
+                return bookMove;
+            }
+        }
         if (difficulty === '1' && typeof ChessAIEasy !== 'undefined') return ChessAIEasy.getBestMove(turn);
         if (difficulty === '2' && typeof ChessAIMedium !== 'undefined') return ChessAIMedium.getBestMove(turn);
         if (difficulty === '3' && typeof ChessAIHard !== 'undefined') return ChessAIHard.getBestMove(turn);

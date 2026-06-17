@@ -145,11 +145,34 @@ function isPathClear(r1: i32, c1: i32, r2: i32, c2: i32, boardPtr: usize): bool 
   return true;
 }
 
+// Pre-allocated static buffers for evaluation to avoid GC heap allocation overhead in search loops
+const wPawnsInCol = new Int32Array(8);
+const bPawnsInCol = new Int32Array(8);
+const wRooksInCol = new Int32Array(8);
+const bRooksInCol = new Int32Array(8);
+
 /**
  * Performs positional & material evaluation using the identical chess heuristic.
  */
 export function evaluateMaterial(boardPtr: usize): i32 {
   let score: i32 = 0;
+  
+  // Clear buffers
+  for (let i = 0; i < 8; i++) {
+    wPawnsInCol[i] = 0;
+    bPawnsInCol[i] = 0;
+    wRooksInCol[i] = 0;
+    bRooksInCol[i] = 0;
+  }
+  
+  let wBishops = 0;
+  let bBishops = 0;
+  
+  let wKingR: i32 = -1;
+  let wKingC: i32 = -1;
+  let bKingR: i32 = -1;
+  let bKingC: i32 = -1;
+
   for (let r: i32 = 0; r < 8; r++) {
     for (let c: i32 = 0; c < 8; c++) {
       const idx = (r << 3) + c;
@@ -162,16 +185,32 @@ export function evaluateMaterial(boardPtr: usize): i32 {
       let val: i32 = 0;
       if (lower === 112) { // 'p'
         val = 100 + (isWhite ? pstPawn[idx] : pstPawn[((7 - r) << 3) + c]);
+        if (isWhite) {
+          wPawnsInCol[c]++;
+        } else {
+          bPawnsInCol[c]++;
+        }
       } else if (lower === 110) { // 'n'
         val = 320 + (isWhite ? pstKnight[idx] : pstKnight[((7 - r) << 3) + c]);
       } else if (lower === 98) { // 'b'
         val = 330 + (isWhite ? pstBishop[idx] : pstBishop[((7 - r) << 3) + c]);
+        if (isWhite) wBishops++; else bBishops++;
       } else if (lower === 114) { // 'r'
         val = 500 + (isWhite ? pstRook[idx] : pstRook[((7 - r) << 3) + c]);
+        if (isWhite) {
+          wRooksInCol[c]++;
+        } else {
+          bRooksInCol[c]++;
+        }
       } else if (lower === 113) { // 'q'
         val = 900 + (isWhite ? pstQueen[idx] : pstQueen[((7 - r) << 3) + c]);
       } else if (lower === 107) { // 'k'
         val = 20000 + (isWhite ? pstKing[idx] : pstKing[((7 - r) << 3) + c]);
+        if (isWhite) {
+          wKingR = r; wKingC = c;
+        } else {
+          bKingR = r; bKingC = c;
+        }
       }
       
       if (isWhite) {
@@ -181,7 +220,139 @@ export function evaluateMaterial(boardPtr: usize): i32 {
       }
     }
   }
-  return score;
+
+  let structureEval: i32 = 0;
+
+  // 1. Bishop Pair
+  if (wBishops >= 2) structureEval += 50;
+  if (bBishops >= 2) structureEval -= 50;
+
+  // 2. King Safety
+  if (wKingR !== -1) {
+    let shieldPawns = 0;
+    const frontR = wKingR - 1;
+    if (frontR >= 0) {
+      for (let dc: i32 = -1; dc <= 1; dc++) {
+        const fc = wKingC + dc;
+        if (fc >= 0 && fc < 8) {
+          if (load<u8>(boardPtr + (frontR << 3) + fc) === 80) { // 'P'
+            shieldPawns++;
+          }
+        }
+      }
+    }
+    structureEval += shieldPawns * 15;
+    if (wKingR >= 6 && shieldPawns === 0) {
+      structureEval -= 35;
+    }
+  }
+
+  if (bKingR !== -1) {
+    let shieldPawns = 0;
+    const frontR = bKingR + 1;
+    if (frontR < 8) {
+      for (let dc: i32 = -1; dc <= 1; dc++) {
+        const fc = bKingC + dc;
+        if (fc >= 0 && fc < 8) {
+          if (load<u8>(boardPtr + (frontR << 3) + fc) === 112) { // 'p'
+            shieldPawns++;
+          }
+        }
+      }
+    }
+    structureEval -= shieldPawns * 15;
+    if (bKingR <= 1 && shieldPawns === 0) {
+      structureEval += 35;
+    }
+  }
+
+  // 3. Doubled and Isolated Pawns, and Open Files
+  for (let c: i32 = 0; c < 8; c++) {
+    // Doubled pawns
+    if (wPawnsInCol[c] > 1) structureEval -= (wPawnsInCol[c] - 1) * 15;
+    if (bPawnsInCol[c] > 1) structureEval += (bPawnsInCol[c] - 1) * 15;
+
+    // Isolated pawns
+    const hasLeftNeighborW = (c > 0) && (wPawnsInCol[c - 1] > 0);
+    const hasRightNeighborW = (c < 7) && (wPawnsInCol[c + 1] > 0);
+    if (wPawnsInCol[c] > 0 && !hasLeftNeighborW && !hasRightNeighborW) {
+      structureEval -= wPawnsInCol[c] * 15;
+    }
+
+    const hasLeftNeighborB = (c > 0) && (bPawnsInCol[c - 1] > 0);
+    const hasRightNeighborB = (c < 7) && (bPawnsInCol[c + 1] > 0);
+    if (bPawnsInCol[c] > 0 && !hasLeftNeighborB && !hasRightNeighborB) {
+      structureEval += bPawnsInCol[c] * 15;
+    }
+
+    // Rook Open / Semi-open files
+    if (wRooksInCol[c] > 0) {
+      if (wPawnsInCol[c] === 0) {
+        if (bPawnsInCol[c] === 0) {
+          structureEval += 25; // Open file
+        } else {
+          structureEval += 15; // Semi-open file
+        }
+      }
+    }
+
+    if (bRooksInCol[c] > 0) {
+      if (bPawnsInCol[c] === 0) {
+        if (wPawnsInCol[c] === 0) {
+          structureEval -= 25; // Open file
+        } else {
+          structureEval -= 15; // Semi-open file
+        }
+      }
+    }
+  }
+
+  // 4. Passed Pawns
+  for (let r: i32 = 0; r < 8; r++) {
+    for (let c: i32 = 0; c < 8; c++) {
+      const piece = load<u8>(boardPtr + (r << 3) + c);
+      if (piece === 80) { // 'P'
+        let isPassed = true;
+        for (let checkR = 0; checkR < r; checkR++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            const checkC = c + dc;
+            if (checkC >= 0 && checkC < 8) {
+              if (load<u8>(boardPtr + (checkR << 3) + checkC) === 112) { // 'p'
+                isPassed = false;
+                break;
+              }
+            }
+          }
+          if (!isPassed) break;
+        }
+        if (isPassed) {
+          const rankBonus = (7 - r) * 10;
+          structureEval += 20 + rankBonus;
+        }
+      }
+      else if (piece === 112) { // 'p'
+        let isPassed = true;
+        for (let checkR = r + 1; checkR < 8; checkR++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            const checkC = c + dc;
+            if (checkC >= 0 && checkC < 8) {
+              if (load<u8>(boardPtr + (checkR << 3) + checkC) === 80) { // 'P'
+                isPassed = false;
+                break;
+              }
+            }
+          }
+          if (!isPassed) break;
+        }
+        if (isPassed) {
+          const rankBonus = r * 10;
+          structureEval -= (20 + rankBonus);
+        }
+      }
+    }
+  }
+
+  return score + structureEval;
 }
 
 export function getHeapBase(): usize {

@@ -250,7 +250,80 @@ var ChessAIShared = (() => {
         }
     }
 
-    const API = { evaluateBoard, minimax, applyMove, undoMove, quiesce };
+    const ChessOpeningBook = {
+        // Starting position
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -": ["e2e4", "d2d4", "g1f3", "c2c4"],
+        
+        // 1. e4 responses
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3": ["e7e5", "c7c5", "e7e6", "c7c6"],
+        
+        // 1. e4 e5
+        "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6": ["g1f3", "f2f4", "d2d4"],
+        
+        // 1. e4 e5 2. Nf3
+        "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -": ["b8c6", "d7d6", "g8f6"],
+        
+        // 1. e4 e5 2. Nf3 Nc6
+        "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -": ["b1c3", "f1b5", "f1c4", "d2d4"],
+        
+        // Ruy Lopez: 1. e4 e5 2. Nf3 Nc6 3. Bb5
+        "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq -": ["a7a6", "g8f6", "f7f5"],
+        
+        // Italian Game: 1. e4 e5 2. Nf3 Nc6 3. Bc4
+        "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq -": ["g8f6", "f1c5"],
+        
+        // Sicilian Defense: 1. e4 c5
+        "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6": ["g1f3", "b1c3", "c2c3"],
+        
+        // Sicilian Open: 1. e4 c5 2. Nf3
+        "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -": ["d7d6", "e7e6", "b8c6"],
+        
+        // Sicilian Open: 1. e4 c5 2. Nf3 d6 3. d4
+        "rnbqkbnr/pp2pppp/3p4/2p5/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq d3": ["c5d4"],
+        
+        // Sicilian Open: 1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4
+        "rnbqkbnr/pp2pppp/3p4/8/3N4/8/PPP2PPP/RNBQKB1R b KQkq -": ["g8f6"],
+
+        // French Defense: 1. e4 e6
+        "rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -": ["d2d4", "b1c3"],
+
+        // French Defense: 1. e4 e6 2. d4 d5
+        "rnbqkbnr/ppp2ppp/4p3/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq d6": ["b1c3", "e4d5", "e4e5"],
+        
+        // Caro-Kann: 1. e4 c6
+        "rnbqkbnr/pp1ppppp/2p7/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -": ["d2d4", "b1c3"],
+        
+        // Caro-Kann: 1. e4 c6 2. d4 d5
+        "rnbqkbnr/ppp1pppp/8/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq d6": ["b1c3", "e4e5"],
+
+        // Queen's Gambit: 1. d4 d5 2. c4
+        "rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq c3": ["e7e6", "c7c6", "d5c4"]
+    };
+
+    function parseUciMove(moveStr) {
+        const files = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4, 'f': 5, 'g': 6, 'h': 7 };
+        const fromC = files[moveStr[0]];
+        const fromR = 8 - parseInt(moveStr[1]);
+        const toC = files[moveStr[2]];
+        const toR = 8 - parseInt(moveStr[3]);
+        const promotion = moveStr.length > 4 ? moveStr[4] : null;
+        return { fromR, fromC, toR, toC, promotion };
+    }
+
+    function getOpeningBookMove(fen) {
+        if (!fen) return null;
+        const parts = fen.split(/\s+/);
+        // We only match first 4 parts of FEN (board state, turn, castling rights, ep square)
+        const normalized = parts.slice(0, 4).join(' ');
+        const moves = ChessOpeningBook[normalized];
+        if (moves && moves.length > 0) {
+            const selected = moves[Math.floor(Math.random() * moves.length)];
+            return parseUciMove(selected);
+        }
+        return null;
+    }
+
+    const API = { evaluateBoard, minimax, applyMove, undoMove, quiesce, getOpeningBookMove };
     if (typeof module !== 'undefined' && module.exports) module.exports = API;
     return API;
 })();

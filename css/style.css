@@ -11,6 +11,12 @@
     /* Dark */
     --dark-light: #e2e8f0;
     --dark-dark: #475569;
+    /* Wood */
+    --wood-light: #e9c490;
+    --wood-dark: #8b5a2b;
+    /* Emerald */
+    --emerald-light: #d1fae5;
+    --emerald-dark: #065f46;
 
     /* Current Theme */
     --board-light: var(--classic-light);
@@ -753,3 +759,37 @@ main {
         opacity: 0.85 !important;
     }
 }
+
+/* Light Theme Overrides for Chat Input and Emojis */
+html:not(.dark) #chat-input {
+    background-color: #ffffff !important;
+    border-color: rgba(15, 23, 42, 0.15) !important;
+    color: #0f172a !important;
+}
+
+html:not(.dark) #chat-input::placeholder {
+    color: #64748b !important;
+}
+
+html:not(.dark) .emoji-btn {
+    background-color: #f1f5f9 !important;
+    border-color: rgba(15, 23, 42, 0.1) !important;
+    color: #0f172a !important;
+}
+
+html:not(.dark) .emoji-btn:hover {
+    background-color: #e2e8f0 !important;
+    border-color: #2563eb !important;
+}
+
+/* Card order logic for board flipping */
+#opponent-card {
+    order: 1;
+}
+#board-container {
+    order: 2;
+}
+#player-card {
+    order: 3;
+}
+

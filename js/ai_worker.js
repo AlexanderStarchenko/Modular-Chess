@@ -32,6 +32,18 @@ onmessage = function(e) {
         let bestMove = null;
         const turn = state.turn;
         
+        // Try opening book first!
+        if (typeof ChessLogic.getFen === 'function' && typeof ChessAIShared !== 'undefined' && typeof ChessAIShared.getOpeningBookMove === 'function') {
+            const currentFen = ChessLogic.getFen();
+            bestMove = ChessAIShared.getOpeningBookMove(currentFen);
+        }
+        
+        if (bestMove) {
+            console.log('[Worker] Opening book move found:', bestMove);
+            postMessage({ bestMove });
+            return;
+        }
+        
         console.log('[Worker] Starting search for difficulty:', difficulty);
 
         if (difficulty === '1') {

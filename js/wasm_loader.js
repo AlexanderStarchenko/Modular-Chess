@@ -138,13 +138,28 @@ glob.ChessWASM = (() => {
         const halfMove = gameState.halfMoveClock || 0;
         
         instance.setGameState(turnCode, castlingMask, epIndex, halfMove);
-        const moveVal = instance.searchWASM(depth, isMaximizing ? 1 : 0, alpha, beta);
         
-        if (moveVal === 0) return null;
+        const startTime = Date.now();
+        const maxTimeMs = 1200; // Limit search to 1.2s
+        let bestMoveVal = 0;
         
-        const from = moveVal & 0x3F;
-        const to = (moveVal >> 6) & 0x3F;
-        const type = (moveVal >> 12) & 0x0F;
+        for (let d = 1; d <= depth; d++) {
+            const currentMoveVal = instance.searchWASM(d, isMaximizing ? 1 : 0, alpha, beta);
+            if (currentMoveVal !== 0) {
+                bestMoveVal = currentMoveVal;
+            }
+            const elapsed = Date.now() - startTime;
+            if (elapsed >= maxTimeMs && d < depth) {
+                console.log(`[WASM] Iterative deepening stopped at depth ${d}/${depth}. Time: ${elapsed}ms`);
+                break;
+            }
+        }
+        
+        if (bestMoveVal === 0) return null;
+        
+        const from = bestMoveVal & 0x3F;
+        const to = (bestMoveVal >> 6) & 0x3F;
+        const type = (bestMoveVal >> 12) & 0x0F;
         
         const fromR = from >> 3;
         const fromC = from & 7;

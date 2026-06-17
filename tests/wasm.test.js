@@ -46,7 +46,7 @@ describe('WebAssembly Chess Core - Safety & Logic', () => {
         setPiece(1, 1, 'P'); // +100 (White Pawn at B7, PST: +50 = 150)
         
         const score = wasmInstance.evaluateMaterial(boardPtr);
-        expect(score).toBe(530); // 880 - 500 + 150 = 530
+        expect(score).toBe(570); // 880 - 500 + 150 = 530, + 40 (passed pawn +80, isolated pawn -15, open rook file -25) = 570
     });
 
     test('Attack Detection: Knight Leaps', () => {

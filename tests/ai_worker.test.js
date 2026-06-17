@@ -22,7 +22,8 @@ describe('Chess AI Worker', () => {
 
         // Mock game dependencies in global scope
         global.ChessLogic = {
-            loadState: jest.fn()
+            loadState: jest.fn(),
+            getFen: jest.fn().mockReturnValue('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
         };
         global.ChessAIEasy = {
             getBestMove: jest.fn().mockReturnValue({ from: 'e2', to: 'e4', difficulty: 'easy' })
