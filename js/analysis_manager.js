@@ -9,8 +9,8 @@ const AnalysisManager = (() => {
 
     function initWorker() {
         if (!stockfish) {
-            console.log("[Analysis] Starting Stockfish Worker v30");
-            stockfish = new Worker('js/stockfish.js?v=30');
+            console.log("[Analysis] Starting Stockfish Worker v35");
+            stockfish = new Worker('js/stockfish.js?v=35');
             stockfish.onmessage = function(event) {
                 const line = event.data;
                 if (currentTask && typeof currentTask.onMessage === 'function') {
@@ -50,6 +50,13 @@ const AnalysisManager = (() => {
                             resolve(evalResult);
                         }
                     }
+                },
+                cancel: () => {
+                    if (!resolved) {
+                        clearTimeout(timeout);
+                        resolved = true;
+                        resolve(evalResult);
+                    }
                 }
             };
             stockfish.postMessage(`position fen ${fen}`);
@@ -81,14 +88,20 @@ const AnalysisManager = (() => {
         }
 
         // Evaluate initial state
+        if (!isAnalyzing) return;
         let resStart = await evaluateFen(history[0].beforeFen);
+        if (!isAnalyzing) return;
         evaluations.push(resStart);
 
         for (let i = 0; i < total; i++) {
+            if (!isAnalyzing) break;
             let res = await evaluateFen(history[i].fen);
+            if (!isAnalyzing) break;
             evaluations.push(res);
             if (onProgress) onProgress(i + 1, total);
         }
+
+        if (!isAnalyzing) return;
 
         let results = [];
         for (let i = 0; i < total; i++) {
@@ -170,9 +183,23 @@ const AnalysisManager = (() => {
         if (onComplete) onComplete(stats);
     }
 
+    function stopAnalysis() {
+        console.log("[Analysis] Stopping analysis and terminating worker");
+        isAnalyzing = false;
+        if (currentTask && typeof currentTask.cancel === 'function') {
+            currentTask.cancel();
+        }
+        currentTask = null;
+        if (stockfish) {
+            stockfish.terminate();
+            stockfish = null;
+        }
+    }
+
     return {
         analyzeGame,
-        evaluateFen
+        evaluateFen,
+        stopAnalysis
     };
 })();
 

@@ -147,5 +147,25 @@ describe('ChessAIShared - Engine IQ & Evaluation', () => {
         const blackScore = ChessAIShared.quiesce(boardBlack, -Infinity, Infinity, false, ChessLogic);
         expect(blackScore).toBeLessThan(0); // Should account for the black rook vs white bishop capture options
     });
+
+    describe('Opening Book Lookups', () => {
+        test('Should retrieve valid move from starting position FEN', () => {
+            const startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+            const bookMove = ChessAIShared.getOpeningBookMove(startFen);
+            expect(bookMove).toBeDefined();
+            expect(bookMove).not.toBeNull();
+            
+            // Expected start moves: e2e4 (6,4 -> 4,4), d2d4 (6,3 -> 4,3), g1f3 (7,6 -> 5,5), c2c4 (6,2 -> 4,2)
+            const validFromSquares = [[6, 4], [6, 3], [7, 6], [6, 2]];
+            const isValidFrom = validFromSquares.some(sq => sq[0] === bookMove.fromR && sq[1] === bookMove.fromC);
+            expect(isValidFrom).toBe(true);
+        });
+
+        test('Should return null for unknown FEN position', () => {
+            const unknownFen = 'rnbqkbnr/8/8/8/8/8/8/RNBQKBNR w KQkq - 0 1';
+            const bookMove = ChessAIShared.getOpeningBookMove(unknownFen);
+            expect(bookMove).toBeNull();
+        });
+    });
 });
 

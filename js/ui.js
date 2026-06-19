@@ -207,7 +207,7 @@ const ChessUI = (() => {
     }
 
     function init() {
-        console.log("Chess UI Initializing... [Version v31]");
+        console.log("Chess UI Initializing... [Version v35]");
         
         if (typeof ChessWASM !== 'undefined') {
             ChessWASM.init().then(success => {
@@ -733,7 +733,7 @@ const ChessUI = (() => {
             msgEl.className = 'p-1 rounded bg-surface-container/20 border border-outline-variant/5 mb-1';
             
             const senderSpan = document.createElement('strong');
-            senderSpan.className = sender === 'Вы' ? 'text-primary' : 'text-outline';
+            senderSpan.className = sender === 'Вы' ? 'text-primary' : 'text-on-surface-variant';
             senderSpan.textContent = `${sender}: `;
             
             const textSpan = document.createElement('span');
@@ -871,6 +871,7 @@ const ChessUI = (() => {
         root.style.setProperty('--board-light', `var(--${theme}-light)`);
         root.style.setProperty('--board-dark', `var(--${theme}-dark)`);
         localStorage.setItem('board-theme', theme);
+        renderBoard();
     }
 
     function updateOpponentAvatar() {
@@ -897,7 +898,7 @@ const ChessUI = (() => {
             return { time: mins * 60, inc: inc };
         } else {
             const parts = timeControlSelect.value.split(',');
-            return { time: parseInt(parts[0]), inc: parseInt(parts[1]) };
+            return { time: parseInt(parts[0]), inc: parseInt(parts[1]) || 0 };
         }
     }
 
@@ -1800,6 +1801,9 @@ const ChessUI = (() => {
         if (stockfishTip) stockfishTip.textContent = '';
         analysisSnapshot = null;
         suggestedMove = null;
+        if (typeof AnalysisManager !== 'undefined' && typeof AnalysisManager.stopAnalysis === 'function') {
+            AnalysisManager.stopAnalysis();
+        }
     }
 
     function startAnalysis() {

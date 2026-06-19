@@ -201,4 +201,51 @@ describe('AnalysisManager', () => {
             done();
         });
     });
+
+    test('stopAnalysis terminates worker and cancels active analysis', (done) => {
+        let IsolatedAnalysisManager;
+        jest.isolateModules(() => {
+            IsolatedAnalysisManager = require('../js/analysis_manager');
+        });
+
+        const history = [
+            { beforeFen: 'pos1', fen: 'pos2', move: { uci: 'a1' } },
+            { beforeFen: 'pos2', fen: 'pos3', move: { uci: 'a2' } }
+        ];
+
+        // Mock responses for analysis
+        global.mockStockfishResponses = [
+            { cp: 0 },
+            { cp: 10 }
+        ];
+
+        // We will intercept the worker creation to spy on terminate
+        let createdWorker = null;
+        const originalWorker = global.Worker;
+        global.Worker = jest.fn().mockImplementation(function() {
+            createdWorker = {
+                onmessage: null,
+                postMessage: jest.fn(),
+                terminate: jest.fn()
+            };
+            return createdWorker;
+        });
+
+        let completed = false;
+        IsolatedAnalysisManager.analyzeGame(history, null, (stats) => {
+            completed = true;
+        });
+
+        // Trigger stopAnalysis immediately
+        IsolatedAnalysisManager.stopAnalysis();
+
+        expect(createdWorker).not.toBeNull();
+        expect(createdWorker.terminate).toHaveBeenCalled();
+
+        setTimeout(() => {
+            expect(completed).toBe(false);
+            global.Worker = originalWorker; // Restore original mock
+            done();
+        }, 50);
+    });
 });
