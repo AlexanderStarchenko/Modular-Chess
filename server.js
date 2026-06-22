@@ -10,10 +10,10 @@ const io = new Server(server, {
         origin: "*",
         methods: ["GET", "POST"]
     },
-    transports: ['websocket', 'polling'],
-    allowUpgrades: true,
-    perMessageDeflate: true,
-    httpCompression: true,
+    transports: ['websocket'],
+    allowUpgrades: false,
+    perMessageDeflate: false,
+    httpCompression: false,
     pingInterval: 5000,
     pingTimeout: 2000,
     cookie: false
@@ -153,6 +153,14 @@ io.on('connection', (socket) => {
             if (roomId === socket.id) continue;
             const roomData = rooms.get(roomId);
             if (roomData) {
+                // If there are other active users in this room, do not delete it!
+                const clients = io.sockets.adapter.rooms.get(roomId);
+                const otherClientsCount = clients ? (clients.has(socket.id) ? clients.size - 1 : clients.size) : 0;
+                
+                if (otherClientsCount > 0) {
+                    continue;
+                }
+
                 if (roomData.deleteTimeout) {
                     clearTimeout(roomData.deleteTimeout);
                 }

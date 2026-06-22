@@ -8,7 +8,7 @@
     "dist": "electron-builder",
     "server": "node server.js",
     "test": "jest",
-    "build:css": "npx tailwindcss -i css/input.css -o css/output.css --minify"
+    "build:css": "npx @tailwindcss/cli -i css/input.css -o css/output.css --minify"
   },
   "dependencies": {
     "express": "^4.18.2",

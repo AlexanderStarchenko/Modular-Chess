@@ -18,9 +18,9 @@
     <!-- Preload Chess WASM Engine for lightning-fast startup -->
     <link rel="preload" href="build/release.wasm" as="fetch" crossorigin>
     <!-- Optimized compiled stylesheet containing both Tailwind utility classes and custom styling -->
-    <link rel="stylesheet" href="css/output.css?v=35">
+    <link rel="stylesheet" href="css/output.css?v=39">
 </head>
-<body class="bg-background text-on-background font-body-md overflow-x-hidden lg:overflow-hidden min-h-screen flex flex-col">
+<body class="bg-background text-on-background font-body-md overflow-x-hidden md:overflow-hidden min-h-screen md:h-screen flex flex-col">
     <!-- TopAppBar Component -->
     <header class="hidden fixed top-0 left-0 w-full h-16 z-50 flex justify-between items-center px-4 lg:px-8 bg-surface-container/60 backdrop-blur-xl border-b border-outline-variant/10">
         <div class="flex items-center gap-3 lg:gap-8">
@@ -54,7 +54,7 @@
         <div id="sidebar-backdrop" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden lg:hidden transition-all duration-300"></div>
 
         <!-- SideNavBar Component (Overlay drawer on mobile, static panel on desktop) -->
-        <aside id="sidebar-drawer" class="fixed lg:static top-0 lg:top-0 left-0 h-full lg:h-full w-80 lg:w-80 glass-panel border-r border-outline-variant/10 p-5 flex flex-col z-50 lg:z-40 overflow-y-auto transform -translate-x-full lg:translate-x-0 transition-transform duration-300 ease-in-out">
+        <aside id="sidebar-drawer" class="fixed lg:static top-0 lg:top-0 left-0 h-full lg:h-full w-80 lg:w-80 glass-panel border-r border-outline-variant/10 p-5 flex flex-col z-50 lg:z-40 overflow-y-auto transform -translate-x-full lg:translate-x-0 transition-transform duration-300 ease-in-out min-h-0">
             <!-- Mobile Drawer Header -->
             <div class="flex justify-between items-center lg:hidden mb-4 border-b border-outline-variant/10 pb-2">
                 <span class="font-bold text-primary">Настройки</span>
@@ -168,28 +168,28 @@
         </aside>
 
         <!-- Main Game Canvas -->
-        <main class="flex-1 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row p-4 lg:p-6 xl:p-8 gap-6 lg:gap-8 min-h-0 w-full">
+        <main class="flex-1 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row p-4 md:p-6 xl:p-8 gap-6 md:gap-8 min-h-0 w-full">
             <!-- Left: Game Board Area -->
             <div class="flex-1 flex flex-col justify-center items-center min-h-0 w-full">
                 <div id="board-wrapper">
                     <!-- Opponent Profile Card -->
-                    <div id="opponent-card" class="w-full flex justify-between items-center glass-panel p-2.5 lg:p-3 rounded-xl border border-outline-variant/10 shadow-lg">
+                    <div id="opponent-card" class="w-full flex justify-between items-center glass-panel p-2.5 md:p-3 rounded-xl border border-outline-variant/10 shadow-lg">
                         <div class="flex items-center gap-3">
-                            <div id="opponent-avatar-container" class="w-9 h-9 lg:w-10 lg:h-10 rounded-lg bg-surface-container-highest border border-outline-variant/20 flex items-center justify-center shadow-md">
+                            <div id="opponent-avatar-container" class="w-9 h-9 md:w-10 md:h-10 rounded-lg bg-surface-container-highest border border-outline-variant/20 flex items-center justify-center shadow-md">
                                 <span class="material-symbols-outlined text-primary text-xl" id="opponent-avatar-icon" style="font-variation-settings: 'FILL' 1;">smart_toy</span>
                             </div>
                             <div>
                                 <span class="player-avatar hidden">🤖</span>
-                                <p class="font-bold text-xs lg:text-sm text-on-surface" id="top-player-name">Оппонент</p>
+                                <p class="font-bold text-xs md:text-sm text-on-surface" id="top-player-name">Оппонент</p>
                                 <div class="captures-row flex items-center gap-2 mt-0.5 min-h-[16px]">
-                                    <span class="captured-pieces text-[9px] lg:text-[10px] text-on-surface-variant tracking-tighter" id="top-captured"></span>
-                                    <span class="material-advantage text-[9px] lg:text-[10px] font-bold text-primary" id="top-advantage"></span>
-                                    <span class="accuracy-badge text-[8px] lg:text-[9px] font-extrabold bg-surface-container-high px-1 rounded border border-outline-variant/10 text-on-surface-variant shadow-sm" id="top-accuracy" title="Точность по Stockfish" style="display: none;"></span>
+                                    <span class="captured-pieces text-[9px] md:text-[10px] text-on-surface-variant tracking-tighter" id="top-captured"></span>
+                                    <span class="material-advantage text-[9px] md:text-[10px] font-bold text-primary" id="top-advantage"></span>
+                                    <span class="accuracy-badge text-[8px] md:text-[9px] font-extrabold bg-surface-container-high px-1 rounded border border-outline-variant/10 text-on-surface-variant shadow-sm" id="top-accuracy" title="Точность по Stockfish" style="display: none;"></span>
                                 </div>
                             </div>
                         </div>
-                        <div id="top-timer-container" class="timer-container px-3 py-1 lg:px-4 lg:py-1.5 rounded-lg border shadow-inner">
-                            <span class="font-timer-display text-lg lg:text-2xl tracking-wider font-mono" id="top-timer">10:00</span>
+                        <div id="top-timer-container" class="timer-container px-3 py-1 md:px-4 md:py-1.5 rounded-lg border shadow-inner">
+                            <span class="font-timer-display text-lg md:text-2xl tracking-wider font-mono" id="top-timer">10:00</span>
                         </div>
                     </div>
                     
@@ -199,31 +199,31 @@
                     </div>
                     
                     <!-- Player Profile Card -->
-                    <div id="player-card" class="w-full flex justify-between items-center glass-panel p-2.5 lg:p-3 rounded-xl border border-outline-variant/10 shadow-lg">
+                    <div id="player-card" class="w-full flex justify-between items-center glass-panel p-2.5 md:p-3 rounded-xl border border-outline-variant/10 shadow-lg">
                         <div class="flex items-center gap-3">
-                            <div class="w-9 h-9 lg:w-10 lg:h-10 rounded-lg bg-primary-container/20 border border-primary/20 flex items-center justify-center shadow-md">
+                            <div class="w-9 h-9 md:w-10 md:h-10 rounded-lg bg-primary-container/20 border border-primary/20 flex items-center justify-center shadow-md">
                                 <span class="material-symbols-outlined text-primary text-xl">person</span>
                             </div>
                             <div>
                                 <span class="player-avatar hidden">👤</span>
-                                <p class="font-bold text-xs lg:text-sm text-on-surface" id="bottom-player-name">Вы</p>
+                                <p class="font-bold text-xs md:text-sm text-on-surface" id="bottom-player-name">Вы</p>
                                 <div class="captures-row flex items-center gap-2 mt-0.5 min-h-[16px]">
-                                    <span class="captured-pieces text-[9px] lg:text-[10px] text-on-surface-variant tracking-tighter" id="bottom-captured"></span>
-                                    <span class="material-advantage text-[9px] lg:text-[10px] font-bold text-primary" id="bottom-advantage"></span>
-                                    <span class="accuracy-badge text-[8px] lg:text-[9px] font-extrabold bg-surface-container-high px-1 rounded border border-outline-variant/10 text-on-surface-variant shadow-sm" id="bottom-accuracy" title="Точность по Stockfish" style="display: none;"></span>
+                                    <span class="captured-pieces text-[9px] md:text-[10px] text-on-surface-variant tracking-tighter" id="bottom-captured"></span>
+                                    <span class="material-advantage text-[9px] md:text-[10px] font-bold text-primary" id="bottom-advantage"></span>
+                                    <span class="accuracy-badge text-[8px] md:text-[9px] font-extrabold bg-surface-container-high px-1 rounded border border-outline-variant/10 text-on-surface-variant shadow-sm" id="bottom-accuracy" title="Точность по Stockfish" style="display: none;"></span>
                                 </div>
                             </div>
                         </div>
-                        <div id="bottom-timer-container" class="timer-container px-3 py-1 lg:px-4 lg:py-1.5 rounded-lg border shadow-inner">
-                            <span class="font-timer-display text-lg lg:text-2xl tracking-wider font-mono" id="bottom-timer">10:00</span>
+                        <div id="bottom-timer-container" class="timer-container px-3 py-1 md:px-4 md:py-1.5 rounded-lg border shadow-inner">
+                            <span class="font-timer-display text-lg md:text-2xl tracking-wider font-mono" id="bottom-timer">10:00</span>
                         </div>
                     </div>
                 </div>
             </div>
             
             <!-- Right: Control Panel (Analysis & History) -->
-            <div class="w-full lg:w-96 flex flex-col gap-4 h-auto lg:h-full pb-4 lg:pb-0">
-            <div class="glass-panel rounded-2xl flex-1 flex flex-col overflow-hidden border border-outline-variant/10 shadow-xl">
+            <div class="w-full md:w-80 lg:w-96 flex flex-col gap-4 h-auto md:h-full min-h-0 pb-4 md:pb-0">
+            <div class="glass-panel rounded-2xl flex-1 flex flex-col overflow-hidden border border-outline-variant/10 shadow-xl min-h-0">
                 <!-- Navigation Tabs -->
                 <div class="flex border-b border-outline-variant/10 bg-surface-container/30">
                     <button id="tab-btn-notation" class="flex-1 py-3 text-xs font-bold border-b-2 border-primary text-primary transition-all duration-150 cursor-pointer">Нотация</button>
@@ -233,10 +233,10 @@
                 </div>
                 
                 <!-- Tab Content Area -->
-                <div class="flex-1 overflow-y-auto p-4 flex flex-col">
+                <div class="flex-1 overflow-y-auto p-4 flex flex-col min-h-0">
                     
                     <!-- Notation Tab Content -->
-                    <div id="tab-content-notation" class="flex-1 flex flex-col">
+                    <div id="tab-content-notation" class="flex-1 flex flex-col min-h-0">
                         <div class="flex-1 bg-surface-container-lowest/30 border border-outline-variant/10 rounded-xl p-3 overflow-y-auto shadow-inner">
                             <ul id="history-list" class="history-list space-y-1 text-xs">
                                 <!-- Dynamically populated moves history list -->
@@ -245,7 +245,7 @@
                     </div>
                     
                     <!-- Stats Tab Content -->
-                    <div id="tab-content-stats" class="flex-1 hidden flex flex-col gap-4">
+                    <div id="tab-content-stats" class="flex-1 hidden flex flex-col gap-4 min-h-0">
                         <!-- Bento Card: Game Info -->
                         <div class="bg-surface-container/20 p-4 rounded-xl border border-outline-variant/10 space-y-3 shadow-md">
                             <div class="flex justify-between items-center border-b border-outline-variant/10 pb-1.5">
@@ -285,7 +285,7 @@
                     </div>
                     
                     <!-- Analysis Tab Content -->
-                    <div id="tab-content-analysis" class="flex-1 hidden flex flex-col gap-3">
+                    <div id="tab-content-analysis" class="flex-1 hidden flex flex-col gap-3 min-h-0">
                         <button id="analyze-btn" class="w-full py-2.5 bg-primary text-on-primary font-bold rounded-lg text-xs uppercase tracking-wider hover:opacity-90 transition-all active:scale-98 cursor-pointer shadow-md">Анализировать партию</button>
                         
                         <div id="analysis-panel" class="space-y-2" style="display: none;">
@@ -295,14 +295,14 @@
                             <div id="analysis-progress" class="text-[10px] text-on-surface-variant font-mono"></div>
                             <div id="analysis-advice" class="text-xs font-bold text-primary bg-primary-container/10 p-2 rounded border border-primary/10 shadow-sm min-h-[30px] flex items-center"></div>
                             
-                            <div class="bg-surface-container-lowest/30 border border-outline-variant/10 rounded-xl p-3 overflow-y-auto max-h-[200px] lg:max-h-[300px] h-32 lg:h-[300px] shadow-inner">
+                            <div class="bg-surface-container-lowest/30 border border-outline-variant/10 rounded-xl p-3 overflow-y-auto max-h-[200px] md:max-h-[300px] h-32 md:h-[300px] shadow-inner">
                                 <ul id="analysis-list" class="history-list space-y-1"></ul>
                             </div>
                         </div>
                     </div>
 
                     <!-- Chat Tab Content -->
-                    <div id="tab-content-chat" class="flex-1 hidden flex flex-col gap-2">
+                    <div id="tab-content-chat" class="flex-1 hidden flex flex-col gap-2 min-h-0">
                         <div id="chat-messages" class="flex-1 bg-surface-container-lowest/30 border border-outline-variant/10 rounded-xl p-3 overflow-y-auto shadow-inner space-y-2 text-xs">
                             <!-- Dynamically populated chat messages -->
                         </div>
@@ -361,19 +361,19 @@
     </div>
 
     <!-- Scripts Integration -->
-    <script src="js/wasm_loader.js?v=35" defer></script>
-    <script src="js/logic.js?v=35" defer></script>
-    <script src="js/ai_shared.js?v=35" defer></script>
-    <script src="js/ai_easy.js?v=35" defer></script>
-    <script src="js/ai_medium.js?v=35" defer></script>
-    <script src="js/ai_hard.js?v=35" defer></script>
-    <script src="js/ai_very_hard.js?v=35" defer></script>
-    <script src="js/ai_unreal.js?v=35" defer></script>
-    <script src="js/analysis_manager.js?v=35" defer></script>
-    <script src="js/network.js?v=35" defer></script>
+    <script src="js/wasm_loader.js?v=39" defer></script>
+    <script src="js/logic.js?v=39" defer></script>
+    <script src="js/ai_shared.js?v=39" defer></script>
+    <script src="js/ai_easy.js?v=39" defer></script>
+    <script src="js/ai_medium.js?v=39" defer></script>
+    <script src="js/ai_hard.js?v=39" defer></script>
+    <script src="js/ai_very_hard.js?v=39" defer></script>
+    <script src="js/ai_unreal.js?v=39" defer></script>
+    <script src="js/analysis_manager.js?v=39" defer></script>
+    <script src="js/network.js?v=39" defer></script>
     <script src="js/lib/binary_protocol.js" defer></script>
     <script src="js/lib/socket.io.min.js" defer></script>
-    <script src="js/transport_socket.js?v=35" defer></script>
-    <script src="js/ui.js?v=35" defer></script>
+    <script src="js/transport_socket.js?v=39" defer></script>
+    <script src="js/ui.js?v=39" defer></script>
 </body>
 </html>

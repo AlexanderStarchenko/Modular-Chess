@@ -247,4 +247,42 @@ describe('ChessLogic', () => {
         // White's queenside rook is captured, so castling right is lost (wRookAMoved should be true)
         expect(state.castlingRights.wRookAMoved).toBe(true);
     });
+
+    test('loadState and loadFen should notify subscribers of game status immediately', () => {
+        let status = null;
+        const unsubscribe = ChessLogic.subscribe(state => {
+            status = state.status;
+        });
+
+        // Load a stalemate position FEN
+        ChessLogic.loadFen('k7/8/8/8/8/6q1/8/7K w - - 0 1');
+        expect(status).toBe('stalemate');
+
+        // Load an ongoing state
+        ChessLogic.initBoard();
+        const ongoingState = ChessLogic.getState();
+
+        // Load a stalemate state
+        ChessLogic.loadFen('k7/8/8/8/8/6q1/8/7K w - - 0 1');
+        
+        // Now call loadState with the ongoing state
+        ChessLogic.loadState(ongoingState);
+        expect(status).toBe(null); // Ongoing game status is null
+
+        unsubscribe();
+    });
+
+    test('loadFen with skipRecord: true should not increment position count or trigger repetition draw', () => {
+        ChessLogic.initBoard();
+        const fen = ChessLogic.getFen();
+        const simpleFen = fen.split(' ').slice(0, 4).join(' ');
+        
+        // Load the same FEN multiple times with skipRecord: true
+        ChessLogic.loadFen(fen, { keepHistory: true, skipRecord: true });
+        ChessLogic.loadFen(fen, { keepHistory: true, skipRecord: true });
+        ChessLogic.loadFen(fen, { keepHistory: true, skipRecord: true });
+        
+        const state = ChessLogic.getState();
+        expect(state.positionHistory[simpleFen]).toBe(1); // Position count remains 1, not 4
+    });
 });

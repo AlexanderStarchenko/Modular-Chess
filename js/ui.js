@@ -207,7 +207,7 @@ const ChessUI = (() => {
     }
 
     function init() {
-        console.log("Chess UI Initializing... [Version v35]");
+        console.log("Chess UI Initializing... [Version v39]");
         
         if (typeof ChessWASM !== 'undefined') {
             ChessWASM.init().then(success => {
@@ -870,6 +870,8 @@ const ChessUI = (() => {
         const root = document.documentElement;
         root.style.setProperty('--board-light', `var(--${theme}-light)`);
         root.style.setProperty('--board-dark', `var(--${theme}-dark)`);
+        root.style.setProperty('--board-coord-light', `var(--${theme}-coord-light)`);
+        root.style.setProperty('--board-coord-dark', `var(--${theme}-coord-dark)`);
         localStorage.setItem('board-theme', theme);
         renderBoard();
     }
@@ -1205,6 +1207,8 @@ const ChessUI = (() => {
         const style = getComputedStyle(document.documentElement);
         const lightColor = style.getPropertyValue('--board-light').trim() || '#f0d9b5';
         const darkColor = style.getPropertyValue('--board-dark').trim() || '#b58863';
+        const coordLight = style.getPropertyValue('--board-coord-light').trim() || '#ffffff';
+        const coordDark = style.getPropertyValue('--board-coord-dark').trim() || '#704828';
         
         // 1. Draw Squares & Highlights
         for (let ri = 0; ri < 8; ri++) {
@@ -1273,7 +1277,7 @@ const ChessUI = (() => {
                 
                 // Coordinates
                 ctx.font = 'bold 10px Inter, Outfit, sans-serif';
-                ctx.fillStyle = (r + c) % 2 === 0 ? darkColor : lightColor;
+                ctx.fillStyle = (r + c) % 2 === 0 ? coordDark : coordLight;
                 
                 if (ci === 0) { // Rank Label (left edge)
                     ctx.textAlign = 'left';
@@ -1593,7 +1597,38 @@ const ChessUI = (() => {
     }
 
     function updateStatus(gameStatus = null) {
-        if (gameEnded && !gameStatus) return;
+        if (gameEnded) {
+            const turn = ChessLogic.getTurn();
+            const moveColor = turn === 'w' ? 'Белых' : 'Черных';
+            const inCheck = ChessLogic.isKingInCheck(turn);
+            
+            const isHistoricalMove = typeof selectedAnalysisIndex !== 'undefined' && selectedAnalysisIndex !== null && selectedAnalysisIndex < analysisResults.length - 1;
+            const status = (isHistoricalMove ? null : gameStatus) || (ChessLogic.getAllLegalMoves(turn).length === 0 ? 
+                            (ChessLogic.isKingInCheck(turn) ? 'checkmate' : 'stalemate') : null);
+                            
+            if (status === 'checkmate') {
+                statusElement.textContent = `МАТ! Победа ${turn === 'w' ? 'черных' : 'белых'}!`;
+                gameInfoElement.textContent = 'Анализ позиции';
+            } else if (status === 'stalemate') {
+                statusElement.textContent = 'Ничья! Пат.';
+                gameInfoElement.textContent = 'Анализ позиции';
+            } else if (status === 'repetition') {
+                statusElement.textContent = 'Ничья! Повторение ходов.';
+                gameInfoElement.textContent = 'Анализ позиции';
+            } else if (status === '50moves') {
+                statusElement.textContent = 'Ничья! 50 ходов.';
+                gameInfoElement.textContent = 'Анализ позиции';
+            } else if (status === 'material') {
+                statusElement.textContent = 'Ничья! Недостаточно фигур.';
+                gameInfoElement.textContent = 'Анализ позиции';
+            } else {
+                statusElement.textContent = `Ход ${moveColor}${inCheck ? ' (ШАХ!)' : ''}`;
+                gameInfoElement.textContent = inCheck ? 'Король под ударом!' : 'Анализ позиции';
+            }
+            updateTimerDisplays();
+            updateHintButtonState();
+            return;
+        }
 
         const turn = ChessLogic.getTurn();
         const moveColor = turn === 'w' ? 'Белых' : 'Черных';
@@ -1825,7 +1860,13 @@ const ChessUI = (() => {
         const history = ChessLogic.getGameHistory();
         
         AnalysisManager.analyzeGame(history, (current, total) => {
-            if (analysisProgress) analysisProgress.textContent = `Анализ: ход ${current} из ${total}...`;
+            const progress = (current / total) * 100;
+            if (analysisProgress) analysisProgress.innerHTML = `
+                <div class="w-full bg-surface-container-highest rounded overflow-hidden mt-1" style="height: 4px;">
+                    <div class="bg-primary h-full transition-all duration-300" style="width: ${Math.round(progress)}%;"></div>
+                </div>
+                <div style="text-align: right; margin-top: 2px;">${Math.round(progress)}%</div>
+            `;
         }, (stats) => {
             if (analysisProgress) analysisProgress.textContent = 'Анализ завершен!';
             analysisResults = stats.moves;
@@ -1840,20 +1881,22 @@ const ChessUI = (() => {
             const b = stats.summary.black;
             
             const renderStats = (s, color) => `
-                <div style="font-size:0.85em; margin-top:5px; color:${color === 'w' ? '#fff' : '#aaa'}">
+                <div class="analysis-stats-row ${color === 'w' ? 'white' : 'black'}">
                     <strong>${color === 'w' ? 'Белые' : 'Черные'}:</strong> 
-                    <span class="quality-badge brilliant">${s.brilliant}</span>
-                    <span class="quality-badge good">${s.good}</span>
-                    <span class="quality-badge inaccuracy">${s.inaccuracy}</span>
-                    <span class="quality-badge mistake">${s.mistake}</span>
-                    <span class="quality-badge blunder">${s.blunder}</span>
+                    <span class="quality-badge brilliant" title="Блестящий ход (!!)">${s.brilliant}</span>
+                    <span class="quality-badge best" title="Лучший ход (★)">${s.best}</span>
+                    <span class="quality-badge excellent" title="Отличный ход (!)">${s.excellent}</span>
+                    <span class="quality-badge good" title="Хороший ход (+)">${s.good}</span>
+                    <span class="quality-badge inaccuracy" title="Неточность (?!)">${s.inaccuracy}</span>
+                    <span class="quality-badge mistake" title="Ошибка (?)">${s.mistake}</span>
+                    <span class="quality-badge blunder" title="Зевок (??)">${s.blunder}</span>
                 </div>
             `;
             
             analysisProgress.innerHTML = `
-                <div style="font-weight:bold; margin-bottom:10px;">Точность: 
-                    <span style="color:#fff">Б: ${stats.whiteAccuracy}%</span> | 
-                    <span style="color:#aaa">Ч: ${stats.blackAccuracy}%</span>
+                <div class="analysis-accuracy-header">Точность: 
+                    <span class="white-acc">Б: ${stats.whiteAccuracy}%</span> | 
+                    <span class="black-acc">Ч: ${stats.blackAccuracy}%</span>
                 </div>
                 ${renderStats(w, 'w')}
                 ${renderStats(b, 'b')}
@@ -1910,8 +1953,6 @@ const ChessUI = (() => {
         analysisResults.forEach((result, index) => {
             const li = document.createElement('li');
             li.style.cursor = 'pointer';
-            li.style.padding = '5px';
-            li.style.borderBottom = '1px solid var(--border-color)';
             
             const num = Math.floor(index / 2) + 1;
             const turnStr = index % 2 === 0 ? 'Белые' : 'Черные';
@@ -1921,7 +1962,7 @@ const ChessUI = (() => {
                 qualityHtml = `<span class="quality-badge ${result.qualityClass}" style="margin-left:5px;">${result.quality}</span>`;
             }
             
-            const accuracyHtml = `<span style="margin-left: 5px; color: #3b82f6; font-size:0.85em; font-weight: bold;">${result.accuracy}%</span>`;
+            const accuracyHtml = `<span class="text-primary" style="margin-left: 5px; font-size:0.85em; font-weight: bold;">${result.accuracy}%</span>`;
             
             li.innerHTML = `
                 <div style="display:flex; align-items:center; width:100%;">
@@ -1948,14 +1989,14 @@ const ChessUI = (() => {
         const result = analysisResults[index];
         if (!result) return;
         
-        ChessLogic.loadFen(result.beforeFen, { keepHistory: true });
+        ChessLogic.loadFen(result.fen, { keepHistory: true, skipRecord: true });
         analysisSnapshot = { turn: ChessLogic.getTurn() };
         const uiMove = result.move ? convertToUiMove(result.move) : null;
         lastMove = uiMove;
         
-        if (result.bestmove && result.bestmove !== '(none)') {
-            suggestedMove = parseUciMove(result.bestmove);
-            if (stockfishTip) stockfishTip.textContent = `Stockfish советует: ${result.bestmove}`;
+        if (result.nextBestMove && result.nextBestMove !== '(none)') {
+            suggestedMove = parseUciMove(result.nextBestMove);
+            if (stockfishTip) stockfishTip.textContent = `Stockfish советует: ${result.nextBestMove}`;
         } else {
             suggestedMove = null;
             if (stockfishTip) stockfishTip.textContent = 'Нет совета';

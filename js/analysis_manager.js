@@ -9,8 +9,8 @@ const AnalysisManager = (() => {
 
     function initWorker() {
         if (!stockfish) {
-            console.log("[Analysis] Starting Stockfish Worker v35");
-            stockfish = new Worker('js/stockfish.js?v=35');
+            console.log("[Analysis] Starting Stockfish Worker v39");
+            stockfish = new Worker('js/stockfish.js?v=39');
             stockfish.onmessage = function(event) {
                 const line = event.data;
                 if (currentTask && typeof currentTask.onMessage === 'function') {
@@ -20,18 +20,30 @@ const AnalysisManager = (() => {
         }
     }
 
-    function evaluateFen(fen, depth = 8) {
+    function evaluateFen(fen, depth = 12) {
         return new Promise(resolve => {
             initWorker();
             let evalResult = { cp: 0, mate: null, bestmove: null };
             let resolved = false;
+            let safetyTimeout = null;
 
             const timeout = setTimeout(() => {
                 if (!resolved) {
-                    resolved = true;
-                    resolve(evalResult);
+                    if (stockfish) {
+                        stockfish.postMessage('stop');
+                        // Set a safety timeout to resolve if bestmove never arrives
+                        safetyTimeout = setTimeout(() => {
+                            if (!resolved) {
+                                resolved = true;
+                                resolve(evalResult);
+                            }
+                        }, 200);
+                    } else {
+                        resolved = true;
+                        resolve(evalResult);
+                    }
                 }
-            }, 1500);
+            }, 800);
 
             currentTask = {
                 onMessage: (line) => {
@@ -45,6 +57,7 @@ const AnalysisManager = (() => {
                     if (line.startsWith('bestmove')) {
                         if (!resolved) {
                             clearTimeout(timeout);
+                            if (safetyTimeout) clearTimeout(safetyTimeout);
                             resolved = true;
                             evalResult.bestmove = line.split(' ')[1];
                             resolve(evalResult);
@@ -54,13 +67,14 @@ const AnalysisManager = (() => {
                 cancel: () => {
                     if (!resolved) {
                         clearTimeout(timeout);
+                        if (safetyTimeout) clearTimeout(safetyTimeout);
                         resolved = true;
                         resolve(evalResult);
                     }
                 }
             };
             stockfish.postMessage(`position fen ${fen}`);
-            stockfish.postMessage(`go movetime 300`);
+            stockfish.postMessage(`go depth ${depth}`);
         });
     }
 
@@ -123,17 +137,37 @@ const AnalysisManager = (() => {
             let scoreBefore = getScoreValue(evalBefore);
             let scoreAfter = getScoreValue(evalAfter);
             let myScoreAfter = -scoreAfter;
-            
             let diff = myScoreAfter - scoreBefore;
-            
+            let isBest = history[i].move && evalBefore.bestmove && (history[i].move.uci === evalBefore.bestmove);
             let quality = '';
             let qualityClass = '';
-            
-            if (diff <= -200) { quality = '??'; qualityClass = 'blunder'; }
-            else if (diff <= -100) { quality = '?'; qualityClass = 'mistake'; }
-            else if (diff <= -50) { quality = '?!'; qualityClass = 'inaccuracy'; }
-            else if (diff >= 150) { quality = '!!'; qualityClass = 'brilliant'; }
-            else if (diff >= 50) { quality = '!'; qualityClass = 'good'; }
+            let accuracy = Math.max(0, Math.min(100, Math.round(100 * Math.exp(-0.005 * Math.max(0, -diff)))));
+
+            if (diff >= 150) {
+                quality = '!!';
+                qualityClass = 'brilliant';
+            } else if (isBest) {
+                quality = '★';
+                qualityClass = 'best';
+                accuracy = 100;
+            } else if (diff >= -10) {
+                quality = '!';
+                qualityClass = 'excellent';
+                accuracy = Math.max(95, accuracy);
+            } else if (diff >= -49) {
+                quality = '+';
+                qualityClass = 'good';
+                accuracy = Math.max(80, accuracy);
+            } else if (diff <= -200) {
+                quality = '??';
+                qualityClass = 'blunder';
+            } else if (diff <= -100) {
+                quality = '?';
+                qualityClass = 'mistake';
+            } else if (diff <= -50) {
+                quality = '?!';
+                qualityClass = 'inaccuracy';
+            }
 
             results.push({
                 index: i,
@@ -143,10 +177,11 @@ const AnalysisManager = (() => {
                 quality,
                 qualityClass,
                 bestmove: evalBefore.bestmove,
+                nextBestMove: evalAfter.bestmove,
                 diff,
                 scoreBefore,
                 scoreAfter: myScoreAfter,
-                accuracy: Math.max(0, Math.min(100, Math.round(100 * Math.exp(-0.005 * Math.max(0, -diff)))))
+                accuracy
             });
         }
 
@@ -169,14 +204,16 @@ const AnalysisManager = (() => {
             blackAccuracy: blackCount > 0 ? Math.round(blackSum / blackCount) : 100,
             moves: results,
             summary: {
-                white: { brilliant: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
-                black: { brilliant: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 }
+                white: { brilliant: 0, best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
+                black: { brilliant: 0, best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 }
             }
         };
 
         results.forEach((res, idx) => {
             const side = idx % 2 === 0 ? 'white' : 'black';
-            if (res.qualityClass) stats.summary[side][res.qualityClass]++;
+            if (res.qualityClass && stats.summary[side][res.qualityClass] !== undefined) {
+                stats.summary[side][res.qualityClass]++;
+            }
         });
 
         isAnalyzing = false;

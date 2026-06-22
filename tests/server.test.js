@@ -26,7 +26,7 @@ describe('Socket.IO Multiplayer Logic', () => {
     let clientSocket1, clientSocket2, clientSocket3;
 
     beforeAll((done) => {
-        server.listen(3001, () => {
+        server.listen(3005, () => {
             done();
         });
     });
@@ -36,9 +36,9 @@ describe('Socket.IO Multiplayer Logic', () => {
     });
 
     beforeEach((done) => {
-        clientSocket1 = new Client('http://localhost:3001');
-        clientSocket2 = new Client('http://localhost:3001');
-        clientSocket3 = new Client('http://localhost:3001');
+        clientSocket1 = new Client('http://localhost:3005', { transports: ['websocket'] });
+        clientSocket2 = new Client('http://localhost:3005', { transports: ['websocket'] });
+        clientSocket3 = new Client('http://localhost:3005', { transports: ['websocket'] });
         
         let connections = 0;
         const onConnect = () => {
@@ -51,18 +51,24 @@ describe('Socket.IO Multiplayer Logic', () => {
     });
 
     afterEach((done) => {
+        const sockets = [clientSocket1, clientSocket2, clientSocket3];
+        const activeSockets = sockets.filter(s => s && s.connected);
+        
+        if (activeSockets.length === 0) {
+            done();
+            return;
+        }
+        
         let disconnected = 0;
         const checkDone = () => {
             disconnected++;
-            if (disconnected === 3) done();
+            if (disconnected === activeSockets.length) done();
         };
-        clientSocket1.on('disconnect', checkDone);
-        clientSocket2.on('disconnect', checkDone);
-        clientSocket3.on('disconnect', checkDone);
         
-        clientSocket1.disconnect();
-        clientSocket2.disconnect();
-        clientSocket3.disconnect();
+        activeSockets.forEach(s => {
+            s.on('disconnect', checkDone);
+            s.disconnect();
+        });
     });
 
     test('First user in room gets "w" or "b" color', (done) => {
@@ -150,7 +156,7 @@ describe('Socket.IO Multiplayer Logic', () => {
                 return;
             }
 
-            const tempSocket = new Client('http://localhost:3001');
+            const tempSocket = new Client('http://localhost:3005', { transports: ['websocket'] });
             tempSocket.on('connect', () => {
                 tempSocket.emit('join-room', 'cleanup-room');
             });
@@ -228,6 +234,30 @@ describe('Socket.IO Multiplayer Logic', () => {
                 done();
             });
             clientSocket1.emit('draw-response', { roomId: 'relay-room', accepted: false });
+        });
+    });
+
+    test('Room should not be deleted upon player disconnect if another player remains active in the room', (done) => {
+        clientSocket1.emit('join-room', 'persist-room');
+        clientSocket1.on('color-assigned', (color1) => {
+            clientSocket2.emit('join-room', 'persist-room');
+            clientSocket2.on('color-assigned', (color2) => {
+                // Disconnect clientSocket1
+                clientSocket1.disconnect();
+                
+                setTimeout(() => {
+                    // Join clientSocket3. If the room persisted, it should still have clientSocket2,
+                    // so clientSocket3 should get spectator or the opposite color, not a fresh random color.
+                    clientSocket3.emit('join-room', 'persist-room');
+                    clientSocket3.on('color-assigned', (color3) => {
+                        expect(['w', 'b', 'spectator']).toContain(color3);
+                        if (color3 !== 'spectator') {
+                            expect(color3).not.toBe(color2);
+                        }
+                        done();
+                    });
+                }, 50);
+            });
         });
     });
 });

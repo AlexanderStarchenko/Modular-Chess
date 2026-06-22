@@ -80,6 +80,7 @@ var ChessLogic = (() => {
             recordPosition();
         }
 
+        notifyChange(checkDrawConditions());
         return true;
     }
 
@@ -127,8 +128,10 @@ var ChessLogic = (() => {
             gameHistory = [];
             positionHistory = {};
         }
-        recordPosition();
-        notifyChange();
+        if (!options.skipRecord) {
+            recordPosition();
+        }
+        notifyChange(checkDrawConditions());
         return true;
     }
 

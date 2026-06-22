@@ -51,6 +51,7 @@ jest.mock('../js/logic', () => ({
     }),
     initBoard: jest.fn(),
     loadState: jest.fn(),
+    loadFen: jest.fn(),
     getGameHistory: jest.fn().mockReturnValue([]),
     getFen: jest.fn().mockReturnValue('startpos'),
     getAllLegalMoves: jest.fn().mockReturnValue(['e2e4'])
@@ -955,6 +956,64 @@ describe('ChessUI Integration', () => {
         mockCtx.fillRect.mockClear();
         resizeHandler();
         expect(mockCtx.fillRect).toHaveBeenCalled();
+    });
+
+    test('Should render analysis stats and handle selectAnalysisMove correctly', () => {
+        ChessUI.init();
+        
+        mockElements['analysis-list'].children = [];
+        mockElements['analysis-list'].appendChild = jest.fn().mockImplementation((child) => {
+            mockElements['analysis-list'].children.push(child);
+        });
+
+        const mockStats = {
+            whiteAccuracy: 95,
+            blackAccuracy: 96,
+            moves: [
+                {
+                    index: 0,
+                    move: { uci: 'e2e4' },
+                    fen: 'pos2',
+                    beforeFen: 'pos1',
+                    quality: '★',
+                    qualityClass: 'best',
+                    bestmove: 'e2e4',
+                    nextBestMove: 'e7e5',
+                    accuracy: 100
+                }
+            ],
+            summary: {
+                white: { brilliant: 0, best: 1, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
+                black: { brilliant: 0, best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 }
+            }
+        };
+
+        global.AnalysisManager = {
+            analyzeGame: jest.fn().mockImplementation((history, onProgress, onComplete) => {
+                onComplete(mockStats);
+            })
+        };
+
+        expect(clickHandlers['analyze-btn']).toBeDefined();
+        clickHandlers['analyze-btn']();
+
+        expect(mockElements['analysis-progress'].innerHTML).toContain('analysis-accuracy-header');
+        expect(mockElements['analysis-progress'].innerHTML).toContain('Б: 95%');
+        expect(mockElements['analysis-progress'].innerHTML).toContain('Ч: 96%');
+        expect(mockElements['analysis-progress'].innerHTML).toContain('analysis-stats-row');
+
+        const appendedItems = mockElements['analysis-list'].appendChild.mock.calls;
+        expect(appendedItems.length).toBe(1);
+        const liElement = appendedItems[0][0];
+        
+        const liClickHandlers = liElement.addEventListener.mock.calls.filter(call => call[0] === 'click');
+        expect(liClickHandlers.length).toBe(1);
+        const triggerSelect = liClickHandlers[0][1];
+
+        ChessLogic.loadFen.mockClear();
+        triggerSelect();
+
+        expect(ChessLogic.loadFen).toHaveBeenCalledWith('pos2', { keepHistory: true, skipRecord: true });
     });
 });
 

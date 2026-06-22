@@ -21,8 +21,8 @@ describe('Full System Integration: UI -> Logic -> Network -> AI', () => {
     beforeEach((done) => {
         ChessLogic.initBoard();
 
-        clientWhite = new Client('http://localhost:3002');
-        clientBlack = new Client('http://localhost:3002');
+        clientWhite = new Client('http://localhost:3002', { transports: ['websocket'] });
+        clientBlack = new Client('http://localhost:3002', { transports: ['websocket'] });
 
         let connections = 0;
         const onConnect = () => {

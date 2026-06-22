@@ -58,46 +58,21 @@ describe('AnalysisManager', () => {
             { beforeFen: 'pos6', fen: 'pos7', move: { uci: 'a6' } }, // Black move: checkmate
         ];
 
-        // Need N+1 evaluations for N moves
-        global.mockStockfishResponses = [
-            { cp: 0 },         // pos1: start (White to move)
-            { cp: -200 },      // pos2: after White's move. Black to move. Score is -200 from Black's perspective. 
-                               // Meaning White's score is 200. Diff = 200 - 0 = +200 -> brilliant!
-                               
-            { cp: 300 },       // pos3: after Black's move. White to move. Score 300 from White's perspective.
-                               // Meaning Black's score is -300. Before was -(-200) = +200. 
-                               // Diff for Black = -300 - 200 = -500 -> blunder!
-                               
-            { cp: -400 },      // pos4: White to move? No, Black to move. Score -400 for Black. 
-                               // White's score = 400. Before was 300. Diff = 400 - 300 = +100 -> good!
-                               
-            { cp: 500 },       // pos5: White to move. Score 500.
-                               // Black's score = -500. Before was -(-400) = 400. Diff = -500 - (-400) = -100 -> mistake
-                               
-            { cp: -550 },      // pos6: Black to move. Score -550.
-                               // White's score = +550. Before was 500. Diff = 550 - 500 = +50 -> good (wait, we want inaccuracy -50)
-                               // Let's adjust diff for pos6. We want diff = -50 for White.
-                               // Before is 500. We want White's score to be 450.
-                               // Which means Black's score (cp) should be -450.
-            
-            { cp: 1000 },      // Let's replace pos6 response with { cp: -450 } below
-        ];
-        
         // Correcting the sequence for precise diffs
-        // White move 1: diff +200 (brilliant). scoreBefore = 0. myScoreAfter = 200. evalAfter(Black) = -200.
+        // White move 0: diff +200 (brilliant). scoreBefore = 0. myScoreAfter = 200. evalAfter(Black) = -200.
         // Black move 1: diff -250 (blunder). scoreBefore = -200. myScoreAfter = -450. evalAfter(White) = 450.
-        // White move 2: diff +100 (good). scoreBefore = 450. myScoreAfter = 550. evalAfter(Black) = -550.
-        // Black move 2: diff -150 (mistake). scoreBefore = -550. myScoreAfter = -700. evalAfter(White) = 700.
-        // White move 3: diff -50 (inaccuracy). scoreBefore = 700. myScoreAfter = 650. evalAfter(Black) = -650.
-        // Black move 3: diff (mate). scoreBefore = -650. Black delivers mate: myScoreAfter = 10000. evalAfter(White) = mate -1
+        // White move 2: diff -30 (good). scoreBefore = 450. myScoreAfter = 420. evalAfter(Black) = -420.
+        // Black move 2: diff -150 (mistake). scoreBefore = -420. myScoreAfter = -570. evalAfter(White) = 570.
+        // White move 3: diff -70 (inaccuracy). scoreBefore = 570. myScoreAfter = 500. evalAfter(Black) = -500.
+        // Black move 3: diff (mate). scoreBefore = -500. Black delivers mate: myScoreAfter = 9999. evalAfter(White) = mate -1
         
         global.mockStockfishResponses = [
             { cp: 0 },         // initial
             { cp: -200 },      // brilliant white
             { cp: 450 },       // blunder black
-            { cp: -550 },      // good white
-            { cp: 700 },       // mistake black
-            { cp: -650 },      // inaccuracy white
+            { cp: -420 },      // good white
+            { cp: 570 },       // mistake black
+            { cp: -500 },      // inaccuracy white
             { mate: -1 },      // mate black
         ];
 
@@ -119,6 +94,42 @@ describe('AnalysisManager', () => {
             expect(stats.summary.black.mistake).toBe(1);
             
             done();
+        });
+    });
+
+    test('analyzeGame identifies best and excellent moves correctly', (done) => {
+        const history = [
+            { beforeFen: 'pos1', fen: 'pos2', move: { uci: 'e2e4' } }, // White plays best move
+            { beforeFen: 'pos2', fen: 'pos3', move: { uci: 'g8f6' } }, // Black plays excellent move (diff = -5)
+        ];
+
+        global.mockStockfishResponses = [
+            { cp: 0, bestmove: 'e2e4' },     // pos1 (White to move, best is e2e4)
+            { cp: -20, bestmove: 'e7e5' },    // pos2 (Black to move, score -20, best is e7e5 - played g8f6 instead)
+            { cp: -15, bestmove: 'd2d4' },    // pos3 (White to move, score -15, best is d2d4)
+        ];
+
+        AnalysisManager.analyzeGame(history, null, (stats) => {
+            try {
+                expect(stats).toBeDefined();
+                expect(stats.moves.length).toBe(2);
+                
+                expect(stats.moves[0].qualityClass).toBe('best');
+                expect(stats.moves[0].accuracy).toBe(100);
+                
+                expect(stats.moves[1].qualityClass).toBe('excellent');
+                expect(stats.moves[1].accuracy).toBeGreaterThanOrEqual(95);
+                
+                expect(stats.moves[0].nextBestMove).toBe('e7e5');
+                expect(stats.moves[1].nextBestMove).toBe('d2d4');
+                
+                expect(stats.summary.white.best).toBe(1);
+                expect(stats.summary.black.excellent).toBe(1);
+                
+                done();
+            } catch (err) {
+                done(err);
+            }
         });
     });
 
@@ -247,5 +258,49 @@ describe('AnalysisManager', () => {
             global.Worker = originalWorker; // Restore original mock
             done();
         }, 50);
+    });
+
+    test('evaluateFen handles engine timeout by sending stop and using the bestmove returned from engine', async () => {
+        jest.useFakeTimers();
+        
+        let IsolatedAnalysisManager;
+        jest.isolateModules(() => {
+            IsolatedAnalysisManager = require('../js/analysis_manager');
+        });
+
+        let stopSent = false;
+
+        global.Worker.mockImplementationOnce(function() {
+            const workerInstance = {
+                onmessage: null,
+                postMessage: jest.fn((msg) => {
+                    if (msg === 'stop') {
+                        stopSent = true;
+                        // Simulate Stockfish replying with bestmove after stop
+                        setTimeout(() => {
+                            if (workerInstance.onmessage) {
+                                workerInstance.onmessage({ data: 'bestmove e2e4' });
+                            }
+                        }, 50);
+                    }
+                }),
+                terminate: jest.fn()
+            };
+            return workerInstance;
+        });
+
+        const evalPromise = IsolatedAnalysisManager.evaluateFen('startpos', 8);
+
+        // Fast-forward past the 800ms timeout
+        jest.advanceTimersByTime(850);
+        expect(stopSent).toBe(true);
+
+        // Now fast-forward another 100ms to allow the bestmove response to process
+        jest.advanceTimersByTime(100);
+
+        const result = await evalPromise;
+        expect(result).toEqual({ cp: 0, mate: null, bestmove: 'e2e4' });
+        
+        jest.useRealTimers();
     });
 });

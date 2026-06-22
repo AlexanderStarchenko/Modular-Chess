@@ -234,7 +234,7 @@ const SocketTransport = (() => {
 
         const serverUrl = customUrl || (window.location.protocol === 'file:' ? 'http://localhost:3000' : undefined);
         console.log('Connecting to:', serverUrl);
-        socket = io(serverUrl);
+        socket = io(serverUrl, { transports: ['websocket'] });
         currentRoom = roomId;
 
         socket.on('connect', () => {
