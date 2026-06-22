@@ -8,6 +8,9 @@ const ChessUI = (() => {
     let timeControlSelect, customTimeInputs, customMinsInput, customIncInput, themeSelect;
     let topPlayerName, bottomPlayerName, topTimerDisplay, bottomTimerDisplay, topTimerContainer, bottomTimerContainer;
     let analysisBtn, analysisPanel, analysisList, analysisProgress, stockfishTip;
+    let gameConditionBadge;
+    let initialTime = 600;
+    let initialInc = 0;
     let networkState = (typeof ChessNetwork !== 'undefined') ? ChessNetwork.getState() : { connected: false };
     let switchTab;
     let canvas = null, ctx = null, hoverSquare = null;
@@ -207,7 +210,7 @@ const ChessUI = (() => {
     }
 
     function init() {
-        console.log("Chess UI Initializing... [Version v39]");
+        console.log("Chess UI Initializing... [Version v40]");
         
         if (typeof ChessWASM !== 'undefined') {
             ChessWASM.init().then(success => {
@@ -313,6 +316,7 @@ const ChessUI = (() => {
         analysisList = document.getElementById('analysis-list');
         analysisProgress = document.getElementById('analysis-progress');
         stockfishTip = document.getElementById('analysis-advice');
+        gameConditionBadge = document.getElementById('game-condition-badge');
         
         // Аудио-фикс: активируем звук при первом клике пользователя
         const resumeAudio = () => {
@@ -472,6 +476,7 @@ const ChessUI = (() => {
                     capturedByBlack = data.captures.black;
                     updateCapturesDisplay();
                 }
+                updateGameFormatBadge();
                 isRemoteAction = false;
                 renderBoard();
             });
@@ -623,6 +628,13 @@ const ChessUI = (() => {
             }
             startNewGame();
         });
+
+        if (customMinsInput) {
+            customMinsInput.addEventListener('input', updateGameFormatBadge);
+        }
+        if (customIncInput) {
+            customIncInput.addEventListener('input', updateGameFormatBadge);
+        }
 
         if (themeSelect) {
             themeSelect.addEventListener('change', updateTheme);
@@ -895,13 +907,40 @@ const ChessUI = (() => {
 
     function parseTimeControl() {
         if (timeControlSelect.value === 'custom') {
-            const mins = parseInt(customMinsInput.value) || 10;
-            const inc = parseInt(customIncInput.value) || 0;
+            const mins = parseFloat(customMinsInput.value) || 10;
+            const inc = parseFloat(customIncInput.value) || 0;
             return { time: mins * 60, inc: inc };
         } else {
             const parts = timeControlSelect.value.split(',');
-            return { time: parseInt(parts[0]), inc: parseInt(parts[1]) || 0 };
+            return { time: parseFloat(parts[0]), inc: parseFloat(parts[1]) || 0 };
         }
+    }
+
+    function updateGameFormatBadge() {
+        if (!gameConditionBadge) return;
+        
+        const tc = parseTimeControl();
+        if (tc.time === 0) {
+            gameConditionBadge.textContent = 'Unlimited';
+            return;
+        }
+        
+        const estimatedDuration = tc.time + 40 * tc.inc;
+        
+        let formatText = 'Rapid';
+        if (estimatedDuration < 30) {
+            formatText = 'UltraBullet';
+        } else if (estimatedDuration < 180) {
+            formatText = 'Bullet';
+        } else if (estimatedDuration < 480) {
+            formatText = 'Blitz';
+        } else if (estimatedDuration < 1500) {
+            formatText = 'Rapid';
+        } else {
+            formatText = 'Classical';
+        }
+        
+        gameConditionBadge.textContent = formatText;
     }
 
     function startNewGame() {
@@ -989,6 +1028,7 @@ const ChessUI = (() => {
             updateTimerDisplays();
         }
 
+        updateGameFormatBadge();
         renderBoard();
         syncNetworkState();
 

@@ -368,6 +368,7 @@ describe('ChessUI Integration', () => {
     let mockElements;
     let clickHandlers;
     let changeHandlers;
+    let inputHandlers;
     let networkListeners;
     let timeouts;
     let originalSetTimeout;
@@ -390,6 +391,7 @@ describe('ChessUI Integration', () => {
         mockSubscribeCallback = null;
         clickHandlers = {};
         changeHandlers = {};
+        inputHandlers = {};
         networkListeners = {};
         timeouts = {};
         
@@ -458,6 +460,7 @@ describe('ChessUI Integration', () => {
                 addEventListener: jest.fn((event, handler) => {
                     if (event === 'click') clickHandlers[id] = handler;
                     else if (event === 'change') changeHandlers[id] = handler;
+                    else if (event === 'input') inputHandlers[id] = handler;
                     else if (event === 'mousemove') {
                         if (!clickHandlers[id + '_mousemove']) clickHandlers[id + '_mousemove'] = [];
                         clickHandlers[id + '_mousemove'].push(handler);
@@ -504,7 +507,7 @@ describe('ChessUI Integration', () => {
             'tab-btn-notation', 'tab-btn-stats', 'tab-btn-analysis',
             'tab-content-notation', 'tab-content-stats', 'tab-content-analysis',
             'game-over-title', 'game-over-reason', 'game-over-icon-container', 'opponent-avatar-container',
-            'chess-canvas'
+            'chess-canvas', 'game-condition-badge'
         ];
         
         mockElements = {};
@@ -1014,6 +1017,49 @@ describe('ChessUI Integration', () => {
         triggerSelect();
 
         expect(ChessLogic.loadFen).toHaveBeenCalledWith('pos2', { keepHistory: true, skipRecord: true });
+    });
+
+    test('Should update game format badge dynamically depending on time control select and custom values', () => {
+        ChessUI.init();
+        
+        // 1. Unlimited (0)
+        mockElements['time-control'].value = '0';
+        expect(changeHandlers['time-control']).toBeDefined();
+        changeHandlers['time-control']();
+        expect(mockElements['game-condition-badge'].textContent).toBe('Unlimited');
+        
+        // 2. Bullet (60s, e.g. 1+0)
+        mockElements['time-control'].value = '60,0';
+        changeHandlers['time-control']();
+        expect(mockElements['game-condition-badge'].textContent).toBe('Bullet');
+        
+        // 3. Blitz (300s, e.g. 5+0)
+        mockElements['time-control'].value = '300,0';
+        changeHandlers['time-control']();
+        expect(mockElements['game-condition-badge'].textContent).toBe('Blitz');
+        
+        // 4. Rapid (600s, e.g. 10+0)
+        mockElements['time-control'].value = '600,0';
+        changeHandlers['time-control']();
+        expect(mockElements['game-condition-badge'].textContent).toBe('Rapid');
+        
+        // 5. Classical (1800s, e.g. 30+0)
+        mockElements['time-control'].value = '1800,0';
+        changeHandlers['time-control']();
+        expect(mockElements['game-condition-badge'].textContent).toBe('Classical');
+        
+        // 6. Custom UltraBullet (e.g. 15s + 0s)
+        mockElements['time-control'].value = 'custom';
+        mockElements['custom-mins'].value = '0.25'; // 15 seconds
+        mockElements['custom-inc'].value = '0';
+        changeHandlers['time-control'](); // triggers startNewGame and calls updateGameFormatBadge
+        expect(mockElements['game-condition-badge'].textContent).toBe('UltraBullet');
+
+        // Test custom input listener
+        mockElements['custom-mins'].value = '5'; // 300 seconds -> Blitz
+        expect(inputHandlers['custom-mins']).toBeDefined();
+        inputHandlers['custom-mins']();
+        expect(mockElements['game-condition-badge'].textContent).toBe('Blitz');
     });
 });
 
