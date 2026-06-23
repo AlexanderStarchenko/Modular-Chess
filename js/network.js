@@ -109,6 +109,10 @@ const ChessNetwork = (() => {
         sendDrawResponse: (accepted) => {
             if (transport && typeof transport.sendDrawResponse === 'function') transport.sendDrawResponse(accepted);
         },
+        sendChatMessage: (text) => {
+            if (transport && typeof transport.sendChatMessage === 'function') transport.sendChatMessage(text);
+        },
+        receiveChatMessage: null, // Will be set by UI
         receiveUndoRequest: (levels) => emit('undoRequest', levels),
         receiveUndoResponse: (accepted) => emit('undoResponse', accepted),
         receiveResign: () => emit('resign'),

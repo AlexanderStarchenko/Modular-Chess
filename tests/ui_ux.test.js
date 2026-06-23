@@ -514,7 +514,8 @@ describe('ChessUI Integration', () => {
             'chess-canvas', 'game-condition-badge',
             'save-game-btn', 'load-game-btn', 'save-load-close-btn', 'save-load-modal',
             'export-json-btn', 'import-json-btn', 'import-file-input',
-            'slot-1', 'slot-2', 'slot-3', 'top-accuracy', 'bottom-accuracy'
+            'slot-1', 'slot-2', 'slot-3', 'top-accuracy', 'bottom-accuracy',
+            'chat-input', 'chat-messages', 'chat-send-btn', 'tab-btn-chat', 'tab-content-chat'
         ];
         
         mockElements = {};
@@ -587,6 +588,7 @@ describe('ChessUI Integration', () => {
             sendResign: jest.fn(),
             sendDrawOffer: jest.fn(),
             sendDrawResponse: jest.fn(),
+            sendChatMessage: jest.fn(),
             disconnect: jest.fn()
         };
         global.AnalysisManager = {
@@ -1193,6 +1195,55 @@ describe('ChessUI Integration', () => {
         
         global.FileReader = originalFileReader;
         global.alert = originalAlert;
+    });
+
+    test('Should trigger chat message send and receive events', () => {
+        // Mock elements default values
+        mockElements['chat-input'].value = 'Привет!';
+        mockElements['chat-messages'].scrollTop = 0;
+        mockElements['chat-messages'].scrollHeight = 100;
+        
+        ChessUI.init();
+        
+        expect(clickHandlers['chat-send-btn']).toBeDefined();
+        expect(global.ChessNetwork.receiveChatMessage).toBeDefined();
+
+        // 1. Send chat message
+        networkListeners['status']({ connected: true });
+        
+        clickHandlers['chat-send-btn']();
+        
+        expect(global.ChessNetwork.sendChatMessage).toHaveBeenCalledWith('Привет!');
+        expect(mockElements['chat-input'].value).toBe('');
+
+        // 2. Receive chat message
+        const chatMessagesAppend = mockElements['chat-messages'].appendChild;
+        global.ChessNetwork.receiveChatMessage('Ответ соперника!');
+        expect(chatMessagesAppend).toHaveBeenCalled();
+    });
+
+    test('Should trigger quick emoji send events', () => {
+        const emojiBtnMock = {
+            textContent: '👍',
+            addEventListener: jest.fn()
+        };
+        global.document.querySelectorAll = jest.fn((selector) => {
+            if (selector === '.emoji-btn') {
+                return [emojiBtnMock];
+            }
+            return [];
+        });
+
+        ChessUI.init();
+
+        expect(emojiBtnMock.addEventListener).toHaveBeenCalledWith('click', expect.any(Function));
+        const emojiClick = emojiBtnMock.addEventListener.mock.calls[0][1];
+
+        // Trigger emoji click
+        networkListeners['status']({ connected: true });
+        emojiClick();
+
+        expect(global.ChessNetwork.sendChatMessage).toHaveBeenCalledWith('👍');
     });
 });
 
