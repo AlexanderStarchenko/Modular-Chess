@@ -2273,7 +2273,6 @@ const ChessUI = (() => {
 
         if (deserializeGameState(saveObj)) {
             closeSaveLoadModal();
-            alert('Игра успешно загружена из Слота ' + slotNum);
         } else {
             alert('Ошибка при загрузке сохраненной игры!');
         }

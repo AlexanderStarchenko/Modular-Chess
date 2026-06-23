@@ -1124,7 +1124,6 @@ describe('ChessUI Integration', () => {
         // Load from slot 1
         global.alert.mockClear();
         clickHandlers['slot-1_.slot-load-btn']();
-        expect(global.alert).toHaveBeenCalledWith('Игра успешно загружена из Слота 1');
         expect(ChessLogic.loadState).toHaveBeenCalled();
 
         // Delete slot 1
