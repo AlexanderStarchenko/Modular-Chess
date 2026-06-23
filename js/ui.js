@@ -375,12 +375,7 @@ const ChessUI = (() => {
                         if (!roomId) return;
                     }
                     
-                    const defaultUrl = localStorage.getItem('last-server-url') || 'http://localhost:3000';
-                    const serverUrl = prompt("Введите адрес игрового сервера (IP-адрес хоста или домен):", defaultUrl);
-                    if (!serverUrl) return;
-                    
-                    localStorage.setItem('last-server-url', serverUrl);
-                    connectToRoom(roomId, serverUrl);
+                    connectToRoom(roomId);
                 }
             });
 
@@ -388,10 +383,9 @@ const ChessUI = (() => {
             const initialHash = window.location.hash.replace('#', '').trim();
             if (initialHash) {
                 console.log('[UI] Auto-connecting to room from URL hash:', initialHash);
-                const lastServerUrl = localStorage.getItem('last-server-url');
                 // Delay slightly to ensure full initialization of other systems
                 setTimeout(() => {
-                    connectToRoom(initialHash, lastServerUrl);
+                    connectToRoom(initialHash);
                 }, 100);
             }
         } else {
