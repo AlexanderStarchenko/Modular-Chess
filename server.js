@@ -185,30 +185,37 @@ io.on('connection', (socket) => {
 
 const os = require('os');
 
-function getLocalIp() {
+function getLocalIps() {
+    const ips = [];
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {
             if (iface.family === 'IPv4' && !iface.internal) {
-                return iface.address;
+                ips.push(iface.address);
             }
         }
     }
-    return 'localhost';
+    return ips.length > 0 ? ips : ['localhost'];
 }
 
 // Start server on port 3000
 const PORT = 3000;
-const LOCAL_IP = getLocalIp();
+const LOCAL_IPS = getLocalIps();
 
 if (require.main === module) {
     server.listen(PORT, '0.0.0.0', () => {
         console.log('-----------------------------------');
         console.log(`Chess server is running!`);
         console.log(`Local:   http://localhost:${PORT}`);
-        console.log(`Network: http://${LOCAL_IP}:${PORT}`);
+        LOCAL_IPS.forEach(ip => {
+            console.log(`Network: http://${ip}:${PORT}`);
+        });
         console.log('-----------------------------------');
     });
 }
 
-module.exports = { app, server, getLocalIp };
+function getLocalIp() {
+    return getLocalIps()[0];
+}
+
+module.exports = { app, server, getLocalIp, getLocalIps };
