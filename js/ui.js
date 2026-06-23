@@ -1912,7 +1912,10 @@ const ChessUI = (() => {
         if (analysisPanel) analysisPanel.style.display = 'none';
         if (analysisList) analysisList.innerHTML = '';
         if (analysisProgress) analysisProgress.textContent = '';
-        if (stockfishTip) stockfishTip.textContent = '';
+        if (stockfishTip) {
+            stockfishTip.textContent = '';
+            stockfishTip.style.display = 'none';
+        }
         analysisSnapshot = null;
         suggestedMove = null;
         if (typeof AnalysisManager !== 'undefined' && typeof AnalysisManager.stopAnalysis === 'function') {
@@ -1934,7 +1937,10 @@ const ChessUI = (() => {
 
         if (analysisProgress) analysisProgress.textContent = 'Подготовка к анализу...';
         if (analysisList) analysisList.innerHTML = '';
-        if (stockfishTip) stockfishTip.textContent = '';
+        if (stockfishTip) {
+            stockfishTip.textContent = '';
+            stockfishTip.style.display = 'none';
+        }
 
         const history = ChessLogic.getGameHistory();
         
@@ -2078,32 +2084,25 @@ const ChessUI = (() => {
             return uci.replace(/([a-h][1-8])([a-h][1-8])/, '$1-$2');
         };
 
-        const isBestMove = result.move && result.bestmove && (result.move.uci === result.bestmove);
-        let tipText = '';
+        const isExcellentOrBetter = result.qualityClass === 'best' || 
+                                    result.qualityClass === 'brilliant' || 
+                                    result.qualityClass === 'excellent';
         
-        if (isBestMove) {
-            tipText = 'Это лучший ход!';
-            if (result.nextBestMove && result.nextBestMove !== '(none)') {
-                tipText += ` (Ответ соперника: ${formatMove(result.nextBestMove)})`;
-            }
+        let tipText = '';
+        if (isExcellentOrBetter) {
+            tipText = '';
             suggestedMove = (result.nextBestMove && result.nextBestMove !== '(none)') ? parseUciMove(result.nextBestMove) : null;
         } else {
-            const labelMap = {
-                'blunder': 'Зевок',
-                'mistake': 'Ошибка',
-                'inaccuracy': 'Неточность',
-                'excellent': 'Отличный ход',
-                'good': 'Хороший ход'
-            };
-            const label = labelMap[result.qualityClass] || 'Не лучший ход';
-            tipText = `${label} (${result.quality || '?'}). Стоило сыграть: ${formatMove(result.bestmove)}`;
-            if (result.nextBestMove && result.nextBestMove !== '(none)') {
-                tipText += ` (Ответ соперника на ваш ход: ${formatMove(result.nextBestMove)})`;
+            if (result.bestmove && result.bestmove !== '(none)') {
+                tipText = `Рекомендуемый ход: ${formatMove(result.bestmove)}`;
             }
             suggestedMove = (result.nextBestMove && result.nextBestMove !== '(none)') ? parseUciMove(result.nextBestMove) : null;
         }
         
-        if (stockfishTip) stockfishTip.textContent = tipText;
+        if (stockfishTip) {
+            stockfishTip.textContent = tipText;
+            stockfishTip.style.display = tipText ? 'flex' : 'none';
+        }
         
         selectedSquare = uiMove ? { row: uiMove.fromRow, col: uiMove.fromCol } : null;
         
