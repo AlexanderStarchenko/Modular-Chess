@@ -2253,7 +2253,6 @@ const ChessUI = (() => {
             const saveObj = serializeGameState();
             localStorage.setItem(SAVE_SLOTS_KEY_PREFIX + slotNum, JSON.stringify(saveObj));
             updateSlotsUI();
-            alert('Игра успешно сохранена в Слот ' + slotNum);
         } catch (e) {
             console.error('Error saving to slot ' + slotNum, e);
             alert('Ошибка при сохранении игры!');

@@ -1114,7 +1114,6 @@ describe('ChessUI Integration', () => {
         // Save to slot 1
         global.alert.mockClear();
         clickHandlers['slot-1_.slot-save-btn']();
-        expect(global.alert).toHaveBeenCalledWith('Игра успешно сохранена в Слот 1');
         
         // Assert storage has data
         const slotData = global.localStorage.getItem('modular-chess-save-slot-1');
