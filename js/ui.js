@@ -2073,13 +2073,37 @@ const ChessUI = (() => {
         const uiMove = result.move ? convertToUiMove(result.move) : null;
         lastMove = uiMove;
         
-        if (result.nextBestMove && result.nextBestMove !== '(none)') {
-            suggestedMove = parseUciMove(result.nextBestMove);
-            if (stockfishTip) stockfishTip.textContent = `Stockfish советует: ${result.nextBestMove}`;
+        const formatMove = (uci) => {
+            if (!uci || uci === '(none)') return '';
+            return uci.replace(/([a-h][1-8])([a-h][1-8])/, '$1-$2');
+        };
+
+        const isBestMove = result.move && result.bestmove && (result.move.uci === result.bestmove);
+        let tipText = '';
+        
+        if (isBestMove) {
+            tipText = 'Это лучший ход!';
+            if (result.nextBestMove && result.nextBestMove !== '(none)') {
+                tipText += ` (Ответ соперника: ${formatMove(result.nextBestMove)})`;
+            }
+            suggestedMove = (result.nextBestMove && result.nextBestMove !== '(none)') ? parseUciMove(result.nextBestMove) : null;
         } else {
-            suggestedMove = null;
-            if (stockfishTip) stockfishTip.textContent = 'Нет совета';
+            const labelMap = {
+                'blunder': 'Зевок',
+                'mistake': 'Ошибка',
+                'inaccuracy': 'Неточность',
+                'excellent': 'Отличный ход',
+                'good': 'Хороший ход'
+            };
+            const label = labelMap[result.qualityClass] || 'Не лучший ход';
+            tipText = `${label} (${result.quality || '?'}). Стоило сыграть: ${formatMove(result.bestmove)}`;
+            if (result.nextBestMove && result.nextBestMove !== '(none)') {
+                tipText += ` (Ответ соперника на ваш ход: ${formatMove(result.nextBestMove)})`;
+            }
+            suggestedMove = (result.nextBestMove && result.nextBestMove !== '(none)') ? parseUciMove(result.nextBestMove) : null;
         }
+        
+        if (stockfishTip) stockfishTip.textContent = tipText;
         
         selectedSquare = uiMove ? { row: uiMove.fromRow, col: uiMove.fromCol } : null;
         
