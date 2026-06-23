@@ -9,7 +9,10 @@ global.document = {
     getElementById: jest.fn().mockReturnValue({ appendChild: jest.fn(), style: {}, addEventListener: jest.fn(), classList: { add: jest.fn(), remove: jest.fn() } }),
     createElement: jest.fn().mockReturnValue({ style: {}, appendChild: jest.fn(), addEventListener: jest.fn(), classList: { add: jest.fn() } }),
     documentElement: { style: { setProperty: jest.fn() } },
-    addEventListener: jest.fn()
+    addEventListener: jest.fn(),
+    querySelector: jest.fn().mockReturnValue({ appendChild: jest.fn(), style: {}, addEventListener: jest.fn(), classList: { add: jest.fn(), remove: jest.fn() } }),
+    querySelectorAll: jest.fn().mockReturnValue([]),
+    body: { appendChild: jest.fn(), removeChild: jest.fn() }
 };
 global.AudioContext = jest.fn().mockImplementation(() => ({
     state: 'running',
@@ -50,7 +53,7 @@ jest.mock('../js/logic', () => ({
         mockSubscribeCallback = cb;
     }),
     initBoard: jest.fn(),
-    loadState: jest.fn(),
+    loadState: jest.fn().mockReturnValue(true),
     loadFen: jest.fn(),
     getGameHistory: jest.fn().mockReturnValue([]),
     getFen: jest.fn().mockReturnValue('startpos'),
@@ -449,6 +452,7 @@ describe('ChessUI Integration', () => {
             const el = {
                 id,
                 appendChild: jest.fn(),
+                click: jest.fn(),
                 style: {},
                 dataset: {},
                 getBoundingClientRect: jest.fn().mockReturnValue({
@@ -476,7 +480,7 @@ describe('ChessUI Integration', () => {
                     contains: jest.fn().mockReturnValue(false)
                 },
                 querySelector: jest.fn().mockImplementation((selector) => {
-                    return createMockElement(selector);
+                    return createMockElement(`${id}_${selector}`);
                 }),
                 querySelectorAll: jest.fn().mockReturnValue([]),
                 ...overrides
@@ -507,7 +511,10 @@ describe('ChessUI Integration', () => {
             'tab-btn-notation', 'tab-btn-stats', 'tab-btn-analysis',
             'tab-content-notation', 'tab-content-stats', 'tab-content-analysis',
             'game-over-title', 'game-over-reason', 'game-over-icon-container', 'opponent-avatar-container',
-            'chess-canvas', 'game-condition-badge'
+            'chess-canvas', 'game-condition-badge',
+            'save-game-btn', 'load-game-btn', 'save-load-close-btn', 'save-load-modal',
+            'export-json-btn', 'import-json-btn', 'import-file-input',
+            'slot-1', 'slot-2', 'slot-3', 'top-accuracy', 'bottom-accuracy'
         ];
         
         mockElements = {};
@@ -525,6 +532,11 @@ describe('ChessUI Integration', () => {
         mockElements['custom-inc'].value = '5';
 
         global.document.getElementById = jest.fn((id) => mockElements[id] || createMockElement(id));
+        global.document.querySelector = jest.fn((selector) => {
+            const cleanId = selector.replace(/[#.]/g, '').split('[')[0];
+            return mockElements[cleanId] || createMockElement(cleanId);
+        });
+        global.document.querySelectorAll = jest.fn().mockReturnValue([]);
         global.document.createElement = jest.fn().mockImplementation((tag) => createMockElement(tag));
         global.document.documentElement = {
             style: { setProperty: jest.fn() },
@@ -542,9 +554,18 @@ describe('ChessUI Integration', () => {
         };
         
         global.navigator = { userAgent: 'node' };
+        const localStorageStore = { 'ui-theme': 'dark' };
         global.localStorage = {
-            getItem: jest.fn().mockReturnValue('dark'),
-            setItem: jest.fn()
+            getItem: jest.fn((key) => localStorageStore[key] !== undefined ? localStorageStore[key] : null),
+            setItem: jest.fn((key, value) => {
+                localStorageStore[key] = String(value);
+            }),
+            removeItem: jest.fn((key) => {
+                delete localStorageStore[key];
+            }),
+            clear: jest.fn(() => {
+                Object.keys(localStorageStore).forEach(key => delete localStorageStore[key]);
+            })
         };
 
         global.confirm = jest.fn().mockReturnValue(true);
@@ -1060,6 +1081,120 @@ describe('ChessUI Integration', () => {
         expect(inputHandlers['custom-mins']).toBeDefined();
         inputHandlers['custom-mins']();
         expect(mockElements['game-condition-badge'].textContent).toBe('Blitz');
+    });
+
+    test('Should handle save and load game actions, modals, and file serialization', () => {
+        ChessUI.init();
+
+        // 1. Modal opening and closing
+        expect(clickHandlers['save-game-btn']).toBeDefined();
+        expect(clickHandlers['load-game-btn']).toBeDefined();
+        expect(clickHandlers['save-load-close-btn']).toBeDefined();
+        expect(clickHandlers['save-load-modal']).toBeDefined();
+
+        // Clicking save opens modal
+        mockElements['save-load-modal'].style.display = 'none';
+        clickHandlers['save-game-btn']();
+        expect(mockElements['save-load-modal'].style.display).toBe('flex');
+
+        // Clicking close closes it
+        clickHandlers['save-load-close-btn']();
+        expect(mockElements['save-load-modal'].style.display).toBe('none');
+
+        // Clicking outside closes it
+        mockElements['save-load-modal'].style.display = 'flex';
+        clickHandlers['save-load-modal']({ target: mockElements['save-load-modal'] });
+        expect(mockElements['save-load-modal'].style.display).toBe('none');
+
+        // 2. Slots save/load/delete checks
+        expect(clickHandlers['slot-1_.slot-save-btn']).toBeDefined();
+        expect(clickHandlers['slot-1_.slot-load-btn']).toBeDefined();
+        expect(clickHandlers['slot-1_.slot-delete-btn']).toBeDefined();
+
+        // Save to slot 1
+        global.alert.mockClear();
+        clickHandlers['slot-1_.slot-save-btn']();
+        expect(global.alert).toHaveBeenCalledWith('Игра успешно сохранена в Слот 1');
+        
+        // Assert storage has data
+        const slotData = global.localStorage.getItem('modular-chess-save-slot-1');
+        expect(slotData).not.toBeNull();
+        const parsed = JSON.parse(slotData);
+        expect(parsed.settings).toBeDefined();
+
+        // Load from slot 1
+        global.alert.mockClear();
+        clickHandlers['slot-1_.slot-load-btn']();
+        expect(global.alert).toHaveBeenCalledWith('Игра успешно загружена из Слота 1');
+        expect(ChessLogic.loadState).toHaveBeenCalled();
+
+        // Delete slot 1
+        global.confirm.mockReturnValue(true);
+        clickHandlers['slot-1_.slot-delete-btn']();
+        expect(global.localStorage.getItem('modular-chess-save-slot-1')).toBeNull();
+
+        // 3. Export JSON check
+        expect(clickHandlers['export-json-btn']).toBeDefined();
+        const originalBlob = global.Blob;
+        const originalURL = global.URL;
+        global.Blob = jest.fn().mockImplementation((content, options) => ({ content, options }));
+        global.URL = {
+            createObjectURL: jest.fn().mockReturnValue('blob:mock-url'),
+            revokeObjectURL: jest.fn()
+        };
+        const mockAppend = jest.spyOn(document.body, 'appendChild').mockImplementation(() => {});
+        const mockRemove = jest.spyOn(document.body, 'removeChild').mockImplementation(() => {});
+
+        clickHandlers['export-json-btn']();
+
+        expect(global.Blob).toHaveBeenCalled();
+        expect(global.URL.createObjectURL).toHaveBeenCalled();
+        expect(mockAppend).toHaveBeenCalled();
+        expect(mockRemove).toHaveBeenCalled();
+
+        global.Blob = originalBlob;
+        global.URL = originalURL;
+        mockAppend.mockRestore();
+        mockRemove.mockRestore();
+
+        // 4. Import JSON trigger
+        expect(clickHandlers['import-json-btn']).toBeDefined();
+        mockElements['import-file-input'].click = jest.fn();
+        clickHandlers['import-json-btn']();
+        expect(mockElements['import-file-input'].click).toHaveBeenCalled();
+
+        // 5. File input change event triggers JSON import
+        expect(changeHandlers['import-file-input']).toBeDefined();
+        const mockFile = { name: 'save.json', size: 100 };
+        const mockEvent = { target: { files: [mockFile], value: 'save.json' } };
+        
+        // Mock FileReader
+        const originalFileReader = global.FileReader;
+        const mockFileReaderInstance = {
+            readAsText: jest.fn().mockImplementation(function() {
+                this.onload({ target: { result: JSON.stringify({
+                    boardState: { board: Array.from({ length: 8 }, () => new Array(8).fill(null)) },
+                    timers: { white: 300, black: 280, inc: 0, running: true },
+                    history: '1. e4 e5',
+                    moveCount: 3,
+                    captures: { white: [], black: [] },
+                    settings: { pcToggle: true, difficulty: '2', timeControl: '600,0', playerColor: 'w', pcColor: 'b' }
+                }) } });
+            })
+        };
+        global.FileReader = jest.fn().mockImplementation(() => mockFileReaderInstance);
+        
+        const originalAlert = global.alert;
+        global.alert = jest.fn();
+        
+        changeHandlers['import-file-input'](mockEvent);
+        
+        expect(mockFileReaderInstance.readAsText).toHaveBeenCalledWith(mockFile);
+        expect(ChessLogic.loadState).toHaveBeenCalled();
+        expect(global.alert).toHaveBeenCalledWith('Игра успешно импортирована!');
+        
+        global.FileReader = originalFileReader;
+        global.alert = originalAlert;
     });
 });
 

@@ -873,6 +873,45 @@ const ChessUI = (() => {
             }
         });
 
+        // Save/Load feature event listeners
+        const saveGameBtn = document.getElementById('save-game-btn');
+        const loadGameBtn = document.getElementById('load-game-btn');
+        const saveLoadCloseBtn = document.getElementById('save-load-close-btn');
+        const saveLoadModal = document.getElementById('save-load-modal');
+        const exportJsonBtn = document.getElementById('export-json-btn');
+        const importJsonBtn = document.getElementById('import-json-btn');
+        const importFileInput = document.getElementById('import-file-input');
+
+        if (saveGameBtn) saveGameBtn.addEventListener('click', openSaveLoadModal);
+        if (loadGameBtn) loadGameBtn.addEventListener('click', openSaveLoadModal);
+        if (saveLoadCloseBtn) saveLoadCloseBtn.addEventListener('click', closeSaveLoadModal);
+        if (saveLoadModal) {
+            saveLoadModal.addEventListener('click', (e) => {
+                if (e.target === saveLoadModal) closeSaveLoadModal();
+            });
+        }
+        if (exportJsonBtn) exportJsonBtn.addEventListener('click', exportToJSON);
+        if (importJsonBtn && importFileInput) {
+            importJsonBtn.addEventListener('click', () => importFileInput.click());
+        }
+        if (importFileInput) {
+            importFileInput.addEventListener('change', importFromJSON);
+        }
+
+        // Save/Load Slot listeners
+        for (let i = 1; i <= 3; i++) {
+            const slotEl = document.getElementById(`slot-${i}`);
+            if (slotEl) {
+                const saveBtn = slotEl.querySelector('.slot-save-btn');
+                const loadBtn = slotEl.querySelector('.slot-load-btn');
+                const deleteBtn = slotEl.querySelector('.slot-delete-btn');
+                
+                if (saveBtn) saveBtn.addEventListener('click', () => saveToSlot(i));
+                if (loadBtn) loadBtn.addEventListener('click', () => loadFromSlot(i));
+                if (deleteBtn) deleteBtn.addEventListener('click', () => deleteSlot(i));
+            }
+        }
+
         updateTheme();
         startNewGame();
     }
@@ -2047,6 +2086,324 @@ const ChessUI = (() => {
         renderBoard();
         
         // Highlight selection is handled by lastMove in renderBoard
+    }
+
+    // --- Save/Load Feature Core Logic ---
+    const SAVE_SLOTS_KEY_PREFIX = 'modular-chess-save-slot-';
+
+    function serializeGameState() {
+        return {
+            boardState: ChessLogic.getState(),
+            timers: {
+                white: whiteTimeLeft,
+                black: blackTimeLeft,
+                inc: increment,
+                running: isTimerRunning
+            },
+            history: historyListElement.innerHTML,
+            moveCount: moveCount,
+            captures: {
+                white: [...capturedByWhite],
+                black: [...capturedByBlack]
+            },
+            lastMove: lastMove ? { ...lastMove } : null,
+            stateHistory: stateHistory.map(entry => ({
+                ...entry,
+                boardState: entry.boardState ? { ...entry.boardState } : null,
+                lastMove: entry.lastMove ? { ...entry.lastMove } : null
+            })),
+            settings: {
+                pcToggle: pcToggle.checked,
+                difficulty: difficultySelect.value,
+                timeControl: timeControlSelect.value,
+                customMins: customMinsInput ? customMinsInput.value : '',
+                customInc: customIncInput ? customIncInput.value : '',
+                playerColor: playerColor,
+                pcColor: pcColor
+            },
+            date: new Date().toISOString()
+        };
+    }
+
+    function deserializeGameState(saveObj) {
+        if (!saveObj || !saveObj.boardState || !saveObj.settings) {
+            console.error('Invalid save game object');
+            return false;
+        }
+
+        if (pcMoveTimeoutId) clearTimeout(pcMoveTimeoutId);
+        
+        // Restore chess logic state
+        const ok = ChessLogic.loadState(saveObj.boardState);
+        if (!ok) return false;
+
+        // Restore settings
+        pcToggle.checked = saveObj.settings.pcToggle;
+        document.getElementById('difficulty-container').style.display = pcToggle.checked ? '' : 'none';
+        difficultySelect.value = saveObj.settings.difficulty;
+        timeControlSelect.value = saveObj.settings.timeControl;
+        if (timeControlSelect.value === 'custom') {
+            customTimeInputs.style.display = 'flex';
+        } else {
+            customTimeInputs.style.display = 'none';
+        }
+        if (customMinsInput && saveObj.settings.customMins) {
+            customMinsInput.value = saveObj.settings.customMins;
+        }
+        if (customIncInput && saveObj.settings.customInc) {
+            customIncInput.value = saveObj.settings.customInc;
+        }
+        playerColor = saveObj.settings.playerColor || 'w';
+        pcColor = saveObj.settings.pcColor || 'b';
+
+        // Restore timers
+        whiteTimeLeft = saveObj.timers.white;
+        blackTimeLeft = saveObj.timers.black;
+        increment = saveObj.timers.inc;
+        isTimerRunning = false;
+        updateTimerDisplays();
+
+        // Restore notation and history
+        historyListElement.innerHTML = saveObj.history || '';
+        moveCount = saveObj.moveCount || 1;
+        stateHistory = saveObj.stateHistory || [];
+
+        // Restore captures
+        capturedByWhite = saveObj.captures ? [...(saveObj.captures.white || [])] : [];
+        capturedByBlack = saveObj.captures ? [...(saveObj.captures.black || [])] : [];
+        updateCapturesDisplay();
+
+        // Restore lastMove
+        lastMove = saveObj.lastMove;
+
+        // Resets
+        selectedSquare = null;
+        isWaitingForPC = false;
+        gameEnded = false;
+        analysisResults = [];
+        selectedAnalysisIndex = null;
+        suggestedMove = null;
+        analysisSnapshot = null;
+        if (animationLayer) animationLayer.innerHTML = '';
+        hideAnalysis();
+
+        // Reset accuracy UI
+        const statsWhiteText = document.getElementById('stats-white-accuracy-text');
+        const statsWhiteBar = document.getElementById('stats-white-accuracy-bar');
+        const statsBlackText = document.getElementById('stats-black-accuracy-text');
+        const statsBlackBar = document.getElementById('stats-black-accuracy-bar');
+        if (statsWhiteText) statsWhiteText.textContent = `--%`;
+        if (statsWhiteBar) statsWhiteBar.style.width = `0%`;
+        if (statsBlackText) statsBlackText.textContent = `--%`;
+        if (statsBlackBar) statsBlackBar.style.width = `0%`;
+        document.getElementById('top-accuracy').style.display = 'none';
+        document.getElementById('bottom-accuracy').style.display = 'none';
+
+        if (document.getElementById('resign-btn')) document.getElementById('resign-btn').disabled = false;
+        if (document.getElementById('draw-btn')) {
+            const drawBtn = document.getElementById('draw-btn');
+            drawBtn.disabled = false;
+            drawBtn.style.display = (networkState && networkState.connected) ? 'block' : 'none';
+        }
+        if (document.getElementById('undo-btn')) document.getElementById('undo-btn').disabled = false;
+
+        // Update player labels
+        if (pcToggle.checked) {
+            bottomPlayerName.textContent = playerColor === 'w' ? 'Вы (Белые)' : 'Вы (Черные)';
+            topPlayerName.textContent = `ПК (${pcColor === 'w' ? 'Белые' : 'Черные'})`;
+        } else if (networkState && networkState.connected) {
+            bottomPlayerName.textContent = playerColor === 'w' ? 'Вы (Белые)' : 'Вы (Черные)';
+            topPlayerName.textContent = playerColor === 'w' ? 'Соперник (Черные)' : 'Соперник (Белые)';
+        } else {
+            bottomPlayerName.textContent = 'Белые';
+            topPlayerName.textContent = 'Черные';
+        }
+
+        updateGameFormatBadge();
+        updateStatus();
+
+        // Start timer if it was running
+        stopTimer();
+        if (saveObj.timers.running && !gameEnded) {
+            startTimer();
+        }
+
+        // Trigger AI if it's PC's turn
+        if (pcToggle.checked && ChessLogic.getTurn() === pcColor && !gameEnded) {
+            isWaitingForPC = true;
+            pcMoveTimeoutId = setTimeout(makePCMove, 600);
+        }
+
+        renderBoard();
+        return true;
+    }
+
+    function getSaveSlot(slotNum) {
+        try {
+            const data = localStorage.getItem(SAVE_SLOTS_KEY_PREFIX + slotNum);
+            return data ? JSON.parse(data) : null;
+        } catch (e) {
+            console.error('Error loading save slot ' + slotNum, e);
+            return null;
+        }
+    }
+
+    function saveToSlot(slotNum) {
+        try {
+            const saveObj = serializeGameState();
+            localStorage.setItem(SAVE_SLOTS_KEY_PREFIX + slotNum, JSON.stringify(saveObj));
+            updateSlotsUI();
+            alert('Игра успешно сохранена в Слот ' + slotNum);
+        } catch (e) {
+            console.error('Error saving to slot ' + slotNum, e);
+            alert('Ошибка при сохранении игры!');
+        }
+    }
+
+    function loadFromSlot(slotNum) {
+        const saveObj = getSaveSlot(slotNum);
+        if (!saveObj) {
+            alert('Слот пуст!');
+            return;
+        }
+        
+        if (networkState && networkState.connected) {
+            alert('Загрузка игр отключена во время сетевого матча.');
+            return;
+        }
+
+        if (deserializeGameState(saveObj)) {
+            closeSaveLoadModal();
+            alert('Игра успешно загружена из Слота ' + slotNum);
+        } else {
+            alert('Ошибка при загрузке сохраненной игры!');
+        }
+    }
+
+    function deleteSlot(slotNum) {
+        if (confirm('Вы действительно хотите удалить сохранение из Слота ' + slotNum + '?')) {
+            localStorage.removeItem(SAVE_SLOTS_KEY_PREFIX + slotNum);
+            updateSlotsUI();
+        }
+    }
+
+    function updateSlotsUI() {
+        for (let i = 1; i <= 3; i++) {
+            const slotEl = document.getElementById(`slot-${i}`);
+            if (!slotEl) continue;
+
+            const saveObj = getSaveSlot(i);
+            const timeEl = slotEl.querySelector('.slot-time');
+            const detailsEl = slotEl.querySelector('.slot-details');
+            const modeEl = slotEl.querySelector('.slot-mode');
+            const movesEl = slotEl.querySelector('.slot-moves');
+            const loadBtn = slotEl.querySelector('.slot-load-btn');
+            const deleteBtn = slotEl.querySelector('.slot-delete-btn');
+
+            if (saveObj) {
+                const date = new Date(saveObj.date);
+                timeEl.textContent = date.toLocaleString('ru-RU', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                });
+                
+                const isPC = saveObj.settings.pcToggle;
+                modeEl.textContent = isPC ? 'Против ИИ' : 'Два игрока';
+                movesEl.textContent = Math.floor((saveObj.moveCount || 1) / 2) + 1;
+                
+                detailsEl.classList.remove('hidden');
+                
+                loadBtn.disabled = networkState && networkState.connected;
+                loadBtn.classList.remove('text-on-surface-variant');
+                loadBtn.classList.add('text-on-surface', 'hover:border-primary', 'hover:text-primary');
+                deleteBtn.classList.remove('hidden');
+            } else {
+                timeEl.textContent = 'Пусто';
+                detailsEl.classList.add('hidden');
+                loadBtn.disabled = true;
+                loadBtn.classList.add('text-on-surface-variant');
+                loadBtn.classList.remove('text-on-surface', 'hover:border-primary', 'hover:text-primary');
+                deleteBtn.classList.add('hidden');
+            }
+        }
+    }
+
+    function openSaveLoadModal() {
+        const modal = document.getElementById('save-load-modal');
+        if (modal) {
+            updateSlotsUI();
+            
+            const saveBtns = modal.querySelectorAll('.slot-save-btn');
+            const loadBtns = modal.querySelectorAll('.slot-load-btn');
+            
+            saveBtns.forEach(btn => {
+                btn.disabled = false;
+            });
+            loadBtns.forEach((btn, idx) => {
+                const saveObj = getSaveSlot(idx + 1);
+                btn.disabled = !saveObj || (networkState && networkState.connected);
+            });
+            
+            modal.style.display = 'flex';
+        }
+    }
+
+    function closeSaveLoadModal() {
+        const modal = document.getElementById('save-load-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    function exportToJSON() {
+        try {
+            const saveObj = serializeGameState();
+            const jsonString = JSON.stringify(saveObj, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            const dateStr = new Date().toISOString().slice(0, 10);
+            const movesNum = Math.floor((saveObj.moveCount || 1) / 2);
+            a.href = url;
+            a.download = `modular-chess-save-${dateStr}-move-${movesNum}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            console.error('Error exporting game state', e);
+            alert('Ошибка при экспорте игры!');
+        }
+    }
+
+    function importFromJSON(event) {
+        if (networkState && networkState.connected) {
+            alert('Импорт игр отключен во время сетевого матча.');
+            return;
+        }
+
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const saveObj = JSON.parse(e.target.result);
+                if (deserializeGameState(saveObj)) {
+                    alert('Игра успешно импортирована!');
+                } else {
+                    alert('Некорректный файл сохранения!');
+                }
+            } catch (err) {
+                console.error('Error parsing imported JSON', err);
+                alert('Не удалось прочитать файл сохранения!');
+            }
+            event.target.value = '';
+        };
+        reader.readAsText(file);
     }
 
     return {
