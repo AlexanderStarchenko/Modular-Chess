@@ -234,15 +234,25 @@ const SocketTransport = (() => {
 
         let serverUrl = customUrl;
         if (!serverUrl) {
-            const isMobileAndroid = typeof window !== 'undefined' && (
-                window.location.protocol === 'capacitor:' || 
-                window.location.origin.startsWith('capacitor://') ||
-                (window.location.hostname === 'localhost' && /Android/i.test(navigator.userAgent))
+            const loc = (typeof window !== 'undefined' && window.location) || {};
+            const protocol = loc.protocol || '';
+            const origin = loc.origin || '';
+            const hostname = loc.hostname || '';
+
+            const isMobileApp = typeof window !== 'undefined' && (
+                !!window.Capacitor || 
+                protocol === 'capacitor:' || 
+                origin.startsWith('capacitor://') ||
+                (hostname === 'localhost' && /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent))
             );
             
-            if (isMobileAndroid) {
-                serverUrl = 'http://10.0.2.2:3000';
-            } else if (window.location.protocol === 'file:') {
+            if (isMobileApp) {
+                if (typeof MobileConfig !== 'undefined' && MobileConfig.serverUrl) {
+                    serverUrl = MobileConfig.serverUrl;
+                } else {
+                    serverUrl = 'http://10.0.2.2:3000';
+                }
+            } else if (protocol === 'file:') {
                 serverUrl = 'http://localhost:3000';
             } else {
                 serverUrl = undefined;

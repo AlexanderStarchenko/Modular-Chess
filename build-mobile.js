@@ -54,4 +54,28 @@ copyRecursiveSync(path.join(srcDir, 'css'), path.join(destDir, 'css'));
 console.log('Copying compiled WebAssembly Core...');
 copyRecursiveSync(path.join(srcDir, 'build', 'release.wasm'), path.join(destDir, 'build', 'release.wasm'));
 
+console.log('Generating mobile config with local IP address...');
+const os = require('os');
+function getLocalIps() {
+    const interfaces = os.networkInterfaces();
+    const ips = [];
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                ips.push(iface.address);
+            }
+        }
+    }
+    return ips;
+}
+const localIps = getLocalIps();
+const preferredIp = localIps[0] || '10.0.2.2';
+const configContent = `// Automatically generated during build. Do not modify.
+const MobileConfig = {
+    serverUrl: 'http://${preferredIp}:3000'
+};
+`;
+fs.writeFileSync(path.join(destDir, 'js', 'mobile_config.js'), configContent);
+console.log(`Mobile config generated. Using server IP: ${preferredIp}`);
+
 console.log('Mobile build complete. Assets ready in "www/" folder!');
