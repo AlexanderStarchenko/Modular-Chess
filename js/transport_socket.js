@@ -356,6 +356,19 @@ const SocketTransport = (() => {
 
         socket.on('connect_error', (error) => {
             console.error('Connection Error:', error.message);
+            const loc = (typeof window !== 'undefined' && window.location) || {};
+            const protocol = loc.protocol || '';
+            const origin = loc.origin || '';
+            const hostname = loc.hostname || '';
+            const isMobileApp = typeof window !== 'undefined' && (
+                !!window.Capacitor || 
+                protocol === 'capacitor:' || 
+                origin.startsWith('capacitor://') ||
+                (hostname === 'localhost' && /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent))
+            );
+            if (isMobileApp) {
+                alert('Не удалось подключиться к серверу сетевой игры по адресу ' + serverUrl + '.\nОшибка: ' + error.message + '\n\nПроверьте, что сервер запущен, брандмауэр Windows не блокирует входящие подключения на порту 3000, и устройства подключены к одной Wi-Fi сети.');
+            }
         });
 
         socket.on('disconnect', () => {

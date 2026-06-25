@@ -9,6 +9,17 @@
         } else {
             document.documentElement.classList.remove('dark');
         }
+
+        // Global debug error handler for mobile app WebView
+        window.onerror = function(message, source, lineno, colno, error) {
+            const errDetails = "Ошибка JS:\n" + message + "\nФайл: " + source + "\nСтрока: " + lineno + ":" + colno;
+            console.error(errDetails);
+            alert(errDetails);
+            return false;
+        };
+        window.onunhandledrejection = function(event) {
+            alert("Ошибка Promise:\n" + event.reason);
+        };
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
