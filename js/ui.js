@@ -343,6 +343,17 @@ const ChessUI = (() => {
                     if (diffContainer) diffContainer.style.display = 'none';
                     startNewGame(); 
                     
+                    // Если мобильное приложение и сервер не указан, берем сохраненный или дефолтный для эмулятора
+                    if (!serverUrl) {
+                        const isMobileApp = !!window.Capacitor || 
+                                            window.location.protocol === 'capacitor:' || 
+                                            window.location.origin.startsWith('capacitor://') ||
+                                            /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
+                        if (isMobileApp) {
+                            serverUrl = localStorage.getItem('chess-server-url') || 'http://10.0.2.2:3000';
+                        }
+                    }
+                    
                     SocketTransport.init(roomId, serverUrl);
                 } catch (e) {
                     console.error('Network Error:', e);
@@ -375,7 +386,22 @@ const ChessUI = (() => {
                         if (!roomId) return;
                     }
                     
-                    connectToRoom(roomId);
+                    // Проверяем, мобильное ли это устройство
+                    const isMobileApp = !!window.Capacitor || 
+                                        window.location.protocol === 'capacitor:' || 
+                                        window.location.origin.startsWith('capacitor://') ||
+                                        /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
+                    
+                    let serverUrl = null;
+                    if (isMobileApp) {
+                        const savedUrl = localStorage.getItem('chess-server-url') || 'http://10.0.2.2:3000';
+                        const inputUrl = prompt("Введите адрес сервера сетевой игры (IP-адрес компьютера разработчика или публичный URL):", savedUrl);
+                        if (inputUrl === null) return; // User cancelled
+                        serverUrl = inputUrl.trim();
+                        localStorage.setItem('chess-server-url', serverUrl);
+                    }
+                    
+                    connectToRoom(roomId, serverUrl);
                 }
             });
 
