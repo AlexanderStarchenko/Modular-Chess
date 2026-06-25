@@ -10,8 +10,8 @@ const io = new Server(server, {
         origin: "*",
         methods: ["GET", "POST"]
     },
-    transports: ['websocket'],
-    allowUpgrades: false,
+    transports: ['polling', 'websocket'],
+    allowUpgrades: true,
     perMessageDeflate: false,
     httpCompression: false,
     pingInterval: 5000,

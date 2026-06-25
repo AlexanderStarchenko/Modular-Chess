@@ -275,8 +275,8 @@ const SocketTransport = (() => {
             }
 
             socket = io(serverUrl, { 
-                transports: ['websocket'],
-                timeout: 3000,
+                transports: ['polling', 'websocket'],
+                timeout: 4000,
                 reconnection: false
             });
 
