@@ -349,6 +349,34 @@ const ChessUI = (() => {
                 }
             }
 
+            // Настройка красивого HTML модального окна для комнаты
+            const networkRoomModal = document.getElementById('network-room-modal');
+            const networkRoomInput = document.getElementById('network-room-input');
+            const networkRoomConfirmBtn = document.getElementById('network-room-confirm-btn');
+            const networkRoomCancelBtn = document.getElementById('network-room-cancel-btn');
+            const networkRoomCloseBtn = document.getElementById('network-room-close-btn');
+
+            if (networkRoomModal) {
+                const closeRoomModal = () => {
+                    networkRoomModal.style.display = 'none';
+                };
+                
+                if (networkRoomCloseBtn) networkRoomCloseBtn.addEventListener('click', closeRoomModal);
+                if (networkRoomCancelBtn) networkRoomCancelBtn.addEventListener('click', closeRoomModal);
+                
+                if (networkRoomConfirmBtn && networkRoomInput) {
+                    networkRoomConfirmBtn.addEventListener('click', () => {
+                        const roomId = networkRoomInput.value.trim();
+                        if (roomId) {
+                            closeRoomModal();
+                            connectToRoom(roomId);
+                        } else {
+                            alert('Пожалуйста, введите имя или номер комнаты.');
+                        }
+                    });
+                }
+            }
+
             networkBtn.addEventListener('click', () => {
                 const currentStatus = (typeof ChessNetwork !== 'undefined') ? ChessNetwork.getState() : { connected: false };
                 console.log('[UI] Network button click triggered. Status:', currentStatus);
@@ -368,14 +396,23 @@ const ChessUI = (() => {
                         startNewGame();
                     }
                 } else {
-                    // Extract room ID from URL hash or default to '123'
+                    // Extract room ID from URL hash or show custom HTML modal
                     let roomId = window.location.hash.replace('#', '').trim();
                     if (!roomId) {
-                        roomId = prompt("Введите ID комнаты для игры (латиница/цифры):", "123");
-                        if (!roomId) return;
+                        if (networkRoomModal && networkRoomInput) {
+                            networkRoomInput.value = "123";
+                            networkRoomModal.style.display = 'flex';
+                            networkRoomInput.focus();
+                            if (typeof networkRoomInput.select === 'function') {
+                                networkRoomInput.select();
+                            }
+                        } else {
+                            roomId = prompt("Введите ID комнаты для игры (латиница/цифры):", "123");
+                            if (roomId) connectToRoom(roomId);
+                        }
+                    } else {
+                        connectToRoom(roomId);
                     }
-                    
-                    connectToRoom(roomId);
                 }
             });
 
