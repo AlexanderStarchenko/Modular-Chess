@@ -232,7 +232,23 @@ const SocketTransport = (() => {
             return;
         }
 
-        const serverUrl = customUrl || (window.location.protocol === 'file:' ? 'http://localhost:3000' : undefined);
+        let serverUrl = customUrl;
+        if (!serverUrl) {
+            const isMobileAndroid = typeof window !== 'undefined' && (
+                window.location.protocol === 'capacitor:' || 
+                window.location.origin.startsWith('capacitor://') ||
+                (window.location.hostname === 'localhost' && /Android/i.test(navigator.userAgent))
+            );
+            
+            if (isMobileAndroid) {
+                serverUrl = 'http://10.0.2.2:3000';
+            } else if (window.location.protocol === 'file:') {
+                serverUrl = 'http://localhost:3000';
+            } else {
+                serverUrl = undefined;
+            }
+        }
+
         console.log('Connecting to:', serverUrl);
         socket = io(serverUrl, { transports: ['websocket'] });
         currentRoom = roomId;
