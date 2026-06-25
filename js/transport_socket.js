@@ -277,7 +277,10 @@ const SocketTransport = (() => {
             socket = io(serverUrl, { 
                 transports: ['polling', 'websocket'],
                 timeout: 4000,
-                reconnection: false
+                reconnection: false,
+                extraHeaders: {
+                    "Bypass-Tunnel-Reminder": "true"
+                }
             });
 
             socket.on('connect', () => {

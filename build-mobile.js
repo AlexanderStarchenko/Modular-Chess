@@ -69,13 +69,17 @@ function getLocalIps() {
     return ips;
 }
 const localIps = getLocalIps();
-const preferredIp = localIps[0] || '10.0.2.2';
+let serverUrl = process.env.MOBILE_SERVER_URL;
+if (!serverUrl) {
+    const preferredIp = localIps[0] || '10.0.2.2';
+    serverUrl = `http://${preferredIp}:3000`;
+}
 const configContent = `// Automatically generated during build. Do not modify.
 const MobileConfig = {
-    serverUrl: 'http://${preferredIp}:3000'
+    serverUrl: '${serverUrl}'
 };
 `;
 fs.writeFileSync(path.join(destDir, 'js', 'mobile_config.js'), configContent);
-console.log(`Mobile config generated. Using server IP: ${preferredIp}`);
+console.log(`Mobile config generated. Using server URL: ${serverUrl}`);
 
 console.log('Mobile build complete. Assets ready in "www/" folder!');
