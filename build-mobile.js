@@ -28,11 +28,14 @@ function copyRecursiveSync(src, dest) {
 
 console.log('Building mobile assets...');
 
-// 1. Clean 'www' directory
+// 1. Clean 'www' directory contents
 if (fs.existsSync(destDir)) {
-    fs.rmSync(destDir, { recursive: true, force: true });
+    fs.readdirSync(destDir).forEach(file => {
+        fs.rmSync(path.join(destDir, file), { recursive: true, force: true });
+    });
+} else {
+    fs.mkdirSync(destDir, { recursive: true });
 }
-fs.mkdirSync(destDir);
 
 // 2. Build CSS
 console.log('Compiling CSS...');
