@@ -334,6 +334,18 @@ const ChessUI = (() => {
 
         // Network button logic
         if (networkBtn) {
+            const isMobileApp = typeof window !== 'undefined' && (
+                !!window.Capacitor || 
+                (window.location && window.location.protocol === 'capacitor:') ||
+                (window.location && window.location.origin && window.location.origin.startsWith('capacitor://')) ||
+                (window.location && window.location.hostname === 'localhost' && /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent))
+            );
+
+            if (isMobileApp) {
+                console.log('[UI] Mobile environment detected. Hiding network play button.');
+                networkBtn.style.display = 'none';
+            }
+
             console.log('[UI] Network button found, setting up listeners...');
             
             function connectToRoom(roomId, serverUrl = null) {
