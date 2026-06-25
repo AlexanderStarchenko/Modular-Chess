@@ -9,3 +9,5 @@ dist/
 coverage/
 .agents/
 ORIGINAL_REQUEST.md
+www/
+.idea/
