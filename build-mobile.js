@@ -48,6 +48,9 @@ fs.copyFileSync(path.join(srcDir, 'index.html'), path.join(destDir, 'index.html'
 console.log('Copying JS directory...');
 copyRecursiveSync(path.join(srcDir, 'js'), path.join(destDir, 'js'));
 
+console.log('Copying CSS directory...');
+copyRecursiveSync(path.join(srcDir, 'css'), path.join(destDir, 'css'));
+
 console.log('Copying compiled WebAssembly Core...');
 copyRecursiveSync(path.join(srcDir, 'build', 'release.wasm'), path.join(destDir, 'build', 'release.wasm'));
 
