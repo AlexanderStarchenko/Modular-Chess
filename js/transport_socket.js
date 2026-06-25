@@ -226,19 +226,24 @@ const SocketTransport = (() => {
     /**
      * Initializes connection to the server and joins a room.
      */
+    /**
+     * Initializes connection to the server and joins a room.
+     */
     function init(roomId = 'default-room', customUrl = null) {
         if (typeof io === 'undefined') {
             console.error('Socket.io client library not loaded!');
             return;
         }
 
-        let serverUrl = customUrl;
-        if (!serverUrl) {
-            const loc = (typeof window !== 'undefined' && window.location) || {};
-            const protocol = loc.protocol || '';
-            const origin = loc.origin || '';
-            const hostname = loc.hostname || '';
+        let urlsToTry = [];
+        const loc = (typeof window !== 'undefined' && window.location) || {};
+        const protocol = loc.protocol || '';
+        const origin = loc.origin || '';
+        const hostname = loc.hostname || '';
 
+        if (customUrl) {
+            urlsToTry.push(customUrl);
+        } else {
             const isMobileApp = typeof window !== 'undefined' && (
                 !!window.Capacitor || 
                 protocol === 'capacitor:' || 
@@ -248,134 +253,155 @@ const SocketTransport = (() => {
             
             if (isMobileApp) {
                 if (typeof MobileConfig !== 'undefined' && MobileConfig.serverUrl) {
-                    serverUrl = MobileConfig.serverUrl;
-                } else {
-                    serverUrl = 'http://10.0.2.2:3000';
+                    urlsToTry.push(MobileConfig.serverUrl);
                 }
+                urlsToTry.push('http://10.0.2.2:3000');
             } else if (protocol === 'file:') {
-                serverUrl = 'http://localhost:3000';
+                urlsToTry.push('http://localhost:3000');
             } else {
-                serverUrl = undefined;
+                urlsToTry.push(undefined);
             }
         }
 
-        console.log('Connecting to:', serverUrl);
-        socket = io(serverUrl, { transports: ['websocket'] });
         currentRoom = roomId;
+        let currentUrlIndex = 0;
 
-        socket.on('connect', () => {
-            console.log('Connected to signaling server');
-            socket.emit('join-room', roomId);
+        function tryConnect() {
+            const serverUrl = urlsToTry[currentUrlIndex];
+            console.log(`Connecting to signaling server (${currentUrlIndex + 1}/${urlsToTry.length}):`, serverUrl);
             
-            ChessNetwork.connect({ 
-                roomId, 
-                connected: true,
-                playerColor: null
+            if (socket) {
+                try { socket.destroy(); } catch(e) {}
+            }
+
+            socket = io(serverUrl, { 
+                transports: ['websocket'],
+                timeout: 3000,
+                reconnection: false
             });
-        });
 
-        // WebRTC Signaling channel
-        socket.on('webrtc-signal', (signal) => {
-            handleSignalingMessage(signal);
-        });
+            socket.on('connect', () => {
+                console.log('Connected to signaling server:', serverUrl);
+                socket.emit('join-room', roomId);
+                
+                ChessNetwork.connect({ 
+                    roomId, 
+                    connected: true,
+                    playerColor: null
+                });
 
-        // Listen for fallback moves from the server
-        socket.on('chess-move', (move) => {
-            if (dataChannel && dataChannel.readyState === 'open') return; // Ignore if P2P is active
-            console.log('Received move via socket fallback:', move);
-            parsePayload(move, BinaryProtocol.unpackMove, (decodedMove) => {
-                ChessNetwork.receiveMove(decodedMove);
+                if (socket.io && socket.io.opts) {
+                    socket.io.opts.reconnection = true;
+                }
             });
-        });
 
-        // Listen for fallback state syncs
-        socket.on('chess-sync', (state) => {
-            if (dataChannel && dataChannel.readyState === 'open') return; // Ignore if P2P is active
-            console.log('Received state sync via socket fallback');
-            parsePayload(state, BinaryProtocol.unpackState, (decodedState) => {
-                ChessNetwork.receiveState(decodedState);
+            // WebRTC Signaling channel
+            socket.on('webrtc-signal', (signal) => {
+                handleSignalingMessage(signal);
             });
-        });
 
-        socket.on('color-assigned', (color) => {
-            if (typeof ChessNetwork.receiveColor === 'function') {
-                ChessNetwork.receiveColor(color);
-            }
-        });
+            // Listen for fallback moves from the server
+            socket.on('chess-move', (move) => {
+                if (dataChannel && dataChannel.readyState === 'open') return; // Ignore if P2P is active
+                console.log('Received move via socket fallback:', move);
+                parsePayload(move, BinaryProtocol.unpackMove, (decodedMove) => {
+                    ChessNetwork.receiveMove(decodedMove);
+                });
+            });
 
-        socket.on('player-joined', () => {
-            console.log('Another player joined the room');
-            if (typeof ChessNetwork.receiveJoined === 'function') {
-                ChessNetwork.receiveJoined();
-            }
-            // Initiator starts PeerConnection
-            initWebRTC(true);
-        });
+            // Listen for fallback state syncs
+            socket.on('chess-sync', (state) => {
+                if (dataChannel && dataChannel.readyState === 'open') return; // Ignore if P2P is active
+                console.log('Received state sync via socket fallback');
+                parsePayload(state, BinaryProtocol.unpackState, (decodedState) => {
+                    ChessNetwork.receiveState(decodedState);
+                });
+            });
 
-        socket.on('undo-request', (levels) => {
-            if (dataChannel && dataChannel.readyState === 'open') return;
-            if (typeof ChessNetwork.receiveUndoRequest === 'function') {
-                ChessNetwork.receiveUndoRequest(levels);
-            }
-        });
+            socket.on('color-assigned', (color) => {
+                if (typeof ChessNetwork.receiveColor === 'function') {
+                    ChessNetwork.receiveColor(color);
+                }
+            });
 
-        socket.on('undo-response', (accepted) => {
-            if (dataChannel && dataChannel.readyState === 'open') return;
-            if (typeof ChessNetwork.receiveUndoResponse === 'function') {
-                ChessNetwork.receiveUndoResponse(accepted);
-            }
-        });
+            socket.on('player-joined', () => {
+                console.log('Another player joined the room');
+                if (typeof ChessNetwork.receiveJoined === 'function') {
+                    ChessNetwork.receiveJoined();
+                }
+                // Initiator starts PeerConnection
+                initWebRTC(true);
+            });
 
-        socket.on('resign', () => {
-            if (dataChannel && dataChannel.readyState === 'open') return;
-            if (typeof ChessNetwork.receiveResign === 'function') {
-                ChessNetwork.receiveResign();
-            }
-        });
+            socket.on('undo-request', (levels) => {
+                if (dataChannel && dataChannel.readyState === 'open') return;
+                if (typeof ChessNetwork.receiveUndoRequest === 'function') {
+                    ChessNetwork.receiveUndoRequest(levels);
+                }
+            });
 
-        socket.on('draw-offer', () => {
-            if (dataChannel && dataChannel.readyState === 'open') return;
-            if (typeof ChessNetwork.receiveDrawOffer === 'function') {
-                ChessNetwork.receiveDrawOffer();
-            }
-        });
+            socket.on('undo-response', (accepted) => {
+                if (dataChannel && dataChannel.readyState === 'open') return;
+                if (typeof ChessNetwork.receiveUndoResponse === 'function') {
+                    ChessNetwork.receiveUndoResponse(accepted);
+                }
+            });
 
-        socket.on('draw-response', (accepted) => {
-            if (dataChannel && dataChannel.readyState === 'open') return;
-            if (typeof ChessNetwork.receiveDrawResponse === 'function') {
-                ChessNetwork.receiveDrawResponse(accepted);
-            }
-        });
+            socket.on('resign', () => {
+                if (dataChannel && dataChannel.readyState === 'open') return;
+                if (typeof ChessNetwork.receiveResign === 'function') {
+                    ChessNetwork.receiveResign();
+                }
+            });
 
-        socket.on('chat-message', (text) => {
-            if (dataChannel && dataChannel.readyState === 'open') return;
-            if (typeof ChessNetwork.receiveChatMessage === 'function') {
-                ChessNetwork.receiveChatMessage(text);
-            }
-        });
+            socket.on('draw-offer', () => {
+                if (dataChannel && dataChannel.readyState === 'open') return;
+                if (typeof ChessNetwork.receiveDrawOffer === 'function') {
+                    ChessNetwork.receiveDrawOffer();
+                }
+            });
 
-        socket.on('connect_error', (error) => {
-            console.error('Connection Error:', error.message);
-            const loc = (typeof window !== 'undefined' && window.location) || {};
-            const protocol = loc.protocol || '';
-            const origin = loc.origin || '';
-            const hostname = loc.hostname || '';
-            const isMobileApp = typeof window !== 'undefined' && (
-                !!window.Capacitor || 
-                protocol === 'capacitor:' || 
-                origin.startsWith('capacitor://') ||
-                (hostname === 'localhost' && /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent))
-            );
-            if (isMobileApp) {
-                alert('Не удалось подключиться к серверу сетевой игры по адресу ' + serverUrl + '.\nОшибка: ' + error.message + '\n\nПроверьте, что сервер запущен, брандмауэр Windows не блокирует входящие подключения на порту 3000, и устройства подключены к одной Wi-Fi сети.');
-            }
-        });
+            socket.on('draw-response', (accepted) => {
+                if (dataChannel && dataChannel.readyState === 'open') return;
+                if (typeof ChessNetwork.receiveDrawResponse === 'function') {
+                    ChessNetwork.receiveDrawResponse(accepted);
+                }
+            });
 
-        socket.on('disconnect', () => {
-            console.log('Disconnected from server');
-            closeWebRTC();
-            ChessNetwork.disconnect();
-        });
+            socket.on('chat-message', (text) => {
+                if (dataChannel && dataChannel.readyState === 'open') return;
+                if (typeof ChessNetwork.receiveChatMessage === 'function') {
+                    ChessNetwork.receiveChatMessage(text);
+                }
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error(`Connection failed for ${serverUrl}:`, error.message);
+                currentUrlIndex++;
+                if (currentUrlIndex < urlsToTry.length) {
+                    console.log('Trying next server URL...');
+                    tryConnect();
+                } else {
+                    const isMobileApp = typeof window !== 'undefined' && (
+                        !!window.Capacitor || 
+                        protocol === 'capacitor:' || 
+                        origin.startsWith('capacitor://') ||
+                        (hostname === 'localhost' && /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent))
+                    );
+                    if (isMobileApp) {
+                        alert('Не удалось подключиться к серверу сетевой игры.\n\nИспробованные адреса:\n' + urlsToTry.join('\n') + '\n\nОшибка: ' + error.message + '\n\nПроверьте, запущен ли Node.js сервер на компьютере, и находятся ли устройства в одной Wi-Fi сети.');
+                    }
+                }
+            });
+
+            socket.on('disconnect', () => {
+                console.log('Disconnected from server');
+                closeWebRTC();
+                ChessNetwork.disconnect();
+            });
+        }
+
+        tryConnect();
 
         // Attach this transport to the network abstraction
         ChessNetwork.attach({
