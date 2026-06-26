@@ -109,11 +109,11 @@ const ChessUI = (() => {
         return {
             getContext,
             move() {
-                playTone({ type: 'sine', startFreq: 240, endFreq: 180, duration: 0.09, volume: 0.15 });
+                playTone({ type: 'sine', startFreq: 240, endFreq: 180, duration: 0.09, volume: 0.45 });
             },
             capture() {
-                playTone({ type: 'triangle', startFreq: 170, endFreq: 115, duration: 0.07, volume: 0.25 });
-                playTone({ type: 'square', startFreq: 96, endFreq: 72, duration: 0.12, volume: 0.08, delay: 0.04 });
+                playTone({ type: 'triangle', startFreq: 170, endFreq: 115, duration: 0.07, volume: 0.65 });
+                playTone({ type: 'square', startFreq: 96, endFreq: 72, duration: 0.12, volume: 0.20, delay: 0.04 });
             },
             check() {
                 // Более выразительный и громкий звук шаха
