@@ -11,7 +11,7 @@ const ChessAIUnreal = (() => {
 
     function init(skillLevel) {
         if (!stockfish) {
-            stockfish = new Worker('js/stockfish.js?v=37');
+            stockfish = new Worker('js/stockfish.js?v=40');
             stockfish.onmessage = function(event) {
                 const line = event.data;
                 if (line.startsWith('bestmove')) {

@@ -10,11 +10,15 @@ glob.ChessWASM = (() => {
 
     async function init() {
         try {
-            let wasmBuffer;
-            
             // Check if we are in Electron/Node environment safely
             const isElectron = typeof process !== 'undefined' && process.versions && process.versions.electron;
             
+            const env = {
+                env: {
+                    abort: () => console.log("WASM Abort!")
+                }
+            };
+
             if (isElectron && typeof require !== 'undefined') {
                 try {
                     const fs = require('fs');
@@ -24,21 +28,18 @@ glob.ChessWASM = (() => {
                     const baseDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
                     const wasmPath = path.join(baseDir, 'build', 'release.wasm');
                     const buffer = fs.readFileSync(wasmPath);
-                    wasmBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+                    const wasmBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+                    
+                    const wasm = await WebAssembly.instantiate(wasmBuffer, env);
+                    instance = wasm.instance.exports;
                 } catch (e) {
                     console.warn('[WASM] Electron direct load failed, falling back to fetch', e);
-                    wasmBuffer = await loadViaFetch();
+                    await loadAndInstantiateViaFetch(env);
                 }
             } else {
-                wasmBuffer = await loadViaFetch();
+                await loadAndInstantiateViaFetch(env);
             }
 
-            const wasm = await WebAssembly.instantiate(wasmBuffer, {
-                env: {
-                    abort: () => console.log("WASM Abort!")
-                }
-            });
-            instance = wasm.instance.exports;
             memView = new Uint8Array(instance.memory.buffer);
             console.log('[WASM] Chess Core Loaded Successfully');
             return true;
@@ -48,14 +49,28 @@ glob.ChessWASM = (() => {
         }
     }
 
-    async function loadViaFetch() {
+    async function loadAndInstantiateViaFetch(env) {
         let wasmUrl = './build/release.wasm';
         // In Web Worker inside /js/ folder, adjust relative URL to go up one folder
         if (typeof self !== 'undefined' && self.location && self.location.pathname.includes('/js/')) {
             wasmUrl = '../build/release.wasm';
         }
+        
+        // Try streaming compilation and instantiation (faster compile-on-download)
+        if (typeof WebAssembly.instantiateStreaming === 'function') {
+            try {
+                const wasm = await WebAssembly.instantiateStreaming(fetch(wasmUrl), env);
+                instance = wasm.instance.exports;
+                return;
+            } catch (e) {
+                console.warn('[WASM] instantiateStreaming failed, falling back to arrayBuffer fetch', e);
+            }
+        }
+        
         const response = await fetch(wasmUrl);
-        return await response.arrayBuffer();
+        const buffer = await response.arrayBuffer();
+        const wasm = await WebAssembly.instantiate(buffer, env);
+        instance = wasm.instance.exports;
     }
 
     function getMemView() {
