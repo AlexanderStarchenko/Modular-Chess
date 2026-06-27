@@ -192,6 +192,7 @@ body {
     align-items: center;
     cursor: pointer;
     user-select: none;
+    touch-action: none;
     position: relative;
     transition: background-color 0.2s ease, box-shadow 0.2s ease;
 }
