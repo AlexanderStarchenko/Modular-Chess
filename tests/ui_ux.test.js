@@ -515,7 +515,8 @@ describe('ChessUI Integration', () => {
             'save-game-btn', 'load-game-btn', 'save-load-close-btn', 'save-load-modal',
             'export-json-btn', 'import-json-btn', 'import-file-input',
             'slot-1', 'slot-2', 'slot-3', 'top-accuracy', 'bottom-accuracy',
-            'chat-input', 'chat-messages', 'chat-send-btn', 'tab-btn-chat', 'tab-content-chat'
+            'chat-input', 'chat-messages', 'chat-send-btn', 'tab-btn-chat', 'tab-content-chat',
+            'settings-modal', 'settings-btn', 'settings-close-btn', 'settings-save-btn'
         ];
         
         mockElements = {};
@@ -720,6 +721,29 @@ describe('ChessUI Integration', () => {
         // Close
         clickHandlers['close-sidebar-btn']();
         expect(mockElements['sidebar-drawer'].classList.add).toHaveBeenCalledWith('-translate-x-full');
+    });
+
+    test('Should open and close the settings modal on button clicks', () => {
+        ChessUI.init();
+        expect(clickHandlers['settings-btn']).toBeDefined();
+        expect(clickHandlers['settings-close-btn']).toBeDefined();
+        expect(clickHandlers['settings-save-btn']).toBeDefined();
+
+        // Open settings modal
+        clickHandlers['settings-btn']();
+        expect(mockElements['settings-modal'].style.display).toBe('flex');
+
+        // Close via close button
+        clickHandlers['settings-close-btn']();
+        expect(mockElements['settings-modal'].style.display).toBe('none');
+
+        // Open again
+        clickHandlers['settings-btn']();
+        expect(mockElements['settings-modal'].style.display).toBe('flex');
+
+        // Close via save/done button
+        clickHandlers['settings-save-btn']();
+        expect(mockElements['settings-modal'].style.display).toBe('none');
     });
 
     test('Should switch tabs in the right panel on click', () => {
