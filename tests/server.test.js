@@ -1,6 +1,8 @@
 const request = require('supertest');
 const { app, server } = require('../server.js');
 const { io: Client } = require('socket.io-client');
+const fs = require('fs');
+const path = require('path');
 
 describe('Server Headers and Static Files', () => {
     test('Should have COOP and COEP headers for SharedArrayBuffer', async () => {
@@ -282,6 +284,58 @@ describe('Server Utility Functions', () => {
         expect(ip).toBe('localhost');
         
         os.networkInterfaces = originalNetworkInterfaces;
+    });
+});
+
+describe('Telemetry API Endpoint', () => {
+    const logFilePath = path.join(__dirname, '../telemetry_logs.jsonl');
+
+    afterEach(() => {
+        // Clean up the generated telemetry file
+        try {
+            if (fs.existsSync(logFilePath)) {
+                fs.unlinkSync(logFilePath);
+            }
+        } catch (e) {}
+    });
+
+    test('POST /api/telemetry with valid payload should return 200 and write to log', async () => {
+        const payload = {
+            type: 'error',
+            message: 'Test crash message',
+            source: 'test.js',
+            line: 42,
+            col: 10,
+            stack: 'Error: Test crash\n  at Object.<anonymous> (test.js:42:10)'
+        };
+        const response = await request(app)
+            .post('/api/telemetry')
+            .send(payload);
+
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual({ success: true });
+
+        // Verify the file was created and contains correct data
+        expect(fs.existsSync(logFilePath)).toBe(true);
+        const fileContent = fs.readFileSync(logFilePath, 'utf8');
+        const loggedData = JSON.parse(fileContent.trim());
+        expect(loggedData.type).toBe('error');
+        expect(loggedData.message).toBe('Test crash message');
+        expect(loggedData.line).toBe(42);
+        expect(loggedData.ip).toBeDefined();
+        expect(loggedData.timestamp).toBeDefined();
+    });
+
+    test('POST /api/telemetry with missing type should return 400', async () => {
+        const payload = {
+            message: 'Missing type'
+        };
+        const response = await request(app)
+            .post('/api/telemetry')
+            .send(payload);
+
+        expect(response.status).toBe(400);
+        expect(response.body).toEqual({ error: 'Invalid telemetry payload' });
     });
 });
 

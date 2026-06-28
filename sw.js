@@ -12,6 +12,7 @@ const ASSETS = [
     'js/ai_unreal.js?v=40',
     'js/analysis_manager.js?v=40',
     'js/wasm_loader.js?v=40',
+    'js/telemetry.js?v=40',
     'js/stockfish.js?v=40',
     'build/release.wasm',
     'js/network.js?v=40',

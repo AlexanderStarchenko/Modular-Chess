@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -23,14 +24,58 @@ const io = new Server(server, {
 app.use((req, res, next) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
     next();
 });
+
+// JSON parser for telemetry POSTs
+app.use(express.json());
 
 // Explicitly set MIME type for WASM files
 express.static.mime.define({'application/wasm': ['wasm']});
 
 // Serve static files from the current directory
 app.use(express.static(__dirname));
+
+// Telemetry endpoint
+app.post('/api/telemetry', (req, res) => {
+    try {
+        const payload = req.body;
+        if (!payload || !payload.type) {
+            return res.status(400).json({ error: 'Invalid telemetry payload' });
+        }
+        
+        // Prepare log entry
+        const logEntry = {
+            timestamp: new Date().toISOString(),
+            ip: req.ip || req.headers['x-forwarded-for'] || '',
+            ...payload
+        };
+        
+        // Write to telemetry_logs.jsonl
+        const logFilePath = path.join(__dirname, 'telemetry_logs.jsonl');
+        fs.appendFile(logFilePath, JSON.stringify(logEntry) + '\n', (err) => {
+            if (err) {
+                console.error('[Telemetry] Failed to write to log file:', err);
+            }
+        });
+
+        // Also output to console in development
+        if (process.env.NODE_ENV !== 'test') {
+            console.log(`[Telemetry:${payload.type.toUpperCase()}]`, JSON.stringify(payload));
+        }
+
+        res.status(200).json({ success: true });
+    } catch (e) {
+        console.error('[Telemetry] Error processing request:', e);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
 const rooms = new Map();
 
