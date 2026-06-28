@@ -389,6 +389,25 @@ const ChessUI = (() => {
                 }
             }
 
+            // Настройка красивого HTML модального окна для настроек
+            const settingsModal = document.getElementById('settings-modal');
+            const settingsBtn = document.getElementById('settings-btn');
+            const settingsCloseBtn = document.getElementById('settings-close-btn');
+            const settingsSaveBtn = document.getElementById('settings-save-btn');
+
+            if (settingsModal) {
+                const openSettingsModal = () => {
+                    settingsModal.style.display = 'flex';
+                };
+                const closeSettingsModal = () => {
+                    settingsModal.style.display = 'none';
+                };
+
+                if (settingsBtn) settingsBtn.addEventListener('click', openSettingsModal);
+                if (settingsCloseBtn) settingsCloseBtn.addEventListener('click', closeSettingsModal);
+                if (settingsSaveBtn) settingsSaveBtn.addEventListener('click', closeSettingsModal);
+            }
+
             networkBtn.addEventListener('click', () => {
                 const currentStatus = (typeof ChessNetwork !== 'undefined') ? ChessNetwork.getState() : { connected: false };
                 console.log('[UI] Network button click triggered. Status:', currentStatus);

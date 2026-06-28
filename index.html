@@ -73,14 +73,19 @@
             </div>
             
             <!-- Player Avatar Info Card -->
-            <div class="mb-6 p-4 bg-surface-variant/20 rounded-xl flex items-center gap-3 border border-outline-variant/10 shadow-lg">
-                <div class="w-10 h-10 rounded-lg bg-primary-container/20 flex items-center justify-center text-xl shadow-md border border-primary/10">
-                    👤
+            <div class="mb-6 p-4 bg-surface-variant/20 rounded-xl flex items-center justify-between border border-outline-variant/10 shadow-lg">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-primary-container/20 flex items-center justify-center text-xl shadow-md border border-primary/10">
+                        👤
+                    </div>
+                    <div>
+                        <p class="font-bold text-sm text-on-surface" id="sidebar-player-name">Игрок 1</p>
+                        <p class="text-label-sm text-primary text-[10px]">Rating: 1500</p>
+                    </div>
                 </div>
-                <div>
-                    <p class="font-bold text-sm text-on-surface" id="sidebar-player-name">Игрок 1</p>
-                    <p class="text-label-sm text-primary text-[10px]">Rating: 1500</p>
-                </div>
+                <button id="settings-btn" class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors cursor-pointer p-1.5 rounded-lg hover:bg-surface-container-high" title="Настройки">
+                    settings
+                </button>
             </div>
             
             <!-- Game settings -->
@@ -131,38 +136,6 @@
                         </div>
                     </div>
 
-                    <!-- Themes Selector -->
-                    <div class="space-y-1.5">
-                        <label class="text-[11px] font-semibold text-on-surface-variant block">Стиль доски:</label>
-                        <select id="theme-select" class="w-full bg-surface-container/50 border border-outline-variant/20 rounded-lg p-2 text-xs text-on-surface outline-none focus:border-primary cursor-pointer">
-                            <option value="classic">Классика</option>
-                            <option value="ocean">Океан (Синий)</option>
-                            <option value="dark">Темный (Серый)</option>
-                            <option value="wood">Дерево</option>
-                            <option value="emerald">Изумруд (Зеленый)</option>
-                        </select>
-                    </div>
-
-                    <!-- UI Theme Selector -->
-                    <div class="space-y-1.5">
-                        <label class="text-[11px] font-semibold text-on-surface-variant block">Тема интерфейса:</label>
-                        <select id="ui-theme-select" class="w-full bg-surface-container/50 border border-outline-variant/20 rounded-lg p-2 text-xs text-on-surface outline-none focus:border-primary cursor-pointer">
-                            <option value="dark" selected>Темная</option>
-                            <option value="light">Светлая</option>
-                        </select>
-                    </div>
-
-                    <!-- Sound Settings -->
-                    <div class="space-y-1.5 border-t border-outline-variant/10 pt-3">
-                        <label class="text-[11px] font-semibold text-on-surface-variant block">Звуковые эффекты:</label>
-                        <div class="flex items-center justify-between bg-surface-container/40 px-3 py-1.5 rounded-lg border border-outline-variant/20">
-                            <span class="text-sm text-on-surface-variant">Включить звук</span>
-                            <label class="switch">
-                                <input type="checkbox" id="sound-toggle" checked>
-                                <span class="slider round"></span>
-                            </label>
-                        </div>
-                    </div>
 
                     <!-- Save/Load Section -->
                     <div class="space-y-1.5 border-t border-outline-variant/10 pt-3">
@@ -478,6 +451,53 @@
             <div class="flex gap-2">
                 <button id="network-room-cancel-btn" class="flex-1 py-2 bg-surface-container-high border border-outline-variant/20 rounded-lg text-xs font-bold text-on-surface-variant hover:border-primary hover:text-primary transition-all cursor-pointer">Отмена</button>
                 <button id="network-room-confirm-btn" class="flex-1 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg hover:opacity-90 transition-all cursor-pointer shadow-md">Подключиться</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex justify-center items-center" style="display: none;">
+        <div class="modal-content glass-panel p-6 rounded-2xl border border-outline-variant/20 w-80 flex flex-col gap-4 shadow-2xl">
+            <div class="flex justify-between items-center border-b border-outline-variant/10 pb-2">
+                <h2 class="text-xs font-extrabold text-primary tracking-wide uppercase font-headline-lg">Настройки</h2>
+                <button id="settings-close-btn" class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors cursor-pointer text-lg">close</button>
+            </div>
+            
+            <!-- Themes Selector -->
+            <div class="space-y-1.5">
+                <label class="text-[11px] font-semibold text-on-surface-variant block">Стиль доски:</label>
+                <select id="theme-select" class="w-full bg-surface-container/50 border border-outline-variant/20 rounded-lg p-2 text-xs text-on-surface outline-none focus:border-primary cursor-pointer">
+                    <option value="classic">Классика</option>
+                    <option value="ocean">Океан (Синий)</option>
+                    <option value="dark">Темный (Серый)</option>
+                    <option value="wood">Дерево</option>
+                    <option value="emerald">Изумруд (Зеленый)</option>
+                </select>
+            </div>
+
+            <!-- UI Theme Selector -->
+            <div class="space-y-1.5">
+                <label class="text-[11px] font-semibold text-on-surface-variant block">Тема интерфейса:</label>
+                <select id="ui-theme-select" class="w-full bg-surface-container/50 border border-outline-variant/20 rounded-lg p-2 text-xs text-on-surface outline-none focus:border-primary cursor-pointer">
+                    <option value="dark" selected>Темная</option>
+                    <option value="light">Светлая</option>
+                </select>
+            </div>
+
+            <!-- Sound Settings -->
+            <div class="space-y-1.5">
+                <label class="text-[11px] font-semibold text-on-surface-variant block">Звуковые эффекты:</label>
+                <div class="flex items-center justify-between bg-surface-container/40 px-3 py-1.5 rounded-lg border border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">Включить звук</span>
+                    <label class="switch">
+                        <input type="checkbox" id="sound-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="flex gap-2 pt-2">
+                <button id="settings-save-btn" class="w-full py-2 bg-primary text-on-primary text-xs font-bold rounded-lg hover:opacity-90 transition-all cursor-pointer shadow-md">Готово</button>
             </div>
         </div>
     </div>
