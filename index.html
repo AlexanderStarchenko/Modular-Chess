@@ -202,6 +202,11 @@
                     <!-- The Chess Board Container -->
                     <div id="board-container" class="relative w-full aspect-square shadow-2xl rounded-xl overflow-hidden border-4 border-surface-container-high">
                         <div id="chessboard" class="w-full h-full"></div>
+                        <!-- Network Status Reconnecting Banner -->
+                        <div id="network-status-banner" class="absolute top-0 inset-x-0 bg-error/90 backdrop-blur-sm text-on-error py-2 px-4 text-center text-xs font-bold transition-all duration-300 shadow-md flex items-center justify-center gap-2 transform -translate-y-full z-10">
+                            <span class="animate-spin h-3.5 w-3.5 border-2 border-on-error border-t-transparent rounded-full"></span>
+                            <span>Соединение потеряно. Попытка переподключения...</span>
+                        </div>
                     </div>
                     
                     <!-- Player Profile Card -->
@@ -319,6 +324,13 @@
                             <button class="emoji-btn p-1 bg-surface-container/30 border border-outline-variant/10 hover:border-primary rounded text-sm transition-all cursor-pointer">🧠</button>
                             <button class="emoji-btn p-1 bg-surface-container/30 border border-outline-variant/10 hover:border-primary rounded text-sm transition-all cursor-pointer">👏</button>
                             <button class="emoji-btn p-1 bg-surface-container/30 border border-outline-variant/10 hover:border-primary rounded text-sm transition-all cursor-pointer">🏳️</button>
+                        </div>
+                        <div class="flex flex-wrap gap-1 my-1">
+                            <button class="quick-phrase-btn text-[9px] px-2 py-0.5 bg-surface-container/30 border border-outline-variant/10 hover:border-primary rounded-full transition-all cursor-pointer text-on-surface-variant hover:text-primary">Привет!</button>
+                            <button class="quick-phrase-btn text-[9px] px-2 py-0.5 bg-surface-container/30 border border-outline-variant/10 hover:border-primary rounded-full transition-all cursor-pointer text-on-surface-variant hover:text-primary">Удачи!</button>
+                            <button class="quick-phrase-btn text-[9px] px-2 py-0.5 bg-surface-container/30 border border-outline-variant/10 hover:border-primary rounded-full transition-all cursor-pointer text-on-surface-variant hover:text-primary">Отличный ход!</button>
+                            <button class="quick-phrase-btn text-[9px] px-2 py-0.5 bg-surface-container/30 border border-outline-variant/10 hover:border-primary rounded-full transition-all cursor-pointer text-on-surface-variant hover:text-primary">Ой...</button>
+                            <button class="quick-phrase-btn text-[9px] px-2 py-0.5 bg-surface-container/30 border border-outline-variant/10 hover:border-primary rounded-full transition-all cursor-pointer text-on-surface-variant hover:text-primary">Спасибо за игру!</button>
                         </div>
                         <div class="flex gap-2">
                             <input type="text" id="chat-input" placeholder="Сообщение..." class="flex-1 bg-surface-container/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-xs text-on-surface outline-none focus:border-primary">

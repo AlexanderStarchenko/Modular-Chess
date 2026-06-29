@@ -295,6 +295,12 @@ const SocketTransport = (() => {
 
                 if (socket.io && socket.io.opts) {
                     socket.io.opts.reconnection = true;
+                    socket.io.opts.reconnectionAttempts = 8;
+                    socket.io.opts.reconnectionDelay = 2000;
+                }
+
+                if (typeof ChessNetwork.receiveReconnected === 'function') {
+                    ChessNetwork.receiveReconnected();
                 }
             });
 
@@ -397,10 +403,22 @@ const SocketTransport = (() => {
                 }
             });
 
-            socket.on('disconnect', () => {
-                console.log('Disconnected from server');
+            socket.on('disconnect', (reason) => {
+                console.log('Disconnected from server. Reason:', reason);
                 closeWebRTC();
+                if (reason === 'io client disconnect' || reason === 'io server disconnect') {
+                    ChessNetwork.disconnect();
+                } else {
+                    if (typeof ChessNetwork.receiveReconnecting === 'function') {
+                        ChessNetwork.receiveReconnecting();
+                    }
+                }
+            });
+
+            socket.on('reconnect_failed', () => {
+                console.error('Socket reconnection failed completely');
                 ChessNetwork.disconnect();
+                alert('Не удалось восстановить подключение к серверу игры. Вы возвращены в одиночный режим.');
             });
         }
 

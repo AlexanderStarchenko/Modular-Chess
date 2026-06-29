@@ -21,7 +21,9 @@ const ChessNetwork = (() => {
         colorAssigned: [],
         resign: [],
         drawOffer: [],
-        drawResponse: []
+        drawResponse: [],
+        reconnecting: [],
+        reconnected: []
     };
 
     function emit(type, payload) {
@@ -118,6 +120,8 @@ const ChessNetwork = (() => {
         receiveResign: () => emit('resign'),
         receiveDrawOffer: () => emit('drawOffer'),
         receiveDrawResponse: (accepted) => emit('drawResponse', accepted),
+        receiveReconnecting: () => emit('reconnecting'),
+        receiveReconnected: () => emit('reconnected'),
         getState: () => ({ ...state })
     };
     if (typeof module !== 'undefined' && module.exports) {

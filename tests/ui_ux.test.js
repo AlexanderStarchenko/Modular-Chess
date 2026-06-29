@@ -516,7 +516,8 @@ describe('ChessUI Integration', () => {
             'export-json-btn', 'import-json-btn', 'import-file-input',
             'slot-1', 'slot-2', 'slot-3', 'top-accuracy', 'bottom-accuracy',
             'chat-input', 'chat-messages', 'chat-send-btn', 'tab-btn-chat', 'tab-content-chat',
-            'settings-modal', 'settings-btn', 'settings-close-btn', 'settings-save-btn'
+            'settings-modal', 'settings-btn', 'settings-close-btn', 'settings-save-btn',
+            'network-status-banner'
         ];
         
         mockElements = {};
@@ -1268,6 +1269,51 @@ describe('ChessUI Integration', () => {
         emojiClick();
 
         expect(global.ChessNetwork.sendChatMessage).toHaveBeenCalledWith('👍');
+    });
+
+    test('Should trigger quick phrase send events', () => {
+        const phraseBtnMock = {
+            textContent: 'Привет!',
+            addEventListener: jest.fn()
+        };
+        const originalQuerySelectorAll = global.document.querySelectorAll;
+        global.document.querySelectorAll = jest.fn((selector) => {
+            if (selector === '.quick-phrase-btn') {
+                return [phraseBtnMock];
+            }
+            return [];
+        });
+
+        ChessUI.init();
+
+        expect(phraseBtnMock.addEventListener).toHaveBeenCalledWith('click', expect.any(Function));
+        const phraseClick = phraseBtnMock.addEventListener.mock.calls[0][1];
+
+        // Trigger phrase click
+        networkListeners['status']({ connected: true });
+        phraseClick();
+
+        expect(global.ChessNetwork.sendChatMessage).toHaveBeenCalledWith('Привет!');
+        global.document.querySelectorAll = originalQuerySelectorAll;
+    });
+
+    test('Should show and hide network status banner on reconnecting and reconnected events', () => {
+        ChessUI.init();
+
+        expect(networkListeners['reconnecting']).toBeDefined();
+        expect(networkListeners['reconnected']).toBeDefined();
+
+        const banner = mockElements['network-status-banner'];
+
+        // 1. Reconnecting
+        networkListeners['reconnecting']();
+        expect(banner.classList.remove).toHaveBeenCalledWith('bg-success/90', 'text-on-success', '-translate-y-full');
+        expect(banner.classList.add).toHaveBeenCalledWith('bg-error/90', 'text-on-error');
+
+        // 2. Reconnected
+        networkListeners['reconnected']();
+        expect(banner.classList.remove).toHaveBeenCalledWith('bg-error/90', 'text-on-error');
+        expect(banner.classList.add).toHaveBeenCalledWith('bg-success/90', 'text-on-success');
     });
 });
 

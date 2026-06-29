@@ -490,6 +490,13 @@ const ChessUI = (() => {
                         networkBtn.classList.remove('leave-room-btn');
                     }
                 }
+
+                if (!networkState || !networkState.connected) {
+                    const statusBanner = document.getElementById('network-status-banner');
+                    if (statusBanner) {
+                        statusBanner.classList.add('-translate-y-full');
+                    }
+                }
                 
                 updateOpponentAvatar();
             });
@@ -571,6 +578,41 @@ const ChessUI = (() => {
                     ChessNetwork.sendUndoResponse(false);
                 }
             });
+            
+            ChessNetwork.on('resign', () => {
+                const opponentColor = playerColor === 'w' ? 'b' : 'w';
+                finishGame('resign', opponentColor);
+            });
+
+            ChessNetwork.on('reconnecting', () => {
+                const statusBanner = document.getElementById('network-status-banner');
+                if (statusBanner) {
+                    statusBanner.classList.remove('bg-success/90', 'text-on-success', '-translate-y-full');
+                    statusBanner.classList.add('bg-error/90', 'text-on-error');
+                    statusBanner.innerHTML = `
+                        <span class="animate-spin h-3.5 w-3.5 border-2 border-on-error border-t-transparent rounded-full"></span>
+                        <span>Соединение потеряно. Попытка переподключения...</span>
+                    `;
+                }
+            });
+
+            ChessNetwork.on('reconnected', () => {
+                const statusBanner = document.getElementById('network-status-banner');
+                if (statusBanner) {
+                    statusBanner.classList.remove('bg-error/90', 'text-on-error');
+                    statusBanner.classList.add('bg-success/90', 'text-on-success');
+                    statusBanner.innerHTML = `
+                        <span class="material-symbols-outlined text-xs">check_circle</span>
+                        <span>Соединение восстановлено!</span>
+                    `;
+                    setTimeout(() => {
+                        if (statusBanner && statusBanner.classList.contains('bg-success/90')) {
+                            statusBanner.classList.add('-translate-y-full');
+                        }
+                    }, 2000);
+                }
+            });
+
             ChessNetwork.on('undoResponse', accepted => {
                 if (accepted !== false) {
                     performUndo(accepted);
@@ -578,11 +620,6 @@ const ChessUI = (() => {
                     alert('Соперник отказался отменить ход.');
                     updateStatus();
                 }
-            });
-
-            ChessNetwork.on('resign', () => {
-                const opponentColor = playerColor === 'w' ? 'b' : 'w';
-                finishGame('resign', opponentColor);
             });
 
             ChessNetwork.on('drawOffer', () => {
@@ -850,6 +887,22 @@ const ChessUI = (() => {
             const emojiBtns = document.querySelectorAll('.emoji-btn');
             if (emojiBtns) {
                 emojiBtns.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const text = btn.textContent;
+                        appendChatMessage('Вы', text);
+                        if (networkState && networkState.connected && typeof ChessNetwork !== 'undefined') {
+                            ChessNetwork.sendChatMessage(text);
+                        }
+                    });
+                });
+            }
+        }
+
+        // Quick Phrases
+        if (typeof document.querySelectorAll === 'function') {
+            const phraseBtns = document.querySelectorAll('.quick-phrase-btn');
+            if (phraseBtns) {
+                phraseBtns.forEach(btn => {
                     btn.addEventListener('click', () => {
                         const text = btn.textContent;
                         appendChatMessage('Вы', text);
@@ -1561,6 +1614,7 @@ const ChessUI = (() => {
                         running: isTimerRunning
                     }
                 });
+                syncNetworkState();
             }
             updateStatus();
             return true;
