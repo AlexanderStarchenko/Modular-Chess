@@ -1315,6 +1315,29 @@ describe('ChessUI Integration', () => {
         expect(banner.classList.remove).toHaveBeenCalledWith('bg-error/90', 'text-on-error');
         expect(banner.classList.add).toHaveBeenCalledWith('bg-success/90', 'text-on-success');
     });
+
+    test('Should handle draw offer button click with pulsing animation and reset on response', () => {
+        ChessUI.init();
+        expect(clickHandlers['draw-btn']).toBeDefined();
+
+        const drawBtn = mockElements['draw-btn'];
+        networkListeners['status']({ connected: true });
+
+        // 1. Offer draw
+        global.confirm.mockReturnValue(true);
+        clickHandlers['draw-btn']();
+
+        expect(global.ChessNetwork.sendDrawOffer).toHaveBeenCalled();
+        expect(drawBtn.disabled).toBe(true);
+        expect(drawBtn.textContent).toBe('Ожидание ответа...');
+        expect(drawBtn.classList.add).toHaveBeenCalledWith('animate-pulse');
+
+        // 2. Reject offer
+        networkListeners['drawResponse'](false);
+        expect(drawBtn.disabled).toBe(false);
+        expect(drawBtn.textContent).toBe('Предложить ничью');
+        expect(drawBtn.classList.remove).toHaveBeenCalledWith('animate-pulse');
+    });
 });
 
 

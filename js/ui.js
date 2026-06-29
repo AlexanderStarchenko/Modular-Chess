@@ -632,6 +632,7 @@ const ChessUI = (() => {
             });
 
             ChessNetwork.on('drawResponse', accepted => {
+                resetDrawButton();
                 if (accepted) {
                     finishGame('draw');
                 } else {
@@ -688,6 +689,9 @@ const ChessUI = (() => {
                     if (confirm('Предложить ничью сопернику?')) {
                         ChessNetwork.sendDrawOffer();
                         statusElement.textContent = 'Ожидание ответа...';
+                        drawBtn.disabled = true;
+                        drawBtn.textContent = 'Ожидание ответа...';
+                        drawBtn.classList.add('animate-pulse');
                     }
                 }
             });
@@ -1099,7 +1103,17 @@ const ChessUI = (() => {
         gameConditionBadge.textContent = formatText;
     }
 
+    function resetDrawButton() {
+        const drawBtn = document.getElementById('draw-btn');
+        if (drawBtn) {
+            drawBtn.disabled = false;
+            drawBtn.textContent = 'Предложить ничью';
+            drawBtn.classList.remove('animate-pulse');
+        }
+    }
+
     function startNewGame() {
+        resetDrawButton();
         const gameOverModal = document.getElementById('game-over-modal');
         if (gameOverModal) gameOverModal.style.display = 'none';
 
@@ -1290,6 +1304,7 @@ const ChessUI = (() => {
     }
 
     function finishGame(reason = null, loserColor = null) {
+        resetDrawButton();
         gameEnded = true;
         stopTimer();
         suggestedMove = null;
