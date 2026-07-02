@@ -4,7 +4,7 @@
  */
 
 const ChessUI = (() => {
-    let boardElement, boardContainer, animationLayer, statusElement, gameInfoElement, historyListElement, resetBtn, pcToggle, difficultySelect;
+    let boardElement, boardContainer, animationLayer, statusElement, gameInfoElement, historyListElement, resetBtn, pcToggle, difficultySelect, sideSelect;
     let timeControlSelect, customTimeInputs, customMinsInput, customIncInput, themeSelect;
     let topPlayerName, bottomPlayerName, topTimerDisplay, bottomTimerDisplay, topTimerContainer, bottomTimerContainer;
     let analysisBtn, analysisPanel, analysisList, analysisProgress, stockfishTip;
@@ -304,6 +304,7 @@ const ChessUI = (() => {
         resetBtn = document.getElementById('reset-btn');
         pcToggle = document.getElementById('pc-toggle');
         difficultySelect = document.getElementById('difficulty-select');
+        sideSelect = document.getElementById('side-select');
         
         timeControlSelect = document.getElementById('time-control');
         customTimeInputs = document.getElementById('custom-time-inputs');
@@ -353,6 +354,8 @@ const ChessUI = (() => {
                     pcToggle.checked = false;
                     const diffContainer = document.getElementById('difficulty-container');
                     if (diffContainer) diffContainer.style.display = 'none';
+                    const sideContainer = document.getElementById('side-container');
+                    if (sideContainer) sideContainer.style.display = 'none';
                     startNewGame(); 
                     
                     SocketTransport.init(roomId, serverUrl);
@@ -720,10 +723,21 @@ const ChessUI = (() => {
         }
         
         pcToggle.addEventListener('change', () => {
-            document.getElementById('difficulty-container').style.display = pcToggle.checked ? '' : 'none';
-            topPlayerName.textContent = pcToggle.checked ? 'ПК Оппонент' : 'Игрок 2';
+            const isPC = pcToggle.checked;
+            document.getElementById('difficulty-container').style.display = isPC ? '' : 'none';
+            const sideContainer = document.getElementById('side-container');
+            if (sideContainer) {
+                sideContainer.style.display = isPC ? '' : 'none';
+            }
+            topPlayerName.textContent = isPC ? 'Stockfish' : 'Игрок 2';
             startNewGame();
         });
+
+        if (sideSelect) {
+            sideSelect.addEventListener('change', () => {
+                startNewGame();
+            });
+        }
 
         timeControlSelect.addEventListener('change', () => {
             if (timeControlSelect.value === 'custom') {
@@ -1165,10 +1179,17 @@ const ChessUI = (() => {
 
         // Colors
         if (pcToggle.checked) {
-            playerColor = Math.random() < 0.5 ? 'w' : 'b';
+            const chosenSide = sideSelect ? sideSelect.value : 'random';
+            if (chosenSide === 'w') {
+                playerColor = 'w';
+            } else if (chosenSide === 'b') {
+                playerColor = 'b';
+            } else {
+                playerColor = Math.random() < 0.5 ? 'w' : 'b';
+            }
             pcColor = playerColor === 'w' ? 'b' : 'w';
             bottomPlayerName.textContent = playerColor === 'w' ? 'Вы (Белые)' : 'Вы (Черные)';
-            topPlayerName.textContent = `ПК (${pcColor === 'w' ? 'Белые' : 'Черные'})`;
+            topPlayerName.textContent = 'Stockfish';
         } else if (networkState && networkState.connected) {
             bottomPlayerName.textContent = playerColor === 'w' ? 'Вы (Белые)' : 'Вы (Черные)';
             topPlayerName.textContent = playerColor === 'w' ? 'Соперник (Черные)' : 'Соперник (Белые)';
@@ -1737,9 +1758,9 @@ const ChessUI = (() => {
             const fen = ChessLogic.getFen();
             
             if (difficulty === '5') {
-                topPlayerName.textContent = 'Оппонент (Stockfish MAX)';
+                topPlayerName.textContent = 'Stockfish';
             } else {
-                topPlayerName.textContent = `Оппонент (Stockfish Lvl ${difficulty})`;
+                topPlayerName.textContent = 'Stockfish';
             }
 
             ChessAIUnreal.getBestMove(fen, skill, time).then(bestMove => {
@@ -1747,14 +1768,14 @@ const ChessUI = (() => {
                 applyPCMove(bestMove);
             }).catch(err => {
                 console.error('[UI] Stockfish error, falling back:', err);
-                topPlayerName.textContent = 'Оппонент';
+                topPlayerName.textContent = 'Stockfish';
                 applyPCMove(getFallbackPCMove(difficulty));
             });
             return;
         }
 
         // --- FALLBACK MODE (file:// protocol) ---
-        topPlayerName.textContent = 'Оппонент';
+        topPlayerName.textContent = 'Stockfish';
         const bestMove = getFallbackPCMove(difficulty);
         applyPCMove(bestMove);
     }
@@ -2275,7 +2296,8 @@ const ChessUI = (() => {
                 customMins: customMinsInput ? customMinsInput.value : '',
                 customInc: customIncInput ? customIncInput.value : '',
                 playerColor: playerColor,
-                pcColor: pcColor
+                pcColor: pcColor,
+                chosenSide: sideSelect ? sideSelect.value : 'random'
             },
             date: new Date().toISOString()
         };
@@ -2296,6 +2318,13 @@ const ChessUI = (() => {
         // Restore settings
         pcToggle.checked = saveObj.settings.pcToggle;
         document.getElementById('difficulty-container').style.display = pcToggle.checked ? '' : 'none';
+        const sideContainer = document.getElementById('side-container');
+        if (sideContainer) {
+            sideContainer.style.display = pcToggle.checked ? '' : 'none';
+        }
+        if (sideSelect && saveObj.settings.chosenSide) {
+            sideSelect.value = saveObj.settings.chosenSide;
+        }
         difficultySelect.value = saveObj.settings.difficulty;
         timeControlSelect.value = saveObj.settings.timeControl;
         if (timeControlSelect.value === 'custom') {
@@ -2366,7 +2395,7 @@ const ChessUI = (() => {
         // Update player labels
         if (pcToggle.checked) {
             bottomPlayerName.textContent = playerColor === 'w' ? 'Вы (Белые)' : 'Вы (Черные)';
-            topPlayerName.textContent = `ПК (${pcColor === 'w' ? 'Белые' : 'Черные'})`;
+            topPlayerName.textContent = 'Stockfish';
         } else if (networkState && networkState.connected) {
             bottomPlayerName.textContent = playerColor === 'w' ? 'Вы (Белые)' : 'Вы (Черные)';
             topPlayerName.textContent = playerColor === 'w' ? 'Соперник (Черные)' : 'Соперник (Белые)';

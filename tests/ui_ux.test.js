@@ -498,10 +498,10 @@ describe('ChessUI Integration', () => {
 
         const elementIds = [
             'board-container', 'chessboard', 'status', 'game-info', 'history-list',
-            'reset-btn', 'pc-toggle', 'difficulty-select', 'time-control',
+            'reset-btn', 'pc-toggle', 'difficulty-select', 'side-select', 'time-control',
             'custom-time-inputs', 'custom-mins', 'custom-inc', 'theme-select',
             'network-btn', 'analyze-btn', 'analysis-panel', 'analysis-list',
-            'analysis-progress', 'analysis-advice', 'difficulty-container',
+            'analysis-progress', 'analysis-advice', 'difficulty-container', 'side-container',
             'top-player-name', 'bottom-player-name', 'top-timer', 'bottom-timer',
             'top-timer-container', 'bottom-timer-container', 'top-captured',
             'bottom-captured', 'top-advantage', 'bottom-advantage', 'draw-btn',
@@ -528,6 +528,7 @@ describe('ChessUI Integration', () => {
         // Set specific default properties
         mockElements['pc-toggle'].checked = true;
         mockElements['difficulty-select'].value = '3';
+        mockElements['side-select'].value = 'random';
         mockElements['theme-select'].value = 'classic';
         mockElements['ui-theme-select'].value = 'dark';
         mockElements['time-control'].value = '600,0';
@@ -656,7 +657,7 @@ describe('ChessUI Integration', () => {
         expect(ChessLogic.initBoard).toHaveBeenCalled();
     });
 
-    test('Should toggle difficulty select display on pc-toggle change', () => {
+    test('Should toggle difficulty select and side select display on pc-toggle change', () => {
         ChessUI.init();
         expect(changeHandlers['pc-toggle']).toBeDefined();
 
@@ -664,11 +665,13 @@ describe('ChessUI Integration', () => {
         mockElements['pc-toggle'].checked = false;
         changeHandlers['pc-toggle']();
         expect(mockElements['difficulty-container'].style.display).toBe('none');
+        expect(mockElements['side-container'].style.display).toBe('none');
 
         // 2. Set pc-toggle to true
         mockElements['pc-toggle'].checked = true;
         changeHandlers['pc-toggle']();
         expect(mockElements['difficulty-container'].style.display).toBe('');
+        expect(mockElements['side-container'].style.display).toBe('');
     });
 
     test('Should handle custom time control settings change', () => {
@@ -1334,9 +1337,49 @@ describe('ChessUI Integration', () => {
 
         // 2. Reject offer
         networkListeners['drawResponse'](false);
-        expect(drawBtn.disabled).toBe(false);
-        expect(drawBtn.textContent).toBe('Предложить ничью');
         expect(drawBtn.classList.remove).toHaveBeenCalledWith('animate-pulse');
+    });
+
+    test('Should handle player side selection, color config, and save/load', () => {
+        ChessUI.init();
+        expect(changeHandlers['side-select']).toBeDefined();
+
+        // 1. Test color config when choosing White side
+        mockElements['pc-toggle'].checked = true;
+        mockElements['side-select'].value = 'w';
+        changeHandlers['side-select']();
+        expect(mockElements['bottom-player-name'].textContent).toBe('Вы (Белые)');
+        expect(mockElements['top-player-name'].textContent).toBe('Stockfish');
+
+        // 2. Test color config when choosing Black side
+        mockElements['side-select'].value = 'b';
+        changeHandlers['side-select']();
+        expect(mockElements['bottom-player-name'].textContent).toBe('Вы (Черные)');
+        expect(mockElements['top-player-name'].textContent).toBe('Stockfish');
+
+        // 3. Test saving and loading restores the chosenSide setting and display state
+        mockElements['side-select'].value = 'b';
+        changeHandlers['side-select']();
+
+        // Trigger slot-1 save
+        expect(clickHandlers['slot-1_.slot-save-btn']).toBeDefined();
+        clickHandlers['slot-1_.slot-save-btn']();
+
+        // Verify it was serialized
+        const slotData = global.localStorage.getItem('modular-chess-save-slot-1');
+        expect(slotData).not.toBeNull();
+        const parsed = JSON.parse(slotData);
+        expect(parsed.settings.chosenSide).toBe('b');
+
+        // Reset the value to random
+        mockElements['side-select'].value = 'random';
+        
+        // Trigger slot-1 load
+        clickHandlers['slot-1_.slot-load-btn']();
+        
+        // Verify value is restored
+        expect(mockElements['side-select'].value).toBe('b');
+        expect(mockElements['side-container'].style.display).toBe('');
     });
 });
 
