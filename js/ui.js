@@ -1715,6 +1715,7 @@ const ChessUI = (() => {
             updateStatus();
             return true;
         }
+        stateHistory.pop();
         return false;
     }
 

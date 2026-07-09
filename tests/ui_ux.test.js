@@ -1453,6 +1453,40 @@ describe('ChessUI Integration', () => {
         mouseupHandlers[0]({ clientX: 225, clientY: 175 }); // drop e5 (row 3, col 4) -> 3 * 50 + 25 = 175
         expect(ChessLogic.movePiece).toHaveBeenCalledWith(1, 4, 3, 4);
     });
+
+    test('Should not pollute stateHistory on failed move attempts', () => {
+        ChessUI.init();
+        
+        const mousedownHandlers = clickHandlers['chess-canvas_mousedown'];
+        const mouseupHandlers = clickHandlers['chess-canvas_mouseup'];
+        
+        const boardSnap = Array.from({ length: 8 }, () => new Array(8).fill(null));
+        boardSnap[6][4] = 'P'; // White Pawn at e2
+        ChessLogic.getBoard.mockReturnValue(boardSnap);
+        ChessLogic.getTurn.mockReturnValue('w');
+
+        // Successful move (adds 1 entry to history)
+        ChessLogic.movePiece.mockReturnValueOnce(true);
+        mousedownHandlers[0]({ clientX: 225, clientY: 325 }); // drag e2
+        mouseupHandlers[0]({ clientX: 225, clientY: 225 }); // drop e4
+
+        // Failed move attempts (should NOT leave anything in history)
+        ChessLogic.movePiece.mockReturnValueOnce(false);
+        mousedownHandlers[0]({ clientX: 225, clientY: 225 }); // drag e4
+        mouseupHandlers[0]({ clientX: 225, clientY: 75 });  // drop invalid e7
+        
+        // Another failed move attempt (dragging/clicking same square)
+        ChessLogic.movePiece.mockReturnValueOnce(false);
+        mousedownHandlers[0]({ clientX: 225, clientY: 225 }); // drag e4
+        mouseupHandlers[0]({ clientX: 225, clientY: 225 }); // drop same e4
+
+        // Call undo button
+        global.clearInterval.mockClear();
+        clickHandlers['undo-btn']();
+        
+        // Since failed moves did not pollute history, 1 undo call is enough to pop the only successful move and stop the timer.
+        expect(global.clearInterval).toHaveBeenCalled();
+    });
 });
 
 
