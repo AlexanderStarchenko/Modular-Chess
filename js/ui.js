@@ -664,7 +664,7 @@ const ChessUI = (() => {
         }
 
         // Event Listeners
-        resetBtn.addEventListener('click', startNewGame);
+        resetBtn.addEventListener('click', () => startNewGame(false));
         if (analysisBtn) analysisBtn.addEventListener('click', startAnalysis);
         
         const hintBtn = document.getElementById('hint-btn');
@@ -683,7 +683,7 @@ const ChessUI = (() => {
         if (gameOverResetBtn) {
             gameOverResetBtn.addEventListener('click', () => {
                 if (gameOverModal) gameOverModal.style.display = 'none';
-                startNewGame();
+                startNewGame(false);
             });
         }
         
