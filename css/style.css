@@ -810,6 +810,18 @@ html:not(.dark) #resign-btn:hover {
     color: #ffffff !important;
 }
 
+html:not(.dark) #draw-btn {
+    background-color: rgba(189, 133, 82, 0.06) !important;
+    border-color: rgba(189, 133, 82, 0.15) !important;
+    color: #bd8552 !important;
+}
+
+html:not(.dark) #draw-btn:hover {
+    background-color: #bd8552 !important;
+    border-color: #bd8552 !important;
+    color: #ffffff !important;
+}
+
 html:not(.dark) #undo-btn {
     background-color: #f1f5f9 !important;
     border-color: rgba(15, 23, 42, 0.1) !important;
