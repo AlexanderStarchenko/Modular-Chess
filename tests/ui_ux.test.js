@@ -1487,6 +1487,42 @@ describe('ChessUI Integration', () => {
         // Since failed moves did not pollute history, 1 undo call is enough to pop the only successful move and stop the timer.
         expect(global.clearInterval).toHaveBeenCalled();
     });
+
+    test('Should not make immediate PC move on automatic settings change triggers', () => {
+        global.setTimeout.mockClear();
+        ChessUI.init();
+        
+        // Mock PC toggle checked and PC color as white (so it would normally move immediately)
+        mockElements['pc-toggle'].checked = true;
+        mockElements['side-select'].value = 'b'; // Chosen side is Black, so PC color is White
+
+        // Trigger change handlers (automatic restarts)
+        expect(changeHandlers['pc-toggle']).toBeDefined();
+        expect(changeHandlers['side-select']).toBeDefined();
+        expect(changeHandlers['time-control']).toBeDefined();
+        
+        global.setTimeout.mockClear();
+        changeHandlers['pc-toggle']();
+        expect(global.setTimeout).not.toHaveBeenCalledWith(expect.any(Function), 600);
+        expect(mockElements['status'].textContent).toBe('Нажмите "Новая игра" для начала');
+
+        global.setTimeout.mockClear();
+        changeHandlers['side-select']();
+        expect(global.setTimeout).not.toHaveBeenCalledWith(expect.any(Function), 600);
+        expect(mockElements['status'].textContent).toBe('Нажмите "Новая игра" для начала');
+
+        global.setTimeout.mockClear();
+        changeHandlers['time-control']();
+        expect(global.setTimeout).not.toHaveBeenCalledWith(expect.any(Function), 600);
+        expect(mockElements['status'].textContent).toBe('Нажмите "Новая игра" для начала');
+
+        // Now trigger explicit reset (New Game button click)
+        global.setTimeout.mockClear();
+        clickHandlers['reset-btn']();
+        // It should start PC thinking immediately
+        expect(global.setTimeout).toHaveBeenCalledWith(expect.any(Function), 600);
+        expect(mockElements['status'].textContent).toBe('ПК думает...');
+    });
 });
 
 

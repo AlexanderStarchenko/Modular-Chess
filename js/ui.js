@@ -36,6 +36,7 @@ const ChessUI = (() => {
     let dragCurrentY = 0;
     let lastMousedownSquare = null;
     let draggedOccurred = false;
+    let isWaitingForStart = false;
 
     function isFlipped() {
         return playerColor === 'b';
@@ -747,12 +748,12 @@ const ChessUI = (() => {
                 sideContainer.style.display = isPC ? '' : 'none';
             }
             topPlayerName.textContent = isPC ? 'Stockfish' : 'Игрок 2';
-            startNewGame();
+            startNewGame(true);
         });
 
         if (sideSelect) {
             sideSelect.addEventListener('change', () => {
-                startNewGame();
+                startNewGame(true);
             });
         }
 
@@ -762,7 +763,7 @@ const ChessUI = (() => {
             } else {
                 customTimeInputs.style.display = 'none';
             }
-            startNewGame();
+            startNewGame(true);
         });
 
         if (customMinsInput) {
@@ -1143,7 +1144,7 @@ const ChessUI = (() => {
         }
     }
 
-    function startNewGame() {
+    function startNewGame(isAutomatic = false) {
         resetDrawButton();
         const gameOverModal = document.getElementById('game-over-modal');
         if (gameOverModal) gameOverModal.style.display = 'none';
@@ -1241,9 +1242,18 @@ const ChessUI = (() => {
         syncNetworkState();
 
         if (pcToggle.checked && pcColor === 'w') {
-            isWaitingForPC = true;
-            statusElement.textContent = 'ПК думает...';
-            pcMoveTimeoutId = setTimeout(makePCMove, 600);
+            if (isAutomatic) {
+                isWaitingForStart = true;
+                isWaitingForPC = true;
+                statusElement.textContent = 'Нажмите "Новая игра" для начала';
+            } else {
+                isWaitingForStart = false;
+                isWaitingForPC = true;
+                statusElement.textContent = 'ПК думает...';
+                pcMoveTimeoutId = setTimeout(makePCMove, 600);
+            }
+        } else {
+            isWaitingForStart = false;
         }
         
         updateOpponentAvatar();
