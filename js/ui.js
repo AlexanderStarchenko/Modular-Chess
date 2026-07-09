@@ -1738,9 +1738,9 @@ const ChessUI = (() => {
             const currentTurn = ChessLogic.getTurn();
             if (piece) {
                 const isWhite = piece === piece.toUpperCase();
-                const isPlayerColor = (isWhite && playerColor === 'w') || (!isWhite && playerColor === 'b');
-                const isPlayerTurn = currentTurn === playerColor;
-                return isPlayerTurn && isPlayerColor && !(networkState && networkState.connected && currentTurn !== playerColor);
+                const isPieceOfCurrentTurn = (isWhite && currentTurn === 'w') || (!isWhite && currentTurn === 'b');
+                const isMyTurn = (pcToggle.checked || (networkState && networkState.connected)) ? (currentTurn === playerColor) : true;
+                return isPieceOfCurrentTurn && isMyTurn;
             }
         }
         return false;
@@ -1769,9 +1769,9 @@ const ChessUI = (() => {
             
             if (piece) {
                 const isWhite = piece === piece.toUpperCase();
-                const isPlayerColor = (isWhite && playerColor === 'w') || (!isWhite && playerColor === 'b');
-                const isPlayerTurn = currentTurn === playerColor;
-                const canMove = isPlayerTurn && isPlayerColor && !(networkState && networkState.connected && currentTurn !== playerColor);
+                const isPieceOfCurrentTurn = (isWhite && currentTurn === 'w') || (!isWhite && currentTurn === 'b');
+                const isMyTurn = (pcToggle.checked || (networkState && networkState.connected)) ? (currentTurn === playerColor) : true;
+                const canMove = isPieceOfCurrentTurn && isMyTurn;
                 
                 if (canMove) {
                     isDragging = true;

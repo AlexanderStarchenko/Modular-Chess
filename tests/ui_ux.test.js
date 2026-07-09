@@ -1424,6 +1424,35 @@ describe('ChessUI Integration', () => {
 
         expect(ChessLogic.movePiece).toHaveBeenCalledWith(6, 4, 4, 4);
     });
+
+    test('Should allow dragging both White and Black pieces in local two-player mode', () => {
+        // Set PC toggle unchecked (local two player)
+        mockElements['pc-toggle'].checked = false;
+        
+        ChessUI.init();
+        
+        const mousedownHandlers = clickHandlers['chess-canvas_mousedown'];
+        const mouseupHandlers = clickHandlers['chess-canvas_mouseup'];
+        
+        const boardSnap = Array.from({ length: 8 }, () => new Array(8).fill(null));
+        boardSnap[6][4] = 'P'; // White Pawn at e2
+        boardSnap[1][4] = 'p'; // Black Pawn at e7
+        ChessLogic.getBoard.mockReturnValue(boardSnap);
+
+        // 1. White turn: white piece e2 should be draggable
+        ChessLogic.getTurn.mockReturnValue('w');
+        ChessLogic.movePiece.mockClear();
+        mousedownHandlers[0]({ clientX: 225, clientY: 325 }); // mousedown e2
+        mouseupHandlers[0]({ clientX: 225, clientY: 225 }); // drop e4
+        expect(ChessLogic.movePiece).toHaveBeenCalledWith(6, 4, 4, 4);
+
+        // 2. Black turn: black piece e7 should be draggable
+        ChessLogic.getTurn.mockReturnValue('b');
+        ChessLogic.movePiece.mockClear();
+        mousedownHandlers[0]({ clientX: 225, clientY: 75 }); // mousedown e7 (row 1, col 4) -> 1 * 50 + 25 = 75
+        mouseupHandlers[0]({ clientX: 225, clientY: 175 }); // drop e5 (row 3, col 4) -> 3 * 50 + 25 = 175
+        expect(ChessLogic.movePiece).toHaveBeenCalledWith(1, 4, 3, 4);
+    });
 });
 
 
