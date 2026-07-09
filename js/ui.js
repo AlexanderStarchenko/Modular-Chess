@@ -27,7 +27,7 @@ const ChessUI = (() => {
     let pcColor = 'b';     
     let stateHistory = [];     
     let isSoundMuted = false;
-    let soundVolume = 0.5;
+    let soundVolume = 1.0;
 
     let isDragging = false;
     let dragStartSquare = null;
