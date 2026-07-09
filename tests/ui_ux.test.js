@@ -471,6 +471,21 @@ describe('ChessUI Integration', () => {
                     } else if (event === 'mouseleave') {
                         if (!clickHandlers[id + '_mouseleave']) clickHandlers[id + '_mouseleave'] = [];
                         clickHandlers[id + '_mouseleave'].push(handler);
+                    } else if (event === 'mousedown') {
+                        if (!clickHandlers[id + '_mousedown']) clickHandlers[id + '_mousedown'] = [];
+                        clickHandlers[id + '_mousedown'].push(handler);
+                    } else if (event === 'mouseup') {
+                        if (!clickHandlers[id + '_mouseup']) clickHandlers[id + '_mouseup'] = [];
+                        clickHandlers[id + '_mouseup'].push(handler);
+                    } else if (event === 'touchstart') {
+                        if (!clickHandlers[id + '_touchstart']) clickHandlers[id + '_touchstart'] = [];
+                        clickHandlers[id + '_touchstart'].push(handler);
+                    } else if (event === 'touchmove') {
+                        if (!clickHandlers[id + '_touchmove']) clickHandlers[id + '_touchmove'] = [];
+                        clickHandlers[id + '_touchmove'].push(handler);
+                    } else if (event === 'touchend') {
+                        if (!clickHandlers[id + '_touchend']) clickHandlers[id + '_touchend'] = [];
+                        clickHandlers[id + '_touchend'].push(handler);
                     }
                 }),
                 classList: {
@@ -1380,6 +1395,34 @@ describe('ChessUI Integration', () => {
         // Verify value is restored
         expect(mockElements['side-select'].value).toBe('b');
         expect(mockElements['side-container'].style.display).toBe('');
+    });
+
+    test('Should handle drag-and-drop piece movements on canvas', () => {
+        ChessUI.init();
+        
+        const mousedownHandlers = clickHandlers['chess-canvas_mousedown'];
+        const mousemoveHandlers = clickHandlers['chess-canvas_mousemove'];
+        const mouseupHandlers = clickHandlers['chess-canvas_mouseup'];
+        
+        expect(mousedownHandlers).toBeDefined();
+        expect(mousemoveHandlers).toBeDefined();
+        expect(mouseupHandlers).toBeDefined();
+
+        const boardSnap = Array.from({ length: 8 }, () => new Array(8).fill(null));
+        boardSnap[6][4] = 'P'; // White Pawn at e2
+        ChessLogic.getBoard.mockReturnValue(boardSnap);
+        ChessLogic.getTurn.mockReturnValue('w');
+
+        // 1. Mousedown on e2 (row 6, col 4)
+        mousedownHandlers[0]({ clientX: 225, clientY: 325 });
+
+        // 2. Mousemove to e4 (row 4, col 4)
+        mousemoveHandlers[0]({ clientX: 225, clientY: 225 });
+
+        // 3. Mouseup on e4
+        mouseupHandlers[0]({ clientX: 225, clientY: 225 });
+
+        expect(ChessLogic.movePiece).toHaveBeenCalledWith(6, 4, 4, 4);
     });
 });
 

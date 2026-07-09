@@ -1,6 +1,6 @@
 {
   "name": "modular-chess",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "Multiplayer Chess with AI",
   "main": "main.js",
   "scripts": {

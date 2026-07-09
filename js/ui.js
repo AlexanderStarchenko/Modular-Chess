@@ -29,6 +29,14 @@ const ChessUI = (() => {
     let isSoundMuted = false;
     let soundVolume = 0.5;
 
+    let isDragging = false;
+    let dragStartSquare = null;
+    let draggedPiece = null;
+    let dragCurrentX = 0;
+    let dragCurrentY = 0;
+    let lastMousedownSquare = null;
+    let draggedOccurred = false;
+
     function isFlipped() {
         return playerColor === 'b';
     }
@@ -235,6 +243,10 @@ const ChessUI = (() => {
             
             // Bind Canvas Events
             canvas.addEventListener('click', (event) => {
+                if (draggedOccurred) {
+                    draggedOccurred = false;
+                    return;
+                }
                 if (isWaitingForPC || gameEnded || analysisSnapshot) return;
                 const rect = canvas.getBoundingClientRect();
                 const x = event.clientX - rect.left;
@@ -253,43 +265,48 @@ const ChessUI = (() => {
                 }
             });
             
-            canvas.addEventListener('mousemove', (event) => {
-                if (isWaitingForPC || gameEnded || analysisSnapshot) {
-                    if (hoverSquare) {
-                        hoverSquare = null;
-                        renderBoard();
-                    }
-                    return;
-                }
-                const rect = canvas.getBoundingClientRect();
-                const x = event.clientX - rect.left;
-                const y = event.clientY - rect.top;
-                
-                const squareSize = rect.width / 8;
-                const col = Math.floor(x / squareSize);
-                const row = Math.floor(y / squareSize);
-                
-                const flipped = isFlipped();
-                const r = flipped ? 7 - row : row;
-                const c = flipped ? 7 - col : col;
-                
-                if (r >= 0 && r < 8 && c >= 0 && c < 8) {
-                    if (!hoverSquare || hoverSquare.row !== r || hoverSquare.col !== c) {
-                        hoverSquare = { row: r, col: c };
-                        renderBoard();
-                    }
-                } else {
-                    if (hoverSquare) {
-                        hoverSquare = null;
-                        renderBoard();
-                    }
-                }
+            canvas.addEventListener('mousedown', (event) => {
+                handleMousedown(event.clientX, event.clientY);
             });
             
-            canvas.addEventListener('mouseleave', () => {
-                if (hoverSquare) {
+            canvas.addEventListener('mousemove', (event) => {
+                handleMousemove(event.clientX, event.clientY);
+            });
+            
+            canvas.addEventListener('mouseup', (event) => {
+                handleMouseup(event.clientX, event.clientY);
+            });
+            
+            canvas.addEventListener('mouseleave', (event) => {
+                if (isDragging) {
+                    handleMouseup(event.clientX, event.clientY);
+                } else if (hoverSquare) {
                     hoverSquare = null;
                     renderBoard();
+                }
+            });
+
+            canvas.addEventListener('touchstart', (event) => {
+                if (event.touches.length > 0) {
+                    if (isDraggingPiece(event.touches[0].clientX, event.touches[0].clientY)) {
+                        event.preventDefault();
+                    }
+                    handleMousedown(event.touches[0].clientX, event.touches[0].clientY);
+                }
+            }, { passive: false });
+
+            canvas.addEventListener('touchmove', (event) => {
+                if (event.touches.length > 0) {
+                    if (isDragging) {
+                        event.preventDefault();
+                    }
+                    handleMousemove(event.touches[0].clientX, event.touches[0].clientY);
+                }
+            }, { passive: false });
+
+            canvas.addEventListener('touchend', (event) => {
+                if (event.changedTouches.length > 0) {
+                    handleMouseup(event.changedTouches[0].clientX, event.changedTouches[0].clientY);
                 }
             });
 
@@ -1525,10 +1542,14 @@ const ChessUI = (() => {
                 // Piece
                 const piece = board[r][c];
                 if (piece) {
+                    const isDraggingThis = isDragging && dragStartSquare && dragStartSquare.row === r && dragStartSquare.col === c;
                     const isBlack = piece === piece.toLowerCase();
-                    const isHovered = hoverSquare && hoverSquare.row === r && hoverSquare.col === c && !isWaitingForPC && !gameEnded && !analysisSnapshot;
+                    const isHovered = hoverSquare && hoverSquare.row === r && hoverSquare.col === c && !isWaitingForPC && !gameEnded && !analysisSnapshot && !isDragging;
                     
                     ctx.save();
+                    if (isDraggingThis) {
+                        ctx.globalAlpha = 0.25;
+                    }
                     
                     // Shadow effect
                     ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
@@ -1570,6 +1591,45 @@ const ChessUI = (() => {
                     ctx.restore();
                 }
             }
+        }
+
+        // 3. Draw Dragged Piece
+        if (isDragging && draggedPiece) {
+            ctx.save();
+            
+            // Draw piece shadow
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+            ctx.shadowBlur = 12;
+            ctx.shadowOffsetY = 6;
+            
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            ctx.translate(dragCurrentX, dragCurrentY);
+            // Scale dragged piece slightly larger for a premium "picked up" feel
+            ctx.scale(1.2, 1.2);
+            
+            const fontSize = squareSize * 0.75;
+            ctx.font = `${fontSize}px Outfit, "Arial Unicode MS", sans-serif`;
+            
+            const text = PIECE_UNICODE[draggedPiece];
+            const isBlack = draggedPiece === draggedPiece.toLowerCase();
+            
+            if (isBlack) {
+                ctx.fillStyle = '#0d0d0d';
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = Math.max(1.5, squareSize / 30);
+                ctx.strokeText(text, 0, 0);
+                ctx.fillText(text, 0, 0);
+            } else {
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = Math.max(1.5, squareSize / 30);
+                ctx.strokeText(text, 0, 0);
+                ctx.fillText(text, 0, 0);
+            }
+            
+            ctx.restore();
         }
         
         updateStatus();
@@ -1656,6 +1716,166 @@ const ChessUI = (() => {
             return true;
         }
         return false;
+    }
+
+    function isDraggingPiece(clientX, clientY) {
+        if (isWaitingForPC || gameEnded || analysisSnapshot) return false;
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        
+        const squareSize = rect.width / 8;
+        const col = Math.floor(x / squareSize);
+        const row = Math.floor(y / squareSize);
+        
+        const flipped = isFlipped();
+        const r = flipped ? 7 - row : row;
+        const c = flipped ? 7 - col : col;
+        
+        if (r >= 0 && r < 8 && c >= 0 && c < 8) {
+            const board = ChessLogic.getBoard();
+            const piece = board[r][c];
+            const currentTurn = ChessLogic.getTurn();
+            if (piece) {
+                const isWhite = piece === piece.toUpperCase();
+                const isPlayerColor = (isWhite && playerColor === 'w') || (!isWhite && playerColor === 'b');
+                const isPlayerTurn = currentTurn === playerColor;
+                return isPlayerTurn && isPlayerColor && !(networkState && networkState.connected && currentTurn !== playerColor);
+            }
+        }
+        return false;
+    }
+
+    function handleMousedown(clientX, clientY) {
+        if (isWaitingForPC || gameEnded || analysisSnapshot) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        
+        const squareSize = rect.width / 8;
+        const col = Math.floor(x / squareSize);
+        const row = Math.floor(y / squareSize);
+        
+        const flipped = isFlipped();
+        const r = flipped ? 7 - row : row;
+        const c = flipped ? 7 - col : col;
+        
+        if (r >= 0 && r < 8 && c >= 0 && c < 8) {
+            lastMousedownSquare = { row: r, col: c };
+            
+            const board = ChessLogic.getBoard();
+            const piece = board[r][c];
+            const currentTurn = ChessLogic.getTurn();
+            
+            if (piece) {
+                const isWhite = piece === piece.toUpperCase();
+                const isPlayerColor = (isWhite && playerColor === 'w') || (!isWhite && playerColor === 'b');
+                const isPlayerTurn = currentTurn === playerColor;
+                const canMove = isPlayerTurn && isPlayerColor && !(networkState && networkState.connected && currentTurn !== playerColor);
+                
+                if (canMove) {
+                    isDragging = true;
+                    dragStartSquare = { row: r, col: c };
+                    draggedPiece = piece;
+                    dragCurrentX = x;
+                    dragCurrentY = y;
+                    selectedSquare = { row: r, col: c };
+                    draggedOccurred = false;
+                    renderBoard();
+                }
+            }
+        }
+    }
+
+    function handleMousemove(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        
+        const squareSize = rect.width / 8;
+        const col = Math.floor(x / squareSize);
+        const row = Math.floor(y / squareSize);
+        
+        const flipped = isFlipped();
+        const r = flipped ? 7 - row : row;
+        const c = flipped ? 7 - col : col;
+        
+        if (isDragging) {
+            dragCurrentX = x;
+            dragCurrentY = y;
+            draggedOccurred = true;
+            if (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                hoverSquare = { row: r, col: c };
+            } else {
+                hoverSquare = null;
+            }
+            renderBoard();
+        } else {
+            if (isWaitingForPC || gameEnded || analysisSnapshot) {
+                if (hoverSquare) {
+                    hoverSquare = null;
+                    renderBoard();
+                }
+                return;
+            }
+            
+            if (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                if (!hoverSquare || hoverSquare.row !== r || hoverSquare.col !== c) {
+                    hoverSquare = { row: r, col: c };
+                    renderBoard();
+                }
+            } else {
+                if (hoverSquare) {
+                    hoverSquare = null;
+                    renderBoard();
+                }
+            }
+        }
+    }
+
+    function handleMouseup(clientX, clientY) {
+        if (isWaitingForPC || gameEnded || analysisSnapshot) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        
+        const squareSize = rect.width / 8;
+        const col = Math.floor(x / squareSize);
+        const row = Math.floor(y / squareSize);
+        
+        const flipped = isFlipped();
+        const r = flipped ? 7 - row : row;
+        const c = flipped ? 7 - col : col;
+        
+        if (isDragging) {
+            isDragging = false;
+            const startRow = dragStartSquare.row;
+            const startCol = dragStartSquare.col;
+            
+            dragStartSquare = null;
+            draggedPiece = null;
+            
+            if (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                if (startRow === r && startCol === c) {
+                    // Same square: treat as click
+                    handleSquareClick(r, c);
+                } else {
+                    // Try to execute the move
+                    const success = executeMove(startRow, startCol, r, c);
+                    if (success) {
+                        selectedSquare = null;
+                    } else {
+                        selectedSquare = { row: startRow, col: startCol };
+                    }
+                }
+            }
+            renderBoard();
+        } else {
+            if (r >= 0 && r < 8 && c >= 0 && c < 8 && lastMousedownSquare && lastMousedownSquare.row === r && lastMousedownSquare.col === c) {
+                handleSquareClick(r, c);
+            }
+        }
+        lastMousedownSquare = null;
     }
 
     function handleSquareClick(row, col) {
