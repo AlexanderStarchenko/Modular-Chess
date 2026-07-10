@@ -1,49 +1,42 @@
 /**
- * Chess Audio Synthesizer
- * Generates sound effects using Web Audio API oscillators.
+ * Chess Audio Synthesizer / Player
+ * Plays standard MP3 sound assets for chess moves, captures, and checks.
  */
 
 const ChessAudio = (() => {
-    let context = null;
     let isSoundMuted = false;
     let soundVolume = 1.0;
+    let sounds = null;
 
-    function getContext() {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return null;
-        if (!context) context = new AudioCtx();
-        if (context.state === 'suspended') context.resume().catch(() => {});
-        return context;
+    function initSounds() {
+        if (sounds) return;
+        if (typeof Audio !== 'undefined') {
+            sounds = {
+                move: new Audio('sounds/move.mp3'),
+                capture: new Audio('sounds/capture.mp3'),
+                check: new Audio('sounds/check.mp3')
+            };
+        } else {
+            sounds = {};
+        }
     }
 
-    function playTone({ type, startFreq, endFreq, duration, volume, delay = 0 }) {
+    function playSound(name) {
+        initSounds();
         if (isSoundMuted) return;
-        const ctx = getContext();
-        if (!ctx) return;
-
-        const startAt = ctx.currentTime + delay;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        osc.type = type;
-        osc.frequency.setValueAtTime(startFreq, startAt);
-        if (endFreq && endFreq !== startFreq) {
-            osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), startAt + duration);
+        const audio = sounds[name];
+        if (audio) {
+            audio.volume = soundVolume;
+            audio.currentTime = 0;
+            audio.play().catch(() => {});
         }
-
-        const targetVolume = volume * soundVolume;
-        gain.gain.setValueAtTime(0.0001, startAt);
-        gain.gain.exponentialRampToValueAtTime(targetVolume, startAt + 0.015);
-        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(startAt);
-        osc.stop(startAt + duration + 0.03);
     }
 
     const API = {
-        getContext,
+        getContext() {
+            // Return null as we are using HTML5 Audio element playbacks
+            return null;
+        },
         setMuted(muted) {
             isSoundMuted = !!muted;
         },
@@ -51,15 +44,13 @@ const ChessAudio = (() => {
             soundVolume = parseFloat(vol);
         },
         move() {
-            playTone({ type: 'sine', startFreq: 240, endFreq: 180, duration: 0.09, volume: 0.45 });
+            playSound('move');
         },
         capture() {
-            playTone({ type: 'triangle', startFreq: 170, endFreq: 115, duration: 0.07, volume: 0.65 });
-            playTone({ type: 'square', startFreq: 96, endFreq: 72, duration: 0.12, volume: 0.20, delay: 0.04 });
+            playSound('capture');
         },
         check() {
-            playTone({ type: 'sawtooth', startFreq: 400, endFreq: 600, duration: 0.12, volume: 0.3 });
-            playTone({ type: 'sine', startFreq: 800, endFreq: 700, duration: 0.15, volume: 0.2, delay: 0.05 });
+            playSound('check');
         }
     };
 
