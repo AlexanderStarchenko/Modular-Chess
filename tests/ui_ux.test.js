@@ -620,6 +620,11 @@ describe('ChessUI Integration', () => {
             getBestMove: jest.fn().mockReturnValue({ fromR: 6, fromC: 4, toR: 4, toC: 4 })
         };
 
+        // Load isolated helper modules
+        global.ChessStorage = require('../js/storage');
+        global.ChessAudio = require('../js/audio');
+        global.ChessAIManager = require('../js/ai_manager');
+
         // Reload the UI module to bind to the fresh mocks
         jest.isolateModules(() => {
             ChessUI = require('../js/ui');

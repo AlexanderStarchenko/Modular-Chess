@@ -78,60 +78,6 @@ const ChessUI = (() => {
         };
     }
 
-    const ChessAudio = (() => {
-        let context = null;
-
-        function getContext() {
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            if (!AudioCtx) return null;
-            if (!context) context = new AudioCtx();
-            if (context.state === 'suspended') context.resume().catch(() => {});
-            return context;
-        }
-
-        function playTone({ type, startFreq, endFreq, duration, volume, delay = 0 }) {
-            if (isSoundMuted) return;
-            const ctx = getContext();
-            if (!ctx) return;
-
-            const startAt = ctx.currentTime + delay;
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-
-            osc.type = type;
-            osc.frequency.setValueAtTime(startFreq, startAt);
-            if (endFreq && endFreq !== startFreq) {
-                osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), startAt + duration);
-            }
-
-            const targetVolume = volume * soundVolume;
-            gain.gain.setValueAtTime(0.0001, startAt);
-            gain.gain.exponentialRampToValueAtTime(targetVolume, startAt + 0.015);
-            gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
-
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start(startAt);
-            osc.stop(startAt + duration + 0.03);
-        }
-
-        return {
-            getContext,
-            move() {
-                playTone({ type: 'sine', startFreq: 240, endFreq: 180, duration: 0.09, volume: 0.45 });
-            },
-            capture() {
-                playTone({ type: 'triangle', startFreq: 170, endFreq: 115, duration: 0.07, volume: 0.65 });
-                playTone({ type: 'square', startFreq: 96, endFreq: 72, duration: 0.12, volume: 0.20, delay: 0.04 });
-            },
-            check() {
-                // Более выразительный и громкий звук шаха
-                playTone({ type: 'sawtooth', startFreq: 400, endFreq: 600, duration: 0.12, volume: 0.3 });
-                playTone({ type: 'sine', startFreq: 800, endFreq: 700, duration: 0.15, volume: 0.2, delay: 0.05 });
-            }
-        };
-    })();
-
     let isRemoteAction = false;
 
     function syncNetworkState() {
@@ -339,7 +285,7 @@ const ChessUI = (() => {
         
         // Аудио-фикс: активируем звук при первом клике пользователя
         const resumeAudio = () => {
-            const ctx = ChessAudio.getContext ? ChessAudio.getContext() : null;
+            const ctx = (typeof ChessAudio !== 'undefined' && ChessAudio.getContext) ? ChessAudio.getContext() : null;
             if (ctx && ctx.state === 'suspended') {
                 ctx.resume().then(() => {
                     console.log('[Audio] Context resumed successfully');
@@ -775,7 +721,7 @@ const ChessUI = (() => {
 
         if (themeSelect) {
             themeSelect.addEventListener('change', updateTheme);
-            const savedBoardTheme = localStorage.getItem('board-theme') || 'classic';
+            const savedBoardTheme = typeof ChessStorage !== 'undefined' ? ChessStorage.getBoardTheme() : 'classic';
             themeSelect.value = savedBoardTheme;
         }
 
@@ -786,15 +732,15 @@ const ChessUI = (() => {
                 const uiTheme = uiThemeSelect.value;
                 if (uiTheme === 'dark') {
                     document.documentElement.classList.add('dark');
-                    localStorage.setItem('ui-theme', 'dark');
+                    if (typeof ChessStorage !== 'undefined') ChessStorage.setUITheme('dark');
                 } else {
                     document.documentElement.classList.remove('dark');
-                    localStorage.setItem('ui-theme', 'light');
+                    if (typeof ChessStorage !== 'undefined') ChessStorage.setUITheme('light');
                 }
             });
 
             // Restore from localStorage or default to dark
-            const savedTheme = localStorage.getItem('ui-theme') || 'dark';
+            const savedTheme = typeof ChessStorage !== 'undefined' ? ChessStorage.getUITheme() : 'dark';
             uiThemeSelect.value = savedTheme;
             if (savedTheme === 'dark') {
                 document.documentElement.classList.add('dark');
@@ -842,22 +788,27 @@ const ChessUI = (() => {
         const soundVolumeSlider = document.getElementById('sound-volume');
         const volumeValDisplay = document.getElementById('volume-val-display');
 
-        // Restore sound settings from localStorage
-        const savedSoundMuted = localStorage.getItem('sound-muted') === 'true';
-        const savedSoundVolume = localStorage.getItem('sound-volume');
+        // Restore sound settings from ChessStorage
+        const savedSoundMuted = typeof ChessStorage !== 'undefined' ? ChessStorage.getSoundMuted() : false;
+        const savedSoundVolume = typeof ChessStorage !== 'undefined' ? ChessStorage.getSoundVolume(null) : null;
         
         isSoundMuted = savedSoundMuted;
         if (savedSoundVolume !== null) {
             soundVolume = parseFloat(savedSoundVolume);
         } else {
-            soundVolume = 0.5;
+            soundVolume = 1.0; // Default to 1.0 (maximum)
+        }
+        if (typeof ChessAudio !== 'undefined') {
+            ChessAudio.setMuted(isSoundMuted);
+            ChessAudio.setVolume(soundVolume);
         }
 
         if (soundToggle) {
             soundToggle.checked = !isSoundMuted;
             soundToggle.addEventListener('change', () => {
                 isSoundMuted = !soundToggle.checked;
-                localStorage.setItem('sound-muted', isSoundMuted);
+                if (typeof ChessStorage !== 'undefined') ChessStorage.setSoundMuted(isSoundMuted);
+                if (typeof ChessAudio !== 'undefined') ChessAudio.setMuted(isSoundMuted);
             });
         }
         if (soundVolumeSlider && volumeValDisplay) {
@@ -866,7 +817,8 @@ const ChessUI = (() => {
             soundVolumeSlider.addEventListener('input', () => {
                 soundVolume = parseInt(soundVolumeSlider.value) / 100;
                 volumeValDisplay.textContent = `${soundVolumeSlider.value}%`;
-                localStorage.setItem('sound-volume', soundVolume);
+                if (typeof ChessStorage !== 'undefined') ChessStorage.setSoundVolume(soundVolume);
+                if (typeof ChessAudio !== 'undefined') ChessAudio.setVolume(soundVolume);
             });
         }
 
@@ -1076,7 +1028,7 @@ const ChessUI = (() => {
         root.style.setProperty('--board-dark', `var(--${theme}-dark)`);
         root.style.setProperty('--board-coord-light', `var(--${theme}-coord-light)`);
         root.style.setProperty('--board-coord-dark', `var(--${theme}-coord-dark)`);
-        localStorage.setItem('board-theme', theme);
+        if (typeof ChessStorage !== 'undefined') ChessStorage.setBoardTheme(theme);
         renderBoard();
     }
 
@@ -1931,26 +1883,6 @@ const ChessUI = (() => {
         }
     }
 
-    let aiWorker = null;
-
-    function getFallbackPCMove(difficulty) {
-        const turn = ChessLogic.getTurn();
-        if (typeof ChessAIShared !== 'undefined' && typeof ChessAIShared.getOpeningBookMove === 'function') {
-            const currentFen = ChessLogic.getFen();
-            const bookMove = ChessAIShared.getOpeningBookMove(currentFen);
-            if (bookMove) {
-                console.log('[UI] Opening book move found:', bookMove);
-                return bookMove;
-            }
-        }
-        if (difficulty === '1' && typeof ChessAIEasy !== 'undefined') return ChessAIEasy.getBestMove(turn);
-        if (difficulty === '2' && typeof ChessAIMedium !== 'undefined') return ChessAIMedium.getBestMove(turn);
-        if (difficulty === '3' && typeof ChessAIHard !== 'undefined') return ChessAIHard.getBestMove(turn);
-        if (difficulty === '4' && typeof ChessAIVeryHard !== 'undefined') return ChessAIVeryHard.getBestMove(turn);
-        if (difficulty === '5' && typeof ChessAIVeryHard !== 'undefined') return ChessAIVeryHard.getBestMove(turn);
-        return null;
-    }
-
     function applyPCMove(bestMove) {
         if (!bestMove || gameEnded) {
             isWaitingForPC = false;
@@ -1958,7 +1890,12 @@ const ChessUI = (() => {
             return;
         }
 
-        executeMove(bestMove.fromR, bestMove.fromC, bestMove.toR, bestMove.toC);
+        const fromR = bestMove.fromR !== undefined ? bestMove.fromR : bestMove.fromRow;
+        const fromC = bestMove.fromC !== undefined ? bestMove.fromC : bestMove.fromCol;
+        const toR = bestMove.toR !== undefined ? bestMove.toR : bestMove.toRow;
+        const toC = bestMove.toC !== undefined ? bestMove.toC : bestMove.toCol;
+
+        executeMove(fromR, fromC, toR, toC);
         isWaitingForPC = false;
         renderBoard();
     }
@@ -1974,41 +1911,32 @@ const ChessUI = (() => {
         statusElement.textContent = 'ПК думает...';
         
         const topPlayerName = document.getElementById('top-player-name');
-        
-        // Stockfish Level Mapping: [Skill Level, Move Time]
-        const stockfishSettings = {
-            '1': [0, 500],   // Easy
-            '2': [5, 700],   // Medium
-            '3': [12, 1000], // Hard
-            '4': [18, 1500], // Extra Hard
-            '5': [20, 2500]  // Unreal
-        };
+        if (topPlayerName) {
+            topPlayerName.textContent = 'Stockfish';
+        }
 
-        if (!isFileProtocol) {
-            const [skill, time] = stockfishSettings[difficulty] || [10, 1000];
-            const fen = ChessLogic.getFen();
-            
-            if (difficulty === '5') {
-                topPlayerName.textContent = 'Stockfish';
-            } else {
-                topPlayerName.textContent = 'Stockfish';
-            }
+        const fen = ChessLogic.getFen();
 
-            ChessAIUnreal.getBestMove(fen, skill, time).then(bestMove => {
+        if (typeof ChessAIManager !== 'undefined') {
+            ChessAIManager.getBestMove(fen, difficulty).then(bestMove => {
                 if (gameEnded) return;
                 applyPCMove(bestMove);
             }).catch(err => {
-                console.error('[UI] Stockfish error, falling back:', err);
-                topPlayerName.textContent = 'Stockfish';
-                applyPCMove(getFallbackPCMove(difficulty));
+                console.error('[UI] ChessAIManager error:', err);
+                isWaitingForPC = false;
+                renderBoard();
             });
-            return;
+        } else {
+            // Hard fallback if ChessAIManager is not loaded
+            const turn = ChessLogic.getTurn();
+            let bestMove = null;
+            if (difficulty === '1' && typeof ChessAIEasy !== 'undefined') bestMove = ChessAIEasy.getBestMove(turn);
+            else if (difficulty === '2' && typeof ChessAIMedium !== 'undefined') bestMove = ChessAIMedium.getBestMove(turn);
+            else if (difficulty === '3' && typeof ChessAIHard !== 'undefined') bestMove = ChessAIHard.getBestMove(turn);
+            else if (difficulty === '4' && typeof ChessAIVeryHard !== 'undefined') bestMove = ChessAIVeryHard.getBestMove(turn);
+            else if (difficulty === '5' && typeof ChessAIVeryHard !== 'undefined') bestMove = ChessAIVeryHard.getBestMove(turn);
+            applyPCMove(bestMove);
         }
-
-        // --- FALLBACK MODE (file:// protocol) ---
-        topPlayerName.textContent = 'Stockfish';
-        const bestMove = getFallbackPCMove(difficulty);
-        applyPCMove(bestMove);
     }
 
     function updateCapturesDisplay() {
@@ -2163,11 +2091,8 @@ const ChessUI = (() => {
         isCalculatingHint = true;
         const startFen = ChessLogic.getFen();
 
-        const isElectron = navigator.userAgent.toLowerCase().includes(' electron/');
-        const isFileProtocol = window.location.protocol === 'file:' && !isElectron;
-
-        if (!isFileProtocol && typeof ChessAIUnreal !== 'undefined') {
-            ChessAIUnreal.getBestMove(startFen, 20, 1000).then(bestMove => {
+        if (typeof ChessAIManager !== 'undefined') {
+            ChessAIManager.getHint(startFen).then(bestMove => {
                 isCalculatingHint = false;
                 restoreHintButton();
                 
@@ -2178,41 +2103,21 @@ const ChessUI = (() => {
 
                 if (bestMove) {
                     suggestedMove = {
-                        fromRow: bestMove.fromR,
-                        fromCol: bestMove.fromC,
-                        toRow: bestMove.toR,
-                        toCol: bestMove.toC
+                        fromRow: bestMove.fromR !== undefined ? bestMove.fromR : bestMove.fromRow,
+                        fromCol: bestMove.fromC !== undefined ? bestMove.fromC : bestMove.fromCol,
+                        toRow: bestMove.toR !== undefined ? bestMove.toR : bestMove.toRow,
+                        toCol: bestMove.toC !== undefined ? bestMove.toC : bestMove.toCol
                     };
                     renderBoard();
-                } else {
-                    fallbackHint(startFen);
                 }
             }).catch(err => {
                 console.error('[UI] Hint calculation error:', err);
                 isCalculatingHint = false;
                 restoreHintButton();
-                if (ChessLogic.getFen() === startFen && !gameEnded && !isWaitingForPC) {
-                    fallbackHint(startFen);
-                }
             });
         } else {
             isCalculatingHint = false;
             restoreHintButton();
-            fallbackHint(startFen);
-        }
-    }
-
-    function fallbackHint(startFen) {
-        if (ChessLogic.getFen() !== startFen || gameEnded || isWaitingForPC) return;
-        const bestMove = getFallbackPCMove('4'); // Use level 4 (Very Hard) for fallback hint
-        if (bestMove) {
-            suggestedMove = {
-                fromRow: bestMove.fromR,
-                fromCol: bestMove.fromC,
-                toRow: bestMove.toR,
-                toCol: bestMove.toC
-            };
-            renderBoard();
         }
     }
 
@@ -2655,6 +2560,9 @@ const ChessUI = (() => {
     }
 
     function getSaveSlot(slotNum) {
+        if (typeof ChessStorage !== 'undefined') {
+            return ChessStorage.getSaveSlot(slotNum);
+        }
         try {
             const data = localStorage.getItem(SAVE_SLOTS_KEY_PREFIX + slotNum);
             return data ? JSON.parse(data) : null;
@@ -2667,7 +2575,11 @@ const ChessUI = (() => {
     function saveToSlot(slotNum) {
         try {
             const saveObj = serializeGameState();
-            localStorage.setItem(SAVE_SLOTS_KEY_PREFIX + slotNum, JSON.stringify(saveObj));
+            if (typeof ChessStorage !== 'undefined') {
+                ChessStorage.setSaveSlot(slotNum, saveObj);
+            } else {
+                localStorage.setItem(SAVE_SLOTS_KEY_PREFIX + slotNum, JSON.stringify(saveObj));
+            }
             updateSlotsUI();
         } catch (e) {
             console.error('Error saving to slot ' + slotNum, e);
@@ -2696,7 +2608,11 @@ const ChessUI = (() => {
 
     function deleteSlot(slotNum) {
         if (confirm('Вы действительно хотите удалить сохранение из Слота ' + slotNum + '?')) {
-            localStorage.removeItem(SAVE_SLOTS_KEY_PREFIX + slotNum);
+            if (typeof ChessStorage !== 'undefined') {
+                ChessStorage.deleteSaveSlot(slotNum);
+            } else {
+                localStorage.removeItem(SAVE_SLOTS_KEY_PREFIX + slotNum);
+            }
             updateSlotsUI();
         }
     }
