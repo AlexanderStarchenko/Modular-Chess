@@ -1322,15 +1322,7 @@ const ChessUI = (() => {
         stopTimer();
         suggestedMove = null;
 
-        // Play game end sound
-        if (typeof ChessAudio !== 'undefined') {
-            const isDraw = ['draw', 'stalemate', 'repetition', '50moves', 'material'].includes(reason);
-            if (isDraw) {
-                ChessAudio.draw();
-            } else if (reason === 'checkmate') {
-                ChessAudio.checkmate();
-            }
-        }
+
 
         let title = 'Игра завершена';
         let sub = '';

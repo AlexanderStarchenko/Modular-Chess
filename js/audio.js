@@ -1,6 +1,6 @@
 /**
  * Chess Audio Player
- * Plays standard MP3 sound assets for chess moves, captures, draws, low time warning, and checkmate.
+ * Plays standard MP3 sound assets for chess moves, captures, and low time warning.
  */
 
 const ChessAudio = (() => {
@@ -14,9 +14,7 @@ const ChessAudio = (() => {
             sounds = {
                 move: new Audio('sounds/move.mp3'),
                 capture: new Audio('sounds/capture.mp3'),
-                draw: new Audio('sounds/draw.mp3'),
-                lowTime: new Audio('sounds/low_time.mp3'),
-                checkmate: new Audio('sounds/checkmate.mp3')
+                lowTime: new Audio('sounds/low_time.mp3')
             };
         } else {
             sounds = {};
@@ -51,14 +49,8 @@ const ChessAudio = (() => {
         capture() {
             playSound('capture');
         },
-        draw() {
-            playSound('draw');
-        },
         lowTime() {
             playSound('lowTime');
-        },
-        checkmate() {
-            playSound('checkmate');
         }
     };
 
