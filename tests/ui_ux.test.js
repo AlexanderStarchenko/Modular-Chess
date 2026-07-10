@@ -71,8 +71,7 @@ describe('UI/UX Triggers', () => {
     beforeAll(() => {
         ChessAudio = {
             move: jest.fn(),
-            capture: jest.fn(),
-            check: jest.fn()
+            capture: jest.fn()
         };
     });
 
@@ -82,11 +81,8 @@ describe('UI/UX Triggers', () => {
 
     test('Should trigger move sound on normal move', () => {
         const wasCapture = false;
-        const givesCheck = false;
         
-        // Simulating the logic from executeMove:
-        if (givesCheck) ChessAudio.check();
-        else if (wasCapture) ChessAudio.capture();
+        if (wasCapture) ChessAudio.capture();
         else ChessAudio.move();
 
         expect(ChessAudio.move).toHaveBeenCalled();
@@ -95,25 +91,11 @@ describe('UI/UX Triggers', () => {
 
     test('Should trigger capture sound on capture', () => {
         const wasCapture = true;
-        const givesCheck = false;
         
-        if (givesCheck) ChessAudio.check();
-        else if (wasCapture) ChessAudio.capture();
+        if (wasCapture) ChessAudio.capture();
         else ChessAudio.move();
 
         expect(ChessAudio.capture).toHaveBeenCalled();
-    });
-
-    test('Should trigger check sound when king is in check', () => {
-        const wasCapture = true;
-        const givesCheck = true;
-        
-        if (givesCheck) ChessAudio.check();
-        else if (wasCapture) ChessAudio.capture();
-        else ChessAudio.move();
-
-        expect(ChessAudio.check).toHaveBeenCalled();
-        expect(ChessAudio.capture).not.toHaveBeenCalled(); // Check takes priority
     });
 });
 

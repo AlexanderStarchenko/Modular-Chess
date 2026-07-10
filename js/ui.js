@@ -908,9 +908,6 @@ const ChessUI = (() => {
             ChessNetwork.receiveChatMessage = (text) => {
                 appendChatMessage('Соперник', text);
                 switchTab('chat');
-                if (typeof ChessAudio !== 'undefined') {
-                    ChessAudio.genericNotify();
-                }
             };
         }
 
@@ -1109,9 +1106,6 @@ const ChessUI = (() => {
         moveCount = 1;
         stateHistory = [];
         hasPlayedLowTimeWarning = false;
-        if (!isAutomatic && typeof ChessAudio !== 'undefined') {
-            ChessAudio.genericNotify();
-        }
         if (pcMoveTimeoutId) clearTimeout(pcMoveTimeoutId);
         historyListElement.innerHTML = '';
         
@@ -1333,17 +1327,8 @@ const ChessUI = (() => {
             const isDraw = ['draw', 'stalemate', 'repetition', '50moves', 'material'].includes(reason);
             if (isDraw) {
                 ChessAudio.draw();
-            } else {
-                const isLocalPVP = !pcToggle.checked && (!networkState || !networkState.connected);
-                if (isLocalPVP) {
-                    ChessAudio.victory();
-                } else {
-                    if (loserColor === playerColor) {
-                        ChessAudio.defeat();
-                    } else {
-                        ChessAudio.victory();
-                    }
-                }
+            } else if (reason === 'checkmate') {
+                ChessAudio.checkmate();
             }
         }
 
@@ -1675,9 +1660,7 @@ const ChessUI = (() => {
 
             updateLastMove({ fromRow, fromCol, toRow, toCol });
 
-            if (givesCheck) {
-                ChessAudio.check();
-            } else if (wasCapture) {
+            if (wasCapture) {
                 ChessAudio.capture();
             } else {
                 ChessAudio.move();
