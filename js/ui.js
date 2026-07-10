@@ -55,6 +55,7 @@ const ChessUI = (() => {
     let isTimerRunning = false;
     let gameEnded = false;
     let lastTickTime = null;
+    let hasPlayedLowTimeWarning = false;
 
     // Capture tracking
     let capturedByWhite = []; // pieces white captured (black pieces)
@@ -907,6 +908,9 @@ const ChessUI = (() => {
             ChessNetwork.receiveChatMessage = (text) => {
                 appendChatMessage('Соперник', text);
                 switchTab('chat');
+                if (typeof ChessAudio !== 'undefined') {
+                    ChessAudio.genericNotify();
+                }
             };
         }
 
@@ -1104,6 +1108,10 @@ const ChessUI = (() => {
         ChessLogic.initBoard();
         moveCount = 1;
         stateHistory = [];
+        hasPlayedLowTimeWarning = false;
+        if (!isAutomatic && typeof ChessAudio !== 'undefined') {
+            ChessAudio.genericNotify();
+        }
         if (pcMoveTimeoutId) clearTimeout(pcMoveTimeoutId);
         historyListElement.innerHTML = '';
         
@@ -1272,10 +1280,20 @@ const ChessUI = (() => {
             const turn = ChessLogic.getTurn();
             if (turn === 'w') {
                 whiteTimeLeft -= dt;
-                if (whiteTimeLeft <= 0) handleTimeout('w');
+                if (whiteTimeLeft <= 0) {
+                    handleTimeout('w');
+                } else if (whiteTimeLeft <= 10 && !hasPlayedLowTimeWarning) {
+                    hasPlayedLowTimeWarning = true;
+                    if (typeof ChessAudio !== 'undefined') ChessAudio.lowTime();
+                }
             } else {
                 blackTimeLeft -= dt;
-                if (blackTimeLeft <= 0) handleTimeout('b');
+                if (blackTimeLeft <= 0) {
+                    handleTimeout('b');
+                } else if (blackTimeLeft <= 10 && !hasPlayedLowTimeWarning) {
+                    hasPlayedLowTimeWarning = true;
+                    if (typeof ChessAudio !== 'undefined') ChessAudio.lowTime();
+                }
             }
             updateTimerDisplays();
         }, 100);
@@ -1292,6 +1310,7 @@ const ChessUI = (() => {
     }
 
     function handleTurnEnd() {
+        hasPlayedLowTimeWarning = false;
         if (parseTimeControl().time > 0) {
             const turn = ChessLogic.getTurn();
             // Add increment to the player who JUST moved
@@ -1308,6 +1327,25 @@ const ChessUI = (() => {
         gameEnded = true;
         stopTimer();
         suggestedMove = null;
+
+        // Play game end sound
+        if (typeof ChessAudio !== 'undefined') {
+            const isDraw = ['draw', 'stalemate', 'repetition', '50moves', 'material'].includes(reason);
+            if (isDraw) {
+                ChessAudio.draw();
+            } else {
+                const isLocalPVP = !pcToggle.checked && (!networkState || !networkState.connected);
+                if (isLocalPVP) {
+                    ChessAudio.victory();
+                } else {
+                    if (loserColor === playerColor) {
+                        ChessAudio.defeat();
+                    } else {
+                        ChessAudio.victory();
+                    }
+                }
+            }
+        }
 
         let title = 'Игра завершена';
         let sub = '';
