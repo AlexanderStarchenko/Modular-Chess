@@ -8,6 +8,7 @@ const SocketTransport = (() => {
     let currentRoom = null;
     let peerConnection = null;
     let dataChannel = null;
+    let pingIntervalId = null;
 
     /**
      * Safely parse binary, JSON, or Blob network payloads.
@@ -229,7 +230,7 @@ const SocketTransport = (() => {
     /**
      * Initializes connection to the server and joins a room.
      */
-    function init(roomId = 'default-room', customUrl = null) {
+    function init(roomId = 'default-room', customUrl = null, preferredSide = 'random') {
         if (typeof io === 'undefined') {
             console.error('Socket.io client library not loaded!');
             return;
@@ -257,7 +258,7 @@ const SocketTransport = (() => {
                 }
                 urlsToTry.push('http://10.0.2.2:3000');
             } else if (protocol === 'file:') {
-                urlsToTry.push('http://localhost:3000');
+                urlsToTry.push('http://localhost:5000');
             } else {
                 urlsToTry.push(undefined);
             }
@@ -285,7 +286,8 @@ const SocketTransport = (() => {
 
             socket.on('connect', () => {
                 console.log('Connected to signaling server:', serverUrl);
-                socket.emit('join-room', roomId);
+                const payload = (preferredSide && preferredSide !== 'random') ? { roomId: roomId, preferredSide: preferredSide } : roomId;
+                socket.emit('join-room', payload);
                 
                 ChessNetwork.connect({ 
                     roomId, 
@@ -302,11 +304,37 @@ const SocketTransport = (() => {
                 if (typeof ChessNetwork.receiveReconnected === 'function') {
                     ChessNetwork.receiveReconnected();
                 }
+
+                // Start pinging the server
+                if (pingIntervalId) clearInterval(pingIntervalId);
+                pingIntervalId = setInterval(() => {
+                    if (socket && socket.connected) {
+                        socket.emit('chess-ping', Date.now());
+                    }
+                }, 3000);
             });
 
             // WebRTC Signaling channel
             socket.on('webrtc-signal', (signal) => {
                 handleSignalingMessage(signal);
+            });
+
+            // Listen for opponent presence status
+            socket.on('opponent-status', (status) => {
+                console.log('Opponent status changed:', status);
+                if (typeof ChessNetwork.receiveOpponentStatus === 'function') {
+                    ChessNetwork.receiveOpponentStatus(status);
+                }
+            });
+
+            // Listen for ping replies
+            socket.on('chess-pong', (data) => {
+                const now = Date.now();
+                const ping = now - data.clientTime;
+                const latency = Math.round(ping / 2);
+                if (typeof ChessNetwork.receivePingUpdate === 'function') {
+                    ChessNetwork.receivePingUpdate({ ping, latency });
+                }
             });
 
             // Listen for fallback moves from the server
@@ -493,6 +521,10 @@ const SocketTransport = (() => {
 
     function disconnect() {
         closeWebRTC();
+        if (pingIntervalId) {
+            clearInterval(pingIntervalId);
+            pingIntervalId = null;
+        }
         if (socket) {
             socket.disconnect();
             socket = null;

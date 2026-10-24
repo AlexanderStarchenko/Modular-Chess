@@ -1,6 +1,6 @@
 # ♟️ Модульные Шахматы (Modular Chess) — Desktop Edition
 
-Современное настольное приложение для игры в шахматы, построенное на базе Electron. Проект сочетает в себе мощь профессиональных движков (Stockfish 18 WASM), производительность ядер вычислений на WebAssembly (AssemblyScript) и элегантность современного веб-интерфейса.
+Современное настольное приложение для игры в шахматы, построенное на базе Electron. Проект сочетает в себе мощь профессиональных движков (Stockfish 19 WASM), производительность ядер вычислений на WebAssembly (AssemblyScript) и элегантность современного веб-интерфейса.
 
 ![Chess Interface](https://via.placeholder.com/800x450?text=Modular+Chess+Desktop)
 
@@ -12,7 +12,7 @@
 - 🤖 **Продвинутый ИИ**:
   - **Easy/Medium/Hard**: Собственные JS-реализации с использованием алгоритма Minimax, альфа-бета отсечения, PST и Quiescence Search.
   - **Extra Hard**: Максимальная вычислительная мощность с использованием Iterative Deepening и History Heuristic (ограничение до 3.5 сек на ход).
-  - **Stockfish Integration**: Анализ и игра на высшем гроссмейстерском уровне с использованием встроенного Stockfish 18 (WASM).
+  - **Stockfish Integration**: Анализ и игра на высшем гроссмейстерском уровне с использованием встроенного Stockfish 19 (WASM).
 - 📊 **Глубокая Аналитика**:
   - Расчет **точности игры** (Accuracy %) для каждого хода и всей партии.
   - Автоматическая классификация ходов: `!!` (Блестящий), `!` (Хороший), `?!` (Неточность), `?` (Ошибка), `??` (Зевок).
@@ -98,7 +98,7 @@
 │   ├── ai_medium.js        # Средний ИИ (Minimax + Alpha-Beta, глубина 2)
 │   ├── ai_hard.js          # Сложный ИИ (Minimax + Alpha-Beta, PST, Quiescence, глубина 3)
 │   ├── ai_very_hard.js     # Экстра-сложный ИИ (Iterative Deepening, History Heuristic, глубина 4+)
-│   ├── ai_unreal.js        # Адаптер интеграции Stockfish 18 WASM
+│   ├── ai_unreal.js        # Адаптер интеграции Stockfish 19 WASM
 │   ├── ai_worker.js        # Web Worker для асинхронных вычислений ИИ без блокировки UI
 │   ├── analysis_manager.js # Менеджер послематчевого анализа и точности ходов
 │   ├── logic.js            # Движок правил шахмат и валидация ходов
@@ -123,7 +123,7 @@
 | **Medium** | Minimax + Alpha-Beta | 2 полухода | Материальный баланс, простейшее позиционирование | < 100 мс |
 | **Hard** | Minimax + Alpha-Beta + **WASM** | 3 полухода | PST (Piece-Square Tables), Quiescence Search | ~150 - 300 мс |
 | **Extra Hard** | Iterative Deepening | 4+ полухода (динам.) | History Heuristic, временной лимит (3.5 сек) | < 3500 мс |
-| **Stockfish 18** | Stockfish WASM (NNUE) | 15+ полуходов (динам.) | Профессиональный движок, послематчевая оценка точности | Настраиваемая |
+| **Stockfish 19** | Stockfish WASM (NNUE) | 15+ полуходов (динам.) | Профессиональный движок, послематчевая оценка точности | Настраиваемая |
 
 ---
 
@@ -172,7 +172,7 @@ npx asc assembly/index.ts --target release
 
 ## 🔒 Безопасность и CORS (Cross-Origin Isolation)
 
-Для полноценной работы многопоточного движка **Stockfish 18 WASM** в браузере требуются повышенные меры безопасности SharedArrayBuffer. При локальном веб-запуске (через Vite) сервер отдает специальные HTTP-заголовки, прописанные в `vite.config.js`:
+Для полноценной работы многопоточного движка **Stockfish 19 WASM** в браузере требуются повышенные меры безопасности SharedArrayBuffer. При локальном веб-запуске (через Vite) сервер отдает специальные HTTP-заголовки, прописанные в `vite.config.js`:
 
 - `Cross-Origin-Opener-Policy: same-origin`
 - `Cross-Origin-Embedder-Policy: require-corp`
@@ -236,7 +236,7 @@ npm test -- --coverage
 
 - **Core**: JavaScript (ES6+), AssemblyScript, HTML5, Vanilla CSS3.
 - **Frameworks**: Electron, Electron-Builder.
-- **AI Engine**: Stockfish 18 (WebAssembly).
+- **AI Engine**: Stockfish 19 (WebAssembly).
 - **Communication**: Socket.io (поддержка мультиплеера).
 
 ---

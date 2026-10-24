@@ -13,7 +13,7 @@ const ChessStorage = (() => {
         setBoardTheme(theme) {
             localStorage.setItem('board-theme', theme);
         },
-        getUITheme(defaultVal = 'dark') {
+        getUITheme(defaultVal = 'system') {
             return localStorage.getItem('ui-theme') || defaultVal;
         },
         setUITheme(theme) {

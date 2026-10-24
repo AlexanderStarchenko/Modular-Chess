@@ -47,10 +47,15 @@
     --color-on-surface-variant: #c2c6d6;
     --color-outline: #8c909f;
     --color-tertiary-fixed-dim: #f9ba82;
+    --slider-track-bg: #424754;
     
-    --color-glass-bg: rgba(20, 20, 20, 0.55);
-    --color-glass-border: rgba(255, 255, 255, 0.08);
-    --color-glass-box-shadow: none;
+    --glass-bg-primary: rgba(20, 20, 24, 0.65);
+    --glass-bg-surface: rgba(30, 30, 35, 0.50);
+    --glass-border-light: rgba(255, 255, 255, 0.08);
+    --glass-shadow-elevated: 0 20px 40px -15px rgba(0, 0, 0, 0.50);
+    --color-glass-bg: var(--glass-bg-primary);
+    --color-glass-border: var(--glass-border-light);
+    --color-glass-box-shadow: var(--glass-shadow-elevated);
     --color-glass-text: #e5e2e1;
 
     /* Board Themes */
@@ -89,12 +94,13 @@
     --highlight: rgba(173, 198, 255, 0.45); /* primary-dim/45 */
     --check-color: rgba(239, 68, 68, 0.55);
     
-    --board-max-height-constraint: calc(100vh - 220px);
+    --board-max-height-constraint: calc(100vh - 160px);
 }
 
 html:not(.dark) {
     /* Design Tokens - Light Theme overrides */
     --color-surface-variant: #cbd5e1;
+    --slider-track-bg: #cbd5e1;
     --color-on-secondary-fixed: #0f172a;
     --color-error-container: rgba(220, 38, 38, 0.12);
     --color-secondary-fixed: #cbd5e1;
@@ -123,7 +129,7 @@ html:not(.dark) {
     --color-error: #dc2626;
     --color-on-primary-fixed-variant: #2563eb;
     --color-secondary-fixed-dim: #94a3b8;
-    --color-surface-container: #e2e8f0;
+    --color-surface-container: #ffffff;
     --color-on-tertiary: #ffffff;
     --color-primary-container: #d8e2ff;
     --color-surface-dim: #f1f5f9;
@@ -142,15 +148,21 @@ html:not(.dark) {
     --color-outline: #475569;
     --color-tertiary-fixed-dim: #bd8552;
 
-    --color-glass-bg: rgba(255, 255, 255, 0.95);
-    --color-glass-border: rgba(15, 23, 42, 0.12);
-    --color-glass-box-shadow: 0 12px 30px -10px rgba(15, 23, 42, 0.15);
+    --glass-bg-primary: rgba(255, 255, 255, 0.85);
+    --glass-bg-surface: rgba(241, 245, 249, 0.65);
+    --glass-border-light: rgba(15, 23, 42, 0.08);
+    --glass-shadow-elevated: 0 20px 40px -15px rgba(15, 23, 42, 0.08);
+    --color-glass-bg: var(--glass-bg-primary);
+    --color-glass-border: var(--glass-border-light);
+    --color-glass-box-shadow: var(--glass-shadow-elevated);
     --color-glass-text: #0f172a;
+    --color-surface-container-high: #e2e8f0;
+    --color-surface-container-highest: #cbd5e1;
 }
 
 @media (min-width: 1280px) and (min-height: 850px) {
     :root {
-        --board-max-height-constraint: calc(100vh - 240px);
+        --board-max-height-constraint: calc(100vh - 180px);
     }
 }
 
@@ -165,14 +177,37 @@ body {
     }
 }
 
+/* Smooth global theme transition rule */
+body,
+.glass-panel,
+aside,
+main,
+header,
+footer,
+.modal-content,
+.timer-container {
+    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 /* Glassmorphism panel definitions */
 .glass-panel {
     background: var(--color-glass-bg);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--color-glass-border);
     color: var(--color-glass-text);
     box-shadow: var(--color-glass-box-shadow);
+}
+
+.glass-surface {
+    background: var(--glass-bg-surface);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border-light);
+    color: var(--color-glass-text);
 }
 
 /* Timer Styling (Stitch overrides) */
@@ -216,6 +251,28 @@ body {
     opacity: 1;
 }
 
+/* Active Turn Ring Glow for Player Cards & Timers */
+.glow-turn,
+#opponent-card.glow-turn,
+#player-card.glow-turn,
+#opponent-card.active-turn,
+#player-card.active-turn {
+    border-color: rgba(173, 198, 255, 0.6) !important;
+    box-shadow: 0 0 20px rgba(173, 198, 255, 0.25), inset 0 0 10px rgba(173, 198, 255, 0.1) !important;
+    animation: turnGlowPulse 2.5s infinite ease-in-out;
+}
+
+@keyframes turnGlowPulse {
+    0%, 100% {
+        box-shadow: 0 0 14px rgba(173, 198, 255, 0.2), inset 0 0 6px rgba(173, 198, 255, 0.08);
+        border-color: rgba(173, 198, 255, 0.5);
+    }
+    50% {
+        box-shadow: 0 0 26px rgba(173, 198, 255, 0.42), inset 0 0 14px rgba(173, 198, 255, 0.18);
+        border-color: rgba(173, 198, 255, 0.85);
+    }
+}
+
 .timer-container.low-time {
     color: #ffb4ab !important; /* error color */
     background: rgba(147, 0, 10, 0.25) !important; /* error-container/25 */
@@ -223,14 +280,20 @@ body {
 }
 
 .timer-container.low-time::after {
-    box-shadow: 0 0 25px rgba(255, 180, 171, 0.45) !important;
-    animation: pulseRed 1s infinite alternate;
+    box-shadow: 0 0 25px rgba(255, 180, 171, 0.5) !important;
+    animation: pulseRed 1s infinite alternate cubic-bezier(0.4, 0, 0.2, 1);
     opacity: 1;
 }
 
 @keyframes pulseRed {
-    0% { opacity: 0.35; }
-    100% { opacity: 1; }
+    0% {
+        opacity: 0.35;
+        box-shadow: 0 0 10px rgba(255, 180, 171, 0.25);
+    }
+    100% {
+        opacity: 1;
+        box-shadow: 0 0 30px rgba(255, 180, 171, 0.7), 0 0 45px rgba(239, 68, 68, 0.4);
+    }
 }
 
 /* Sidebar Drawer and Backdrop for Tablet / Mobile */
@@ -252,7 +315,7 @@ body {
 #board-wrapper {
     width: 100%;
     /* Keep it exactly sized so it never overflows vertically or horizontally */
-    max-width: min(640px, 92vw, var(--board-max-height-constraint));
+    max-width: min(760px, 92vw, var(--board-max-height-constraint));
     margin: 0 auto;
     display: flex;
     flex-direction: column;
@@ -262,7 +325,7 @@ body {
 /* On very tall, high-res PC monitors, let the board expand gloriously */
 @media (min-width: 1280px) and (min-height: 850px) {
     #board-wrapper {
-        max-width: min(780px, 92vw, var(--board-max-height-constraint));
+        max-width: min(880px, 92vw, var(--board-max-height-constraint));
     }
 }
 
@@ -272,7 +335,8 @@ body {
 
 #board-container {
     position: relative;
-    width: 100%;
+    max-width: 100%;
+    flex: 1 1 auto;
     aspect-ratio: 1 / 1;
     border-radius: 12px;
     overflow: hidden;
@@ -280,6 +344,9 @@ body {
     border: 5px solid rgba(53, 53, 52, 0.85); /* Premium board frame border */
     container-type: inline-size; /* Core for Container Query scaling! */
     box-sizing: border-box;
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
 }
 
 #chessboard {
@@ -293,6 +360,9 @@ body {
     border: none;
     overflow: hidden;
     background-color: var(--board-dark);
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
 }
 
 /* Responsive Squares and Piece Scaling via Container Queries */
@@ -564,9 +634,8 @@ body {
     border-radius: 24px;
 }
 
-.slider:before {
+.slider .thumb {
     position: absolute;
-    content: "";
     height: 18px;
     width: 18px;
     left: 3px;
@@ -574,14 +643,79 @@ body {
     background-color: white;
     transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
     border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 input:checked + .slider {
     background-color: #4d8eff; /* primary-container */
 }
 
-input:checked + .slider:before {
+input:checked + .slider .thumb {
     transform: translateX(24px);
+}
+
+/* Premium range input (volume slider) styles */
+input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: transparent;
+    border-radius: 4px;
+    outline: none;
+}
+
+/* Chrome/Safari/Edge Track */
+input[type="range"]::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 6px;
+    background: var(--slider-track-bg, #424754);
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+/* Chrome/Safari/Edge Thumb */
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--color-primary, #4d8eff);
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    margin-top: -5px; /* Center thumb vertically */
+    transition: transform 0.1s, background-color 0.2s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    background: var(--color-primary-fixed-dim, #85afff);
+}
+
+/* Mozilla Firefox Track */
+input[type="range"]::-moz-range-track {
+    width: 100%;
+    height: 6px;
+    background: var(--slider-track-bg, #424754);
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+/* Mozilla Firefox Thumb */
+input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--color-primary, #4d8eff);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    transition: transform 0.1s, background-color 0.2s;
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+    transform: scale(1.2);
 }
 
 /* Active UI improvements for different viewports */
@@ -607,7 +741,22 @@ aside label {
     font-size: clamp(0.95rem, 1.8vh, 1.15rem) !important;
     font-weight: 600 !important;
 }
-aside select, aside input {
+aside select {
+    font-size: clamp(0.95rem, 1.8vh, 1.15rem) !important;
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+    padding-left: 14px !important;
+    padding-right: 34px !important;
+    height: auto !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 14px center !important;
+    background-size: 14px 14px !important;
+}
+aside input {
     font-size: clamp(0.95rem, 1.8vh, 1.15rem) !important;
     padding: 10px 14px !important;
     height: auto !important;
@@ -644,7 +793,7 @@ html:not(.dark) body {
 
 /* Card name text and sidebar settings label overrides */
 html:not(.dark) p, 
-html:not(.dark) span:not(.piece), 
+html:not(.dark) span:not(.piece):not(button span), 
 html:not(.dark) h3, 
 html:not(.dark) label {
     color: var(--color-on-background) !important;
@@ -783,6 +932,10 @@ html:not(.dark) aside input {
     background-color: var(--color-surface-container-low) !important;
     border-color: var(--color-outline-variant) !important;
     color: var(--color-on-surface) !important;
+}
+
+html:not(.dark) aside select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
 }
 
 html:not(.dark) aside select:focus, 
@@ -1003,9 +1156,48 @@ html:not(.dark) #analyze-btn {
 .glass-panel,
 .modal,
 .modal-content {
-    will-change: transform, backdrop-filter;
+    will-change: transform, opacity, backdrop-filter;
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
+}
+
+/* Modal Entrance Animation Keyframes */
+@keyframes modalEnter {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes modalScaleUp {
+    0% {
+        opacity: 0;
+        transform: scale(0.92) translateY(12px);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.modal {
+    will-change: transform, opacity;
+}
+
+.modal:not([style*="display: none"]),
+.modal[style*="display: flex"] {
+    animation: modalEnter 0.25s ease-out forwards;
+}
+
+.modal-content {
+    will-change: transform, opacity;
+}
+
+.modal:not([style*="display: none"]) .modal-content,
+.modal[style*="display: flex"] .modal-content {
+    animation: modalScaleUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Force GPU rendering for interactive chessboard elements */
@@ -1032,6 +1224,7 @@ main {
 @media (max-width: 767px) {
     /* 1. Disable expensive backdrop filter blur effects */
     .glass-panel,
+    .glass-surface,
     .modal,
     .modal-content {
         backdrop-filter: none !important;
@@ -1039,7 +1232,8 @@ main {
     }
     
     /* 2. Switch from transparent glass to solid readable colors to preserve design contrast */
-    .glass-panel {
+    .glass-panel,
+    .glass-surface {
         background: var(--color-glass-bg) !important;
     }
     
@@ -1077,10 +1271,472 @@ html:not(.dark) .emoji-btn:hover {
 #opponent-card {
     order: 1;
 }
-#board-container {
+#board-layout-wrapper {
     order: 2;
 }
 #player-card {
     order: 3;
 }
+
+/* Status Indicator Dot for Online Opponent Presence */
+.status-indicator-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.status-indicator-dot.offline {
+    background-color: rgba(140, 144, 159, 0.4);
+}
+
+.status-indicator-dot.online {
+    background-color: #22c55e;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.7);
+    animation: status-pulse 2s infinite ease-in-out;
+}
+
+@keyframes status-pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.6;
+        transform: scale(0.92);
+    }
+}
+
+/* Satisfying micro-animations for Undo and Hint buttons */
+#undo-btn, #hint-btn {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+#undo-btn:not(:disabled):hover, #hint-btn:not(:disabled):hover {
+    background-color: var(--color-surface-container-high) !important;
+    border-color: var(--color-primary) !important;
+    color: var(--color-primary) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* Light theme specific hover shadow */
+html:not(.dark) #undo-btn:not(:disabled):hover, 
+html:not(.dark) #hint-btn:not(:disabled):hover {
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
+}
+
+/* Icon animations */
+#undo-btn .material-symbols-outlined, 
+#hint-btn .material-symbols-outlined {
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.3s ease;
+}
+
+#undo-btn:not(:disabled):hover .material-symbols-outlined {
+    transform: rotate(-25deg) scale(1.1);
+}
+
+/* Simplified mobile touch feedback for Undo button and ultra-smooth scaling for New Game button */
+@media (max-width: 768px), (pointer: coarse) {
+    #undo-btn {
+        transition: transform 0.22s cubic-bezier(0.25, 1, 0.5, 1) !important;
+    }
+    #undo-btn:not(:disabled):hover,
+    #undo-btn:not(:disabled):focus,
+    #undo-btn:not(:disabled):active {
+        background-color: var(--color-surface-container) !important;
+        border-color: rgba(140, 144, 159, 0.2) !important;
+        color: var(--color-on-surface) !important;
+        transform: none !important;
+        box-shadow: none !important;
+    }
+    html:not(.dark) #undo-btn:not(:disabled):hover,
+    html:not(.dark) #undo-btn:not(:disabled):focus,
+    html:not(.dark) #undo-btn:not(:disabled):active {
+        background-color: var(--color-surface-container-low) !important;
+        border-color: var(--color-outline-variant) !important;
+        color: var(--color-on-surface-variant) !important;
+        box-shadow: none !important;
+    }
+    #undo-btn:not(:disabled):hover .material-symbols-outlined {
+        transform: none !important;
+    }
+    #undo-btn:not(:disabled):active {
+        transform: scale(0.95) !important;
+    }
+
+    #reset-btn {
+        transition: transform 0.22s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.22s ease, filter 0.2s ease, opacity 0.2s ease !important;
+    }
+    #reset-btn:not(:disabled):active {
+        transform: scale(0.95) !important;
+    }
+}
+
+#reset-btn {
+    transition: transform 0.22s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.22s ease, filter 0.2s ease, opacity 0.2s ease !important;
+}
+
+#reset-btn .material-symbols-outlined {
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    #reset-btn:hover {
+        transform: translateY(-1.5px) scale(1.03) !important;
+        box-shadow: 0 6px 18px -2px rgba(77, 142, 255, 0.45), 0 2px 6px -1px rgba(77, 142, 255, 0.25) !important;
+        filter: brightness(1.06);
+    }
+
+    #reset-btn:hover .material-symbols-outlined {
+        transform: rotate(90deg) scale(1.15);
+    }
+}
+
+#hint-btn:not(:disabled):hover .material-symbols-outlined {
+    transform: rotate(15deg) scale(1.15);
+    color: #f59e0b !important; /* Golden-yellow glow for the lightbulb */
+    text-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+}
+
+/* Explicit colors for the black-and-white accuracy tube */
+#accuracy-bar-container {
+    background-color: var(--color-surface-container-high, #2d2d2d) !important;
+}
+#accuracy-white-bar {
+    background-color: #f1f1f1 !important;
+}
+#accuracy-black-bar {
+    background-color: #21201d !important;
+}
+
+/* Micro-animations and hover effects for Save/Load Dropdown Menu */
+#save-menu-toggle-btn {
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+}
+
+#save-menu-toggle-btn:hover {
+    background-color: var(--color-surface-container-high);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+#save-menu-toggle-btn .material-symbols-outlined {
+    transition: color 0.2s ease;
+}
+
+#save-menu-toggle-btn:hover .material-symbols-outlined:first-child {
+    color: var(--color-primary);
+}
+
+#save-menu-dropdown:not(.hidden) {
+    animation: saveDropdownScaleFade 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    will-change: opacity, transform;
+}
+
+@keyframes saveDropdownScaleFade {
+    from {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Tab Entrance Keyframe Animations */
+#tab-content-notation:not(.hidden),
+#tab-content-analysis:not(.hidden),
+#tab-content-chat:not(.hidden) {
+    animation: tabSlideFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    will-change: opacity, transform;
+}
+
+@keyframes tabSlideFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.save-dropdown-item {
+    transition: background-color 0.2s ease, color 0.2s ease !important;
+}
+
+.save-dropdown-item:hover {
+    background-color: rgba(173, 198, 255, 0.15) !important;
+    color: var(--color-primary) !important;
+}
+
+.save-dropdown-item .material-symbols-outlined {
+    transition: color 0.2s ease !important;
+}
+
+.save-dropdown-item:hover .material-symbols-outlined {
+    color: var(--color-primary) !important;
+}
+
+/* Light theme overrides for dropdown items */
+html:not(.dark) .save-dropdown-item:hover {
+    background-color: rgba(0, 90, 194, 0.1) !important;
+    color: #005ac2 !important;
+}
+
+html:not(.dark) .save-dropdown-item:hover .material-symbols-outlined {
+    color: #005ac2 !important;
+}
+
+/* Sidebar Form Controls & Jitter-Free Hover/Active States */
+.sidebar-label {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-on-surface-variant);
+    transition: color 0.2s ease;
+}
+
+.sidebar-label .material-symbols-outlined {
+    font-size: 1.05rem;
+    color: var(--color-primary);
+    transition: color 0.2s ease;
+}
+
+.sidebar-select {
+    width: 100%;
+    background-color: var(--color-surface-container);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: 0.75rem;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-on-surface);
+    outline: none;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.sidebar-select:hover {
+    background-color: var(--color-surface-container-high);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.sidebar-select:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(173, 198, 255, 0.25);
+}
+
+.sidebar-input {
+    width: 100%;
+    background-color: var(--color-surface-container);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: 0.5rem;
+    padding: 0.45rem;
+    font-size: 0.75rem;
+    color: var(--color-on-surface);
+    outline: none;
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sidebar-input:hover {
+    border-color: var(--color-primary);
+    background-color: var(--color-surface-container-high);
+}
+
+.sidebar-input:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(173, 198, 255, 0.25);
+}
+
+/* Sidebar Action Buttons */
+.sidebar-action-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.55rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 0.75rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.sidebar-action-btn .material-symbols-outlined {
+    font-size: 1.1rem;
+}
+
+.sidebar-action-btn:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    opacity: 0.95;
+}
+
+/* Light theme overrides for sidebar controls */
+html:not(.dark) .sidebar-select,
+html:not(.dark) .sidebar-input,
+html:not(.dark) #save-menu-toggle-btn {
+    background-color: #ffffff;
+    border-color: rgba(15, 23, 42, 0.15);
+    color: #0f172a;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+html:not(.dark) .sidebar-select:hover,
+html:not(.dark) .sidebar-input:hover,
+html:not(.dark) #save-menu-toggle-btn:hover {
+    background-color: #f8fafc;
+    border-color: #2563eb;
+    color: #2563eb;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+}
+
+html:not(.dark) #save-menu-dropdown {
+    background-color: #ffffff;
+    border-color: rgba(15, 23, 42, 0.15);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+}
+
+/* Quick action buttons below board (Undo, Hint) */
+#undo-btn,
+#hint-btn {
+    background-color: var(--color-surface-container);
+    border: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface);
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+
+#undo-btn:hover:not(:disabled),
+#hint-btn:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+#undo-btn:disabled,
+#hint-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none !important;
+}
+
+/* Light theme overrides for Undo & Hint buttons */
+html:not(.dark) #undo-btn,
+html:not(.dark) #hint-btn {
+    background-color: #ffffff !important;
+    border-color: rgba(15, 23, 42, 0.15) !important;
+    color: #0f172a !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+
+html:not(.dark) #undo-btn:hover:not(:disabled),
+html:not(.dark) #hint-btn:hover:not(:disabled) {
+    background-color: #f8fafc !important;
+    border-color: #2563eb !important;
+    color: #2563eb !important;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1) !important;
+}
+
+html:not(.dark) #undo-btn:disabled,
+html:not(.dark) #hint-btn:disabled {
+    background-color: #ffffff !important;
+    border-color: rgba(15, 23, 42, 0.1) !important;
+    color: #94a3b8 !important;
+    opacity: 0.6;
+}
+
+/* Interactive Micro-Animations for Primary Buttons & Chips */
+#network-btn,
+#resign-btn,
+#draw-btn,
+#undo-btn,
+#hint-btn,
+#reset-btn,
+.sidebar-action-btn {
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                background-color 0.2s ease,
+                border-color 0.2s ease,
+                box-shadow 0.2s ease,
+                color 0.2s ease,
+                opacity 0.2s ease !important;
+    will-change: transform;
+}
+
+#network-btn:hover:not(:disabled),
+#resign-btn:hover:not(:disabled),
+#draw-btn:hover:not(:disabled),
+#undo-btn:hover:not(:disabled),
+#hint-btn:hover:not(:disabled),
+#reset-btn:hover:not(:disabled),
+.sidebar-action-btn:hover:not(:disabled) {
+    transform: translateY(-1px) scale(1.02);
+}
+
+#network-btn:active:not(:disabled),
+#resign-btn:active:not(:disabled),
+#draw-btn:active:not(:disabled),
+#undo-btn:active:not(:disabled),
+#hint-btn:active:not(:disabled),
+#reset-btn:active:not(:disabled),
+.sidebar-action-btn:active:not(:disabled) {
+    transform: scale(0.95) !important;
+}
+
+#save-menu-toggle-btn,
+#save-menu-toggle-btn:hover,
+#save-menu-toggle-btn:active {
+    transform: none !important;
+}
+
+/* Emoji & Quick Phrase Chips Micro-Animations */
+.emoji-btn {
+    transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+                background-color 0.15s ease,
+                border-color 0.15s ease,
+                box-shadow 0.15s ease !important;
+    will-change: transform;
+}
+
+.emoji-btn:hover {
+    transform: scale(1.15) translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.emoji-btn:active {
+    transform: scale(0.90) !important;
+}
+
+.quick-phrase-btn {
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+                background-color 0.15s ease,
+                border-color 0.15s ease,
+                color 0.15s ease !important;
+    will-change: transform;
+}
+
+.quick-phrase-btn:hover {
+    transform: scale(1.05) translateY(-1px);
+    background-color: rgba(173, 198, 255, 0.15) !important;
+}
+
+.quick-phrase-btn:active {
+    transform: scale(0.95) !important;
+}
+
+
+
 

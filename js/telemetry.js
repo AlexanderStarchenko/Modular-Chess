@@ -28,10 +28,10 @@ const ChessTelemetry = (() => {
                 serverUrl = 'http://10.0.2.2:3000';
             }
         } else if (protocol === 'file:') {
-            serverUrl = 'http://localhost:3000';
+            serverUrl = 'http://localhost:5000';
         } else {
             // Web / Electron running on localhost
-            serverUrl = origin || 'http://localhost:3000';
+            serverUrl = origin || 'http://localhost:5000';
         }
 
         return serverUrl;

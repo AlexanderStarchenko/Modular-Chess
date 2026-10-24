@@ -54,7 +54,11 @@ module.exports = {
         "tertiary-fixed": "var(--color-tertiary-fixed, #ffdcc1)",
         "on-surface-variant": "var(--color-on-surface-variant, #c2c6d6)",
         "outline": "var(--color-outline, #8c909f)",
-        "tertiary-fixed-dim": "var(--color-tertiary-fixed-dim, #f9ba82)"
+        "tertiary-fixed-dim": "var(--color-tertiary-fixed-dim, #f9ba82)",
+        "glass-bg-primary": "var(--glass-bg-primary)",
+        "glass-bg-surface": "var(--glass-bg-surface)",
+        "glass-border-light": "var(--glass-border-light)",
+        "glass-shadow-elevated": "var(--glass-shadow-elevated)"
       },
       borderRadius: {
         "DEFAULT": "0.25rem",

@@ -51,6 +51,21 @@ copyRecursiveSync(path.join(srcDir, 'js'), path.join(destDir, 'js'));
 console.log('Copying CSS directory...');
 copyRecursiveSync(path.join(srcDir, 'css'), path.join(destDir, 'css'));
 
+if (fs.existsSync(path.join(srcDir, 'pieces'))) {
+    console.log('Copying pieces directory...');
+    copyRecursiveSync(path.join(srcDir, 'pieces'), path.join(destDir, 'pieces'));
+}
+
+if (fs.existsSync(path.join(srcDir, 'sounds'))) {
+    console.log('Copying sounds directory...');
+    copyRecursiveSync(path.join(srcDir, 'sounds'), path.join(destDir, 'sounds'));
+}
+
+if (fs.existsSync(path.join(srcDir, 'images'))) {
+    console.log('Copying images directory...');
+    copyRecursiveSync(path.join(srcDir, 'images'), path.join(destDir, 'images'));
+}
+
 console.log('Copying compiled WebAssembly Core...');
 copyRecursiveSync(path.join(srcDir, 'build', 'release.wasm'), path.join(destDir, 'build', 'release.wasm'));
 

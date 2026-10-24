@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const { execFile } = require('child_process');
 
 const app = express();
 const server = http.createServer(app);
@@ -39,8 +40,15 @@ app.use(express.json());
 // Explicitly set MIME type for WASM files
 express.static.mime.define({'application/wasm': ['wasm']});
 
-// Serve static files from the current directory
-app.use(express.static(__dirname));
+// Serve static files from current directory with optimized caching headers
+app.use(express.static(__dirname, {
+    maxAge: '1d',
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.wasm') || filePath.endsWith('.mp3') || filePath.endsWith('.svg')) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+    }
+}));
 
 // Telemetry endpoint
 app.post('/api/telemetry', (req, res) => {
@@ -77,6 +85,37 @@ app.post('/api/telemetry', (req, res) => {
     }
 });
 
+// Neural Engine API endpoint
+app.post('/api/neural-move', (req, res) => {
+    try {
+        const { fen, modelVer, searchType, history } = req.body;
+        if (!fen || typeof fen !== 'string') {
+            return res.status(400).json({ error: 'Valid FEN string required' });
+        }
+
+        const version = typeof modelVer === 'string' && modelVer.trim() ? modelVer.trim() : 'v1';
+        const search = typeof searchType === 'string' && searchType.trim() ? searchType.trim() : 'alphabeta';
+        const historyJson = JSON.stringify(Array.isArray(history) ? history : []);
+        const scriptPath = path.join(__dirname, 'scripts', 'neural_engine.py');
+        execFile('python', [scriptPath, fen, version, search, historyJson], { timeout: 12000 }, (error, stdout, stderr) => {
+            if (error) {
+                console.error('[Neural API] Execution error:', error);
+                return res.status(500).json({ error: 'Neural engine inference failed' });
+            }
+            try {
+                const parsed = JSON.parse(stdout.trim());
+                res.json(parsed);
+            } catch (parseErr) {
+                console.error('[Neural API] JSON parse error:', parseErr, stdout);
+                res.status(500).json({ error: 'Invalid engine output' });
+            }
+        });
+    } catch (e) {
+        console.error('[Neural API] Unexpected error:', e);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 const rooms = new Map();
 
 io.on('connection', (socket) => {
@@ -85,10 +124,13 @@ io.on('connection', (socket) => {
     }
 
     // Join a specific game room
-    socket.on('join-room', (roomId) => {
+    socket.on('join-room', (payload) => {
+        const roomId = (typeof payload === 'object' && payload && payload.roomId) ? payload.roomId : (typeof payload === 'string' ? payload : 'default-room');
+        const preferredSide = (typeof payload === 'object' && payload && payload.preferredSide) ? payload.preferredSide : 'random';
+
         socket.join(roomId);
         if (process.env.NODE_ENV !== 'test') {
-            console.log(`User ${socket.id} joined room: ${roomId}`);
+            console.log(`User ${socket.id} joined room: ${roomId} with preferredSide: ${preferredSide}`);
         }
         
         let roomData = rooms.get(roomId);
@@ -102,7 +144,13 @@ io.on('connection', (socket) => {
         
         let assignedColor = 'w';
         if (!roomData) {
-            assignedColor = Math.random() < 0.5 ? 'w' : 'b';
+            if (preferredSide === 'w') {
+                assignedColor = 'w';
+            } else if (preferredSide === 'b') {
+                assignedColor = 'b';
+            } else {
+                assignedColor = Math.random() < 0.5 ? 'w' : 'b';
+            }
             roomData = {
                 firstColor: assignedColor,
                 players: {
@@ -138,6 +186,11 @@ io.on('connection', (socket) => {
             socket.emit('chess-sync', roomData.gameState);
         }
         socket.to(roomId).emit('player-joined');
+        
+        const clients = io.sockets.adapter.rooms.get(roomId);
+        const otherClientsCount = clients ? clients.size - 1 : 0;
+        socket.emit('opponent-status', { online: otherClientsCount > 0 });
+        socket.to(roomId).emit('opponent-status', { online: true });
     });
 
     // Relay move to others in the same room
@@ -196,6 +249,8 @@ io.on('connection', (socket) => {
     socket.on('disconnecting', () => {
         for (const roomId of socket.rooms) {
             if (roomId === socket.id) continue;
+            socket.to(roomId).emit('opponent-status', { online: false });
+            socket.to(roomId).emit('player-left');
             const roomData = rooms.get(roomId);
             if (roomData) {
                 // If there are other active users in this room, do not delete it!
@@ -243,8 +298,8 @@ function getLocalIps() {
     return ips.length > 0 ? ips : ['localhost'];
 }
 
-// Start server on port 3000
-const PORT = 3000;
+// Start server on port 5000 (or PORT env)
+const PORT = process.env.PORT || 5000;
 const LOCAL_IPS = getLocalIps();
 
 if (require.main === module) {

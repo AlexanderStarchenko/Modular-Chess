@@ -9,35 +9,52 @@ const AnalysisManager = (() => {
 
     function initWorker() {
         if (!stockfish) {
-            console.log("[Analysis] Starting Stockfish Worker v40");
-            stockfish = new Worker('js/stockfish.js?v=40');
-            stockfish.onmessage = function(event) {
-                const line = event.data;
-                if (currentTask && typeof currentTask.onMessage === 'function') {
-                    currentTask.onMessage(line);
+            console.log("[Analysis] Starting Stockfish Worker v44");
+            try {
+                stockfish = new Worker('js/stockfish.js?v=44');
+                stockfish.onmessage = function(event) {
+                    const line = event.data;
+                    if (currentTask && typeof currentTask.onMessage === 'function') {
+                        currentTask.onMessage(line);
+                    }
+                };
+                stockfish.onerror = function(err) {
+                    console.warn("[Analysis] Stockfish Worker error:", err);
+                };
+                if (stockfish.postMessage) {
+                    stockfish.postMessage('uci');
+                    stockfish.postMessage('setoption name Skill Level value 20');
+                    stockfish.postMessage('setoption name Hash value 16');
                 }
-            };
+            } catch (err) {
+                console.warn("[Analysis] Worker initialization failed:", err);
+                stockfish = null;
+            }
         }
     }
 
-    function evaluateFen(fen, depth = 12) {
+    function evaluateFen(fen, depth = 14) {
         return new Promise(resolve => {
             initWorker();
             let evalResult = { cp: 0, mate: null, bestmove: null };
             let resolved = false;
             let safetyTimeout = null;
 
+            if (!stockfish) {
+                resolve(evalResult);
+                return;
+            }
+
             const timeout = setTimeout(() => {
                 if (!resolved) {
-                    if (stockfish) {
+                    if (stockfish && stockfish.postMessage) {
                         stockfish.postMessage('stop');
-                        // Set a safety timeout to resolve if bestmove never arrives
                         safetyTimeout = setTimeout(() => {
                             if (!resolved) {
                                 resolved = true;
                                 resolve(evalResult);
                             }
-                        }, 200);
+                        }, 150);
                     } else {
                         resolved = true;
                         resolve(evalResult);
@@ -47,19 +64,30 @@ const AnalysisManager = (() => {
 
             currentTask = {
                 onMessage: (line) => {
-                    if (line.startsWith('info depth')) {
+                    if (typeof line === 'string' && line.startsWith('info depth')) {
                         const scoreMatch = line.match(/score (cp|mate) (-?\d+)/);
                         if (scoreMatch) {
-                            if (scoreMatch[1] === 'cp') evalResult.cp = parseInt(scoreMatch[2], 10);
-                            else evalResult.mate = parseInt(scoreMatch[2], 10);
+                            if (scoreMatch[1] === 'cp') {
+                                evalResult.cp = parseInt(scoreMatch[2], 10);
+                                evalResult.mate = null;
+                            } else {
+                                evalResult.mate = parseInt(scoreMatch[2], 10);
+                            }
+                        }
+                        const pvMatch = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
+                        if (pvMatch) {
+                            evalResult.bestmove = pvMatch[1];
                         }
                     }
-                    if (line.startsWith('bestmove')) {
+                    if (typeof line === 'string' && line.startsWith('bestmove')) {
                         if (!resolved) {
                             clearTimeout(timeout);
                             if (safetyTimeout) clearTimeout(safetyTimeout);
                             resolved = true;
-                            evalResult.bestmove = line.split(' ')[1];
+                            const parts = line.split(' ');
+                            if (parts[1] && parts[1] !== '(none)') {
+                                evalResult.bestmove = parts[1];
+                            }
                             resolve(evalResult);
                         }
                     }
@@ -73,8 +101,12 @@ const AnalysisManager = (() => {
                     }
                 }
             };
-            stockfish.postMessage(`position fen ${fen}`);
-            stockfish.postMessage(`go depth ${depth}`);
+            if (stockfish.postMessage) {
+                stockfish.postMessage(`position fen ${fen}`);
+                stockfish.postMessage(`go depth ${depth}`);
+            } else {
+                resolve(evalResult);
+            }
         });
     }
 

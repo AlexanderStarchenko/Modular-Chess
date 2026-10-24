@@ -290,6 +290,14 @@ describe('Server Utility Functions', () => {
 describe('Telemetry API Endpoint', () => {
     const logFilePath = path.join(__dirname, '../telemetry_logs.jsonl');
 
+    beforeEach(() => {
+        try {
+            if (fs.existsSync(logFilePath)) {
+                fs.unlinkSync(logFilePath);
+            }
+        } catch (e) {}
+    });
+
     afterEach(() => {
         // Clean up the generated telemetry file
         try {
@@ -318,7 +326,8 @@ describe('Telemetry API Endpoint', () => {
         // Verify the file was created and contains correct data
         expect(fs.existsSync(logFilePath)).toBe(true);
         const fileContent = fs.readFileSync(logFilePath, 'utf8');
-        const loggedData = JSON.parse(fileContent.trim());
+        const lines = fileContent.trim().split('\n');
+        const loggedData = JSON.parse(lines[lines.length - 1]);
         expect(loggedData.type).toBe('error');
         expect(loggedData.message).toBe('Test crash message');
         expect(loggedData.line).toBe(42);
@@ -338,4 +347,47 @@ describe('Telemetry API Endpoint', () => {
         expect(response.body).toEqual({ error: 'Invalid telemetry payload' });
     });
 });
+
+describe('Neural Move API Endpoint', () => {
+    test('POST /api/neural-move with missing fen should return 400', async () => {
+        const response = await request(app)
+            .post('/api/neural-move')
+            .send({});
+
+        expect(response.status).toBe(400);
+        expect(response.body).toEqual({ error: 'Valid FEN string required' });
+    });
+
+    test('POST /api/neural-move with opening FEN and modelVer v1_5 should return book or search move', async () => {
+        const response = await request(app)
+            .post('/api/neural-move')
+            .send({
+                fen: 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',
+                modelVer: 'v1_5'
+            });
+
+        expect(response.status).toBe(200);
+        expect(response.body.topMoves).toBeDefined();
+        expect(Array.isArray(response.body.topMoves)).toBe(true);
+        expect(response.body.topMoves.length).toBeGreaterThan(0);
+        expect(response.body.topMoves[0].uci).toBeDefined();
+    }, 10000);
+
+    test('POST /api/neural-move with searchType mcts should return MCTS evaluation', async () => {
+        const response = await request(app)
+            .post('/api/neural-move')
+            .send({
+                fen: 'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 6 5',
+                modelVer: 'v1_5',
+                searchType: 'mcts'
+            });
+
+        expect(response.status).toBe(200);
+        expect(response.body.searchType).toBe('mcts');
+        expect(response.body.topMoves).toBeDefined();
+        expect(response.body.topMoves.length).toBeGreaterThan(0);
+        expect(response.body.topMoves[0].visits).toBeDefined();
+    }, 15000);
+});
+
 

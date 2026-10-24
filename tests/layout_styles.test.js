@@ -31,13 +31,12 @@ describe('Layout and Style Integrity Tests', () => {
         expect(tabContentAreaMatch).not.toBeNull();
     });
 
-    test('index.html should have min-h-0 on all four tab content containers', () => {
+    test('index.html should have min-h-0 on all three tab content containers', () => {
         const htmlPath = path.join(__dirname, '../index.html');
         const content = fs.readFileSync(htmlPath, 'utf8');
         
         const tabs = [
             'tab-content-notation',
-            'tab-content-stats',
             'tab-content-analysis',
             'tab-content-chat'
         ];

@@ -23,7 +23,9 @@ const ChessNetwork = (() => {
         drawOffer: [],
         drawResponse: [],
         reconnecting: [],
-        reconnected: []
+        reconnected: [],
+        opponentPresence: [],
+        pingUpdate: []
     };
 
     function emit(type, payload) {
@@ -122,6 +124,8 @@ const ChessNetwork = (() => {
         receiveDrawResponse: (accepted) => emit('drawResponse', accepted),
         receiveReconnecting: () => emit('reconnecting'),
         receiveReconnected: () => emit('reconnected'),
+        receiveOpponentStatus: (status) => emit('opponentPresence', status),
+        receivePingUpdate: (pingData) => emit('pingUpdate', pingData),
         getState: () => ({ ...state })
     };
     if (typeof module !== 'undefined' && module.exports) {

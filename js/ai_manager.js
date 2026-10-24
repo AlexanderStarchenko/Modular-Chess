@@ -34,7 +34,38 @@ const ChessAIManager = (() => {
     }
 
     const API = {
-        getBestMove(fen, difficulty) {
+        getBestMove(fen, difficulty, history = []) {
+            if (typeof difficulty === 'string' && difficulty.startsWith('neural')) {
+                if (typeof ChessAINeural !== 'undefined') {
+                    let modelVer = 'v1_7';
+                    if (difficulty === 'neural-v1-7' || difficulty === 'neural-v1-7-alphabeta' || difficulty === 'neural-v1-7-mcts') {
+                        modelVer = 'v1_7';
+                    } else if (difficulty === 'neural-v1-6' || difficulty === 'neural-v1-6-mcts' || difficulty === 'neural-v1-6-alphabeta') {
+                        modelVer = 'v1_6';
+                    } else if (difficulty === 'neural-v1-5' || difficulty === 'neural-v1-5-mcts') {
+                        modelVer = 'v1_5';
+                    } else if (difficulty === 'neural') {
+                        modelVer = 'v1';
+                    }
+
+                    let searchType = 'alphabeta';
+                    if (difficulty.endsWith('-mcts')) {
+                        searchType = 'mcts';
+                    } else if (difficulty.endsWith('-minimax') || difficulty === 'neural-v1-6' || difficulty === 'neural-v1-5') {
+                        searchType = 'minimax';
+                    } else {
+                        searchType = 'alphabeta';
+                    }
+
+                    return ChessAINeural.getBestMove(fen, modelVer, searchType, history).then(move => {
+                        if (move) return move;
+                        return getFallbackPCMove('2');
+                    }).catch(err => {
+                        console.error('[AI Manager] Neural AI error, falling back:', err);
+                        return getFallbackPCMove('2');
+                    });
+                }
+            }
             if (!isFileProtocol && typeof ChessAIUnreal !== 'undefined') {
                 const [skill, time] = stockfishSettings[difficulty] || [10, 1000];
                 return ChessAIUnreal.getBestMove(fen, skill, time)

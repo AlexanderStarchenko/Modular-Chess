@@ -9,6 +9,7 @@ const ChessUI = (() => {
     let topPlayerName, bottomPlayerName, topTimerDisplay, bottomTimerDisplay, topTimerContainer, bottomTimerContainer;
     let analysisBtn, analysisPanel, analysisList, analysisProgress, stockfishTip;
     let gameConditionBadge;
+    let accuracyBarContainer, accuracyWhiteBar, accuracyBlackBar;
     let initialTime = 600;
     let initialInc = 0;
     let networkState = (typeof ChessNetwork !== 'undefined') ? ChessNetwork.getState() : { connected: false };
@@ -23,6 +24,44 @@ const ChessUI = (() => {
     let moveCount = 1;
     let isWaitingForPC = false;
     let pcMoveTimeoutId = null; // To cancel PC move
+    let pendingTimeouts = new Set();
+    let logicUnsubscribe = null;
+
+    function safeSetTimeout(fn, delay) {
+        const id = setTimeout(() => {
+            pendingTimeouts.delete(id);
+            fn();
+        }, delay);
+        pendingTimeouts.add(id);
+        return id;
+    }
+
+    function safeClearTimeout(id) {
+        if (id) {
+            clearTimeout(id);
+            pendingTimeouts.delete(id);
+        }
+    }
+
+    function cancelPendingMove() {
+        if (pcMoveTimeoutId) {
+            safeClearTimeout(pcMoveTimeoutId);
+            pcMoveTimeoutId = null;
+        }
+        isWaitingForPC = false;
+    }
+
+    function clearPendingTimers() {
+        cancelPendingMove();
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+        for (const id of pendingTimeouts) {
+            clearTimeout(id);
+        }
+        pendingTimeouts.clear();
+    }
     let playerColor = 'w'; 
     let pcColor = 'b';     
     let stateHistory = [];     
@@ -56,6 +95,7 @@ const ChessUI = (() => {
     let gameEnded = false;
     let lastTickTime = null;
     let hasPlayedLowTimeWarning = false;
+    let currentAnalysisSessionId = 0;
 
     // Capture tracking
     let capturedByWhite = []; // pieces white captured (black pieces)
@@ -69,6 +109,33 @@ const ChessUI = (() => {
         'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚'
     };
 
+    const pieceImages = {};
+    const PIECE_CODES = {
+        'P': 'wP', 'R': 'wR', 'N': 'wN', 'B': 'wB', 'Q': 'wQ', 'K': 'wK',
+        'p': 'bP', 'r': 'bR', 'n': 'bN', 'b': 'bB', 'q': 'bQ', 'k': 'bK'
+    };
+
+    function initPieceImages() {
+        if (typeof Image === 'undefined') return;
+        if (Object.keys(pieceImages).length > 0) return;
+        let loadedCount = 0;
+        const totalPieces = Object.keys(PIECE_CODES).length;
+        for (const [code, file] of Object.entries(PIECE_CODES)) {
+            const img = new Image();
+            img.onload = () => {
+                loadedCount++;
+                if (loadedCount === totalPieces) {
+                    renderBoard();
+                }
+            };
+            img.onerror = () => {
+                console.warn(`[UI] Piece image failed to load: pieces/${file}.svg`);
+            };
+            img.src = `pieces/${file}.svg`;
+            pieceImages[code] = img;
+        }
+    }
+
     function convertToUiMove(move) {
         if (!move) return null;
         return {
@@ -80,6 +147,74 @@ const ChessUI = (() => {
     }
 
     let isRemoteAction = false;
+
+    function isMobilePlatform() {
+        if (typeof window === 'undefined') return false;
+        if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'test' && !window.__FORCE_DESKTOP_TEST__) {
+            return true;
+        }
+        return !!(
+            window.Capacitor || 
+            (window.location && window.location.protocol === 'capacitor:') ||
+            (window.location && window.location.origin && window.location.origin.startsWith('capacitor://')) ||
+            /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+        );
+    }
+
+    function getStockfishName() {
+        if (!difficultySelect) return 'Stockfish 19';
+        const val = difficultySelect.value || '2';
+        if (val === 'neural-v1-7-alphabeta' || val === 'neural-v1-7') return '🌟 Нейросеть V1.7 (Alpha-Beta 12-SE)';
+        if (val === 'neural-v1-6-alphabeta') return '👑 Нейросеть V1.6 (Alpha-Beta)';
+        if (val === 'neural-v1-6-mcts') return '⚡ Нейросеть V1.6 (MCTS 4672)';
+        if (val === 'neural-v1-6') return '🚀 Нейросеть V1.6 (5-Ply Minimax)';
+        if (val === 'neural-v1-5-mcts') return '🏆 Нейросеть V1.5 (MCTS)';
+        if (val === 'neural-v1-5') return '✨ Нейросеть V1.5 (5-Ply Minimax)';
+        if (val === 'neural') return '🧠 Нейросеть V1 (ModularNet)';
+        const labels = {
+            '1': 'Легкий',
+            '2': 'Средний',
+            '3': 'Сложный',
+            '4': 'Экстра-сложный',
+            '5': 'Нереальный'
+        };
+        const levelName = labels[val] || (difficultySelect.options && difficultySelect.selectedIndex >= 0 ? difficultySelect.options[difficultySelect.selectedIndex].text : '');
+        return levelName ? `Stockfish 19 (${levelName})` : 'Stockfish 19';
+    }
+
+    function updateGameModeControlState() {
+        const gameModeContainer = document.getElementById('game-mode-container');
+        const diffContainer = document.getElementById('difficulty-container');
+        const sideContainer = document.getElementById('side-container');
+        const isNetwork = networkState && networkState.connected;
+        const isMobile = isMobilePlatform();
+
+        if (sideContainer) {
+            sideContainer.style.display = '';
+        }
+
+        if (isNetwork) {
+            if (pcToggle) pcToggle.checked = false;
+            if (gameModeContainer) gameModeContainer.style.display = 'none';
+            if (diffContainer) diffContainer.style.display = 'none';
+            return;
+        }
+
+        if (!isMobile) {
+            // PC / Desktop: Player vs Player on same machine disabled. Only Stockfish or Network play allowed.
+            if (pcToggle) pcToggle.checked = true;
+            if (gameModeContainer) gameModeContainer.style.display = 'none';
+            if (diffContainer) diffContainer.style.display = '';
+            if (topPlayerName && !gameEnded) topPlayerName.textContent = getStockfishName();
+        } else {
+            // Mobile device: Player vs Player switch available.
+            if (gameModeContainer) gameModeContainer.style.display = '';
+            if (diffContainer) diffContainer.style.display = (pcToggle && pcToggle.checked) ? '' : 'none';
+            if (topPlayerName && !gameEnded) {
+                topPlayerName.textContent = (pcToggle && pcToggle.checked) ? getStockfishName() : 'Игрок 2';
+            }
+        }
+    }
 
     function syncNetworkState() {
         if (typeof ChessNetwork !== 'undefined' && networkState && networkState.connected && !isRemoteAction) {
@@ -132,21 +267,16 @@ const ChessUI = (() => {
         const layer = getBoardOverlay();
         if (!layer) return;
 
-        const flyPiece = document.createElement('div');
-        flyPiece.className = `piece piece-fly ${piece === piece.toLowerCase() ? 'black-piece' : ''}`;
-        flyPiece.textContent = PIECE_UNICODE[piece];
-        flyPiece.style.width = `${squareSize}px`;
-        flyPiece.style.height = `${squareSize}px`;
-        flyPiece.style.left = `${fC * squareSize}px`;
-        flyPiece.style.top = `${fR * squareSize}px`;
+        const flyPiece = document.createElement('img');
+        flyPiece.className = 'piece-fly';
+        flyPiece.src = `pieces/${PIECE_CODES[piece]}.svg`;
+        flyPiece.style.width = `${squareSize * 0.92}px`;
+        flyPiece.style.height = `${squareSize * 0.92}px`;
+        const offset = (squareSize * 0.08) / 2;
+        flyPiece.style.left = `${fC * squareSize + offset}px`;
+        flyPiece.style.top = `${fR * squareSize + offset}px`;
         flyPiece.style.transform = 'translate3d(0, 0, 0)';
         flyPiece.style.opacity = '1';
-        
-        // Font size settings to match pieces
-        flyPiece.style.fontSize = `${squareSize * 0.75}px`;
-        flyPiece.style.display = 'flex';
-        flyPiece.style.alignItems = 'center';
-        flyPiece.style.justifyContent = 'center';
         
         layer.appendChild(flyPiece);
 
@@ -160,13 +290,15 @@ const ChessUI = (() => {
             flyPiece.remove();
         }, { once: true });
 
-        window.setTimeout(() => {
+        safeSetTimeout(() => {
             if (flyPiece.isConnected) flyPiece.remove();
         }, 320);
     }
 
     function init() {
         console.log("Chess UI Initializing... [Version v40]");
+        clearPendingTimers();
+        initPieceImages();
         
         if (typeof ChessWASM !== 'undefined') {
             ChessWASM.init().then(success => {
@@ -178,6 +310,9 @@ const ChessUI = (() => {
         
         boardContainer = document.getElementById('board-container');
         boardElement = document.getElementById('chessboard');
+        accuracyBarContainer = document.getElementById('accuracy-bar-container');
+        accuracyWhiteBar = document.getElementById('accuracy-white-bar');
+        accuracyBlackBar = document.getElementById('accuracy-black-bar');
         
         // Initialize Canvas
         if (boardElement) {
@@ -195,7 +330,7 @@ const ChessUI = (() => {
                     draggedOccurred = false;
                     return;
                 }
-                if (isWaitingForPC || gameEnded || analysisSnapshot) return;
+                if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
                 const rect = canvas.getBoundingClientRect();
                 const x = event.clientX - rect.left;
                 const y = event.clientY - rect.top;
@@ -317,13 +452,22 @@ const ChessUI = (() => {
             function connectToRoom(roomId, serverUrl = null) {
                 try {
                     pcToggle.checked = false;
+                    const gameModeContainer = document.getElementById('game-mode-container');
+                    if (gameModeContainer) gameModeContainer.style.display = 'none';
                     const diffContainer = document.getElementById('difficulty-container');
                     if (diffContainer) diffContainer.style.display = 'none';
                     const sideContainer = document.getElementById('side-container');
-                    if (sideContainer) sideContainer.style.display = 'none';
+                    if (sideContainer) sideContainer.style.display = '';
+                    
+                    if (networkBtn) {
+                        networkBtn.textContent = `Покинуть комнату (${roomId})`;
+                        networkBtn.classList.add('leave-room-btn');
+                    }
+
+                    const preferredSide = sideSelect ? sideSelect.value : 'random';
                     startNewGame(); 
                     
-                    SocketTransport.init(roomId, serverUrl);
+                    SocketTransport.init(roomId, serverUrl, preferredSide);
                 } catch (e) {
                     console.error('Network Error:', e);
                 }
@@ -332,9 +476,19 @@ const ChessUI = (() => {
             // Настройка красивого HTML модального окна для комнаты
             const networkRoomModal = document.getElementById('network-room-modal');
             const networkRoomInput = document.getElementById('network-room-input');
+            const networkSideSelect = document.getElementById('network-side-select');
             const networkRoomConfirmBtn = document.getElementById('network-room-confirm-btn');
             const networkRoomCancelBtn = document.getElementById('network-room-cancel-btn');
             const networkRoomCloseBtn = document.getElementById('network-room-close-btn');
+
+            if (sideSelect && networkSideSelect) {
+                sideSelect.addEventListener('change', () => {
+                    networkSideSelect.value = sideSelect.value;
+                });
+                networkSideSelect.addEventListener('change', () => {
+                    sideSelect.value = networkSideSelect.value;
+                });
+            }
 
             if (networkRoomModal) {
                 const closeRoomModal = () => {
@@ -420,7 +574,7 @@ const ChessUI = (() => {
             if (initialHash) {
                 console.log('[UI] Auto-connecting to room from URL hash:', initialHash);
                 // Delay slightly to ensure full initialization of other systems
-                setTimeout(() => {
+                safeSetTimeout(() => {
                     connectToRoom(initialHash);
                 }, 100);
             }
@@ -447,17 +601,23 @@ const ChessUI = (() => {
                     drawBtn.style.display = (networkState && networkState.connected && !gameEnded) ? 'block' : 'none';
                 }
                 
-                // Update network button based on state
+                // Update network button and PC mode accessibility based on network state
                 const networkBtn = document.getElementById('network-btn');
-                if (networkBtn) {
-                    if (networkState.connected) {
+                const gameModeContainer = document.getElementById('game-mode-container');
+                const diffContainer = document.getElementById('difficulty-container');
+
+                if (networkState && networkState.connected) {
+                    if (networkBtn) {
                         networkBtn.textContent = `Покинуть комнату${networkState.roomId ? ' (' + networkState.roomId + ')' : ''}`;
                         networkBtn.classList.add('leave-room-btn');
-                    } else {
+                    }
+                } else {
+                    if (networkBtn) {
                         networkBtn.textContent = 'Играть по сети';
                         networkBtn.classList.remove('leave-room-btn');
                     }
                 }
+                updateGameModeControlState();
 
                 if (!networkState || !networkState.connected) {
                     const statusBanner = document.getElementById('network-status-banner');
@@ -467,6 +627,8 @@ const ChessUI = (() => {
                 }
                 
                 updateOpponentAvatar();
+                updateNetworkUiAndTelemetry();
+                updateResignButtonState();
             });
             ChessNetwork.on('move', move => {
                 const timersToUpdate = move.timers ? { ...move.timers } : null;
@@ -528,13 +690,8 @@ const ChessUI = (() => {
                     return;
                 }
                 playerColor = color;
-                if (playerColor === 'w') {
-                    bottomPlayerName.textContent = 'Вы (Белые)';
-                    topPlayerName.textContent = 'Соперник (Черные)';
-                } else {
-                    bottomPlayerName.textContent = 'Вы (Черные)';
-                    topPlayerName.textContent = 'Соперник (Белые)';
-                }
+                bottomPlayerName.textContent = 'Вы';
+                topPlayerName.textContent = 'Соперник';
                 renderBoard();
             });
 
@@ -573,7 +730,7 @@ const ChessUI = (() => {
                         <span class="material-symbols-outlined text-xs">check_circle</span>
                         <span>Соединение восстановлено!</span>
                     `;
-                    setTimeout(() => {
+                    safeSetTimeout(() => {
                         if (statusBanner && statusBanner.classList.contains('bg-success/90')) {
                             statusBanner.classList.add('-translate-y-full');
                         }
@@ -606,6 +763,50 @@ const ChessUI = (() => {
                 } else {
                     alert('Соперник отклонил ничью.');
                     updateStatus();
+                }
+            });
+
+            ChessNetwork.on('opponentPresence', status => {
+                const dot = document.getElementById('opponent-status-dot');
+                if (dot) {
+                    if (status.online) {
+                        dot.classList.remove('offline');
+                        dot.classList.add('online');
+                        dot.style.backgroundColor = '#22c55e';
+                        dot.style.boxShadow = '0 0 8px rgba(34, 197, 94, 0.7)';
+                        dot.title = "Оппонент в игре";
+                    } else {
+                        dot.classList.remove('online');
+                        dot.classList.add('offline');
+                        dot.style.backgroundColor = 'rgba(140, 144, 159, 0.4)';
+                        dot.style.boxShadow = 'none';
+                        dot.title = "Оппонент не в игре";
+                    }
+                }
+            });
+
+            ChessNetwork.on('pingUpdate', data => {
+                const pingVal = document.getElementById('settings-ping-val');
+                const latencyVal = document.getElementById('settings-latency-val');
+                if (pingVal) {
+                    pingVal.textContent = data.ping === 0 ? '< 1 ms' : `${data.ping} ms`;
+                    if (data.ping < 100) {
+                        pingVal.className = "text-xs font-mono text-green-500 font-bold";
+                    } else if (data.ping < 250) {
+                        pingVal.className = "text-xs font-mono text-yellow-500 font-bold";
+                    } else {
+                        pingVal.className = "text-xs font-mono text-error font-bold";
+                    }
+                }
+                if (latencyVal) {
+                    latencyVal.textContent = data.latency === 0 ? '< 1 ms' : `${data.latency} ms`;
+                    if (data.latency < 50) {
+                        latencyVal.className = "text-xs font-mono text-green-500 font-bold";
+                    } else if (data.latency < 125) {
+                        latencyVal.className = "text-xs font-mono text-yellow-500 font-bold";
+                    } else {
+                        latencyVal.className = "text-xs font-mono text-error font-bold";
+                    }
                 }
             });
         }
@@ -688,15 +889,17 @@ const ChessUI = (() => {
         }
         
         pcToggle.addEventListener('change', () => {
-            const isPC = pcToggle.checked;
-            document.getElementById('difficulty-container').style.display = isPC ? '' : 'none';
-            const sideContainer = document.getElementById('side-container');
-            if (sideContainer) {
-                sideContainer.style.display = isPC ? '' : 'none';
-            }
-            topPlayerName.textContent = isPC ? 'Stockfish' : 'Игрок 2';
+            updateGameModeControlState();
             startNewGame(true);
         });
+
+        if (difficultySelect) {
+            difficultySelect.addEventListener('change', () => {
+                if (pcToggle && pcToggle.checked && topPlayerName && !gameEnded) {
+                    topPlayerName.textContent = getStockfishName();
+                }
+            });
+        }
 
         if (sideSelect) {
             sideSelect.addEventListener('change', () => {
@@ -726,28 +929,50 @@ const ChessUI = (() => {
             themeSelect.value = savedBoardTheme;
         }
 
-        // UI Theme Selector (Light / Dark Theme)
+        // UI Theme Selector (System / Dark / Light Theme)
         const uiThemeSelect = document.getElementById('ui-theme-select');
-        if (uiThemeSelect) {
-            uiThemeSelect.addEventListener('change', () => {
-                const uiTheme = uiThemeSelect.value;
-                if (uiTheme === 'dark') {
-                    document.documentElement.classList.add('dark');
-                    if (typeof ChessStorage !== 'undefined') ChessStorage.setUITheme('dark');
-                } else {
-                    document.documentElement.classList.remove('dark');
-                    if (typeof ChessStorage !== 'undefined') ChessStorage.setUITheme('light');
-                }
-            });
 
-            // Restore from localStorage or default to dark
-            const savedTheme = typeof ChessStorage !== 'undefined' ? ChessStorage.getUITheme() : 'dark';
-            uiThemeSelect.value = savedTheme;
-            if (savedTheme === 'dark') {
+        function applyUITheme(themeChoice) {
+            let effectiveTheme = themeChoice;
+            if (themeChoice === 'system') {
+                const isSystemDark = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                effectiveTheme = isSystemDark ? 'dark' : 'light';
+            }
+
+            if (effectiveTheme === 'dark') {
                 document.documentElement.classList.add('dark');
             } else {
                 document.documentElement.classList.remove('dark');
             }
+        }
+
+        if (uiThemeSelect) {
+            uiThemeSelect.addEventListener('change', () => {
+                const chosenTheme = uiThemeSelect.value;
+                if (typeof ChessStorage !== 'undefined') ChessStorage.setUITheme(chosenTheme);
+                applyUITheme(chosenTheme);
+            });
+
+            // Listen for OS system theme changes
+            if (typeof window !== 'undefined' && window.matchMedia) {
+                const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+                const handleSystemChange = () => {
+                    const currentSavedTheme = typeof ChessStorage !== 'undefined' ? ChessStorage.getUITheme('system') : 'system';
+                    if (currentSavedTheme === 'system') {
+                        applyUITheme('system');
+                    }
+                };
+                if (mediaQuery.addEventListener) {
+                    mediaQuery.addEventListener('change', handleSystemChange);
+                } else if (mediaQuery.addListener) {
+                    mediaQuery.addListener(handleSystemChange);
+                }
+            }
+
+            // Restore from localStorage or default to system
+            const savedTheme = typeof ChessStorage !== 'undefined' ? ChessStorage.getUITheme('system') : 'system';
+            uiThemeSelect.value = savedTheme;
+            applyUITheme(savedTheme);
         }
         
         // Mobile Settings Drawer Toggle Event Listeners
@@ -769,7 +994,7 @@ const ChessUI = (() => {
             const closeDrawer = () => {
                 sidebarDrawer.classList.add('-translate-x-full');
                 sidebarBackdrop.classList.remove('active');
-                setTimeout(() => {
+                safeSetTimeout(() => {
                     if (!sidebarBackdrop.classList.contains('active')) {
                         sidebarBackdrop.classList.add('hidden');
                     }
@@ -913,18 +1138,16 @@ const ChessUI = (() => {
 
         // Tab switching logic for Right Panel
         const tabBtnNotation = document.getElementById('tab-btn-notation');
-        const tabBtnStats = document.getElementById('tab-btn-stats');
         const tabBtnAnalysis = document.getElementById('tab-btn-analysis');
         const tabBtnChat = document.getElementById('tab-btn-chat');
         
         const tabContentNotation = document.getElementById('tab-content-notation');
-        const tabContentStats = document.getElementById('tab-content-stats');
         const tabContentAnalysis = document.getElementById('tab-content-analysis');
         const tabContentChat = document.getElementById('tab-content-chat');
         
         switchTab = function(activeTab) {
-            const btns = [tabBtnNotation, tabBtnStats, tabBtnAnalysis, tabBtnChat];
-            const contents = [tabContentNotation, tabContentStats, tabContentAnalysis, tabContentChat];
+            const btns = [tabBtnNotation, tabBtnAnalysis, tabBtnChat];
+            const contents = [tabContentNotation, tabContentAnalysis, tabContentChat];
             
             btns.forEach(btn => {
                 if (btn) {
@@ -942,12 +1165,6 @@ const ChessUI = (() => {
                     tabBtnNotation.classList.remove('border-transparent', 'text-on-surface-variant', 'font-semibold');
                 }
                 if (tabContentNotation) tabContentNotation.classList.remove('hidden');
-            } else if (activeTab === 'stats') {
-                if (tabBtnStats) {
-                    tabBtnStats.classList.add('border-primary', 'text-primary', 'font-bold');
-                    tabBtnStats.classList.remove('border-transparent', 'text-on-surface-variant', 'font-semibold');
-                }
-                if (tabContentStats) tabContentStats.classList.remove('hidden');
             } else if (activeTab === 'analysis') {
                 if (tabBtnAnalysis) {
                     tabBtnAnalysis.classList.add('border-primary', 'text-primary', 'font-bold');
@@ -964,32 +1181,64 @@ const ChessUI = (() => {
         };
         
         if (tabBtnNotation) tabBtnNotation.addEventListener('click', () => switchTab('notation'));
-        if (tabBtnStats) tabBtnStats.addEventListener('click', () => switchTab('stats'));
         if (tabBtnAnalysis) tabBtnAnalysis.addEventListener('click', () => switchTab('analysis'));
         if (tabBtnChat) tabBtnChat.addEventListener('click', () => switchTab('chat'));
         
         // Subscribe to logic changes
-        ChessLogic.subscribe(state => {
+        if (logicUnsubscribe) {
+            logicUnsubscribe();
+            logicUnsubscribe = null;
+        }
+        logicUnsubscribe = ChessLogic.subscribe(state => {
             renderBoard();
             updateStatus(state.status);
             
             // Auto PC move if it's PC's turn
-            if (pcToggle.checked && state.turn !== playerColor && !gameEnded && !isWaitingForPC) {
-                pcMoveTimeoutId = setTimeout(makePCMove, 500);
+            if (pcToggle && pcToggle.checked && state.turn !== playerColor && !gameEnded && !isWaitingForPC && !isWaitingForStart) {
+                if (pcMoveTimeoutId) cancelPendingMove();
+                pcMoveTimeoutId = safeSetTimeout(makePCMove, 500);
             }
         });
 
         // Save/Load feature event listeners
         const saveGameBtn = document.getElementById('save-game-btn');
-        const loadGameBtn = document.getElementById('load-game-btn');
         const saveLoadCloseBtn = document.getElementById('save-load-close-btn');
         const saveLoadModal = document.getElementById('save-load-modal');
         const exportJsonBtn = document.getElementById('export-json-btn');
         const importJsonBtn = document.getElementById('import-json-btn');
         const importFileInput = document.getElementById('import-file-input');
 
+        const saveMenuToggleBtn = document.getElementById('save-menu-toggle-btn');
+        const saveMenuDropdown = document.getElementById('save-menu-dropdown');
+        const saveMenuArrow = document.getElementById('save-menu-arrow');
+
+        if (saveMenuToggleBtn && saveMenuDropdown) {
+            saveMenuToggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isHidden = saveMenuDropdown.classList.contains('hidden');
+                if (isHidden) {
+                    saveMenuDropdown.classList.remove('hidden');
+                    if (saveMenuArrow) saveMenuArrow.style.transform = 'rotate(180deg)';
+                } else {
+                    saveMenuDropdown.classList.add('hidden');
+                    if (saveMenuArrow) saveMenuArrow.style.transform = 'rotate(0deg)';
+                }
+            });
+
+            saveMenuDropdown.addEventListener('click', () => {
+                saveMenuDropdown.classList.add('hidden');
+                if (saveMenuArrow) saveMenuArrow.style.transform = 'rotate(0deg)';
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!saveMenuDropdown.contains(e.target) && e.target !== saveMenuToggleBtn) {
+                    saveMenuDropdown.classList.add('hidden');
+                    if (saveMenuArrow) saveMenuArrow.style.transform = 'rotate(0deg)';
+                }
+            });
+        }
+
         if (saveGameBtn) saveGameBtn.addEventListener('click', openSaveLoadModal);
-        if (loadGameBtn) loadGameBtn.addEventListener('click', openSaveLoadModal);
         if (saveLoadCloseBtn) saveLoadCloseBtn.addEventListener('click', closeSaveLoadModal);
         if (saveLoadModal) {
             saveLoadModal.addEventListener('click', (e) => {
@@ -1018,8 +1267,108 @@ const ChessUI = (() => {
             }
         }
 
+        initDraggableSwitches();
         updateTheme();
+        updateGameModeControlState();
         startNewGame();
+    }
+
+    function initDraggableSwitches() {
+        const switches = document.querySelectorAll('.switch');
+        switches.forEach(switchEl => {
+            const checkbox = switchEl.querySelector('input[type="checkbox"]');
+            const slider = switchEl.querySelector('.slider');
+            if (!checkbox || !slider) return;
+
+            let isDragging = false;
+            let startX = 0;
+            let startChecked = false;
+            const maxDrag = 24; // Slider width (48) - thumb width (18) - left/right gap (3*2) = 24
+
+            let thumb = slider.querySelector('.thumb');
+            if (!thumb) return;
+
+            const getClientX = (e) => {
+                return e.touches ? e.touches[0].clientX : e.clientX;
+            };
+
+            const handleStart = (e) => {
+                isDragging = true;
+                startX = getClientX(e);
+                startChecked = checkbox.checked;
+                thumb.style.transition = 'none';
+                slider.style.transition = 'none';
+            };
+
+            const handleMove = (e) => {
+                if (!isDragging) return;
+                const clientX = getClientX(e);
+                let delta = clientX - startX;
+                
+                let currentTranslation = startChecked ? maxDrag : 0;
+                let targetTranslation = currentTranslation + delta;
+                
+                targetTranslation = Math.max(0, Math.min(maxDrag, targetTranslation));
+                
+                thumb.style.transform = `translateX(${targetTranslation}px)`;
+                
+                const ratio = targetTranslation / maxDrag;
+                slider.style.backgroundColor = `color-mix(in srgb, #4d8eff ${ratio * 100}%, #424754)`;
+            };
+
+            const handleEnd = (e) => {
+                if (!isDragging) return;
+                isDragging = false;
+                
+                thumb.style.transition = '';
+                slider.style.transition = '';
+                thumb.style.transform = '';
+                slider.style.backgroundColor = '';
+
+                const clientX = e.changedTouches ? e.changedTouches[0].clientX : getClientX(e);
+                const delta = clientX - startX;
+                
+                if (Math.abs(delta) > 3) {
+                    const currentTranslation = startChecked ? maxDrag : 0;
+                    const finalTranslation = currentTranslation + delta;
+                    const checked = finalTranslation > (maxDrag / 2);
+                    
+                    if (checkbox.checked !== checked) {
+                        checkbox.checked = checked;
+                        checkbox.dispatchEvent(new Event('change'));
+                    }
+                }
+            };
+
+            slider.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                handleStart(e);
+                
+                const onMouseMove = (moveEvent) => handleMove(moveEvent);
+                const onMouseUp = (upEvent) => {
+                    handleEnd(upEvent);
+                    window.removeEventListener('mousemove', onMouseMove);
+                    window.removeEventListener('mouseup', onMouseUp);
+                };
+                window.addEventListener('mousemove', onMouseMove);
+                window.addEventListener('mouseup', onMouseUp);
+            });
+
+            slider.addEventListener('touchstart', (e) => {
+                handleStart(e);
+            }, { passive: true });
+            
+            slider.addEventListener('touchmove', (e) => {
+                handleMove(e);
+            }, { passive: true });
+            
+            slider.addEventListener('touchend', (e) => {
+                handleEnd(e);
+            }, { passive: true });
+        });
+
+        updateAnalysisTabVisibility();
     }
 
     function updateTheme() {
@@ -1034,19 +1383,87 @@ const ChessUI = (() => {
     }
 
     function updateOpponentAvatar() {
-        const opponentAvatarIcon = document.getElementById('opponent-avatar-icon');
         const opponentAvatarContainer = document.getElementById('opponent-avatar-container');
+        if (!opponentAvatarContainer) return;
         
-        if (!opponentAvatarIcon || !opponentAvatarContainer) return;
+        let opponentAvatarImg = document.getElementById('opponent-avatar-img');
+        let opponentAvatarIcon = document.getElementById('opponent-avatar-icon');
         
         const isPC = (pcToggle && pcToggle.checked);
         
         if (isPC) {
-            opponentAvatarIcon.textContent = 'smart_toy';
-            opponentAvatarContainer.className = "w-9 h-9 lg:w-10 lg:h-10 rounded-lg bg-surface-container-highest border border-outline-variant/20 flex items-center justify-center shadow-md";
+            if (!opponentAvatarImg) {
+                opponentAvatarImg = document.createElement('img');
+                opponentAvatarImg.id = 'opponent-avatar-img';
+                opponentAvatarImg.alt = 'Stockfish';
+                opponentAvatarImg.className = 'w-full h-full object-contain rounded-lg';
+                opponentAvatarImg.src = 'images/stockfish.png';
+                opponentAvatarContainer.appendChild(opponentAvatarImg);
+            } else {
+                opponentAvatarImg.src = 'images/stockfish.png';
+                opponentAvatarImg.style.display = 'block';
+            }
+            if (opponentAvatarIcon) opponentAvatarIcon.style.display = 'none';
+            opponentAvatarContainer.className = "w-9 h-9 md:w-10 md:h-10 rounded-lg bg-surface-container-highest border border-outline-variant/20 flex items-center justify-center shadow-md overflow-hidden p-0.5";
         } else {
-            opponentAvatarIcon.textContent = 'person';
-            opponentAvatarContainer.className = "w-9 h-9 lg:w-10 lg:h-10 rounded-lg bg-primary-container/20 border border-primary/20 flex items-center justify-center shadow-md";
+            if (opponentAvatarImg) opponentAvatarImg.style.display = 'none';
+            if (opponentAvatarIcon) {
+                opponentAvatarIcon.style.display = 'block';
+                opponentAvatarIcon.textContent = 'person';
+            }
+            opponentAvatarContainer.className = "w-9 h-9 md:w-10 md:h-10 rounded-lg bg-primary-container/20 border border-primary/20 flex items-center justify-center shadow-md";
+        }
+    }
+
+    function updateNetworkUiAndTelemetry() {
+        const dot = document.getElementById('opponent-status-dot');
+        const telemetry = document.getElementById('settings-network-telemetry');
+        const isNetworkGame = networkState && networkState.connected;
+        
+        if (dot) {
+            dot.style.display = isNetworkGame ? 'inline-block' : 'none';
+            if (!isNetworkGame) {
+                dot.classList.remove('online');
+                dot.classList.add('offline');
+                dot.style.backgroundColor = 'rgba(140, 144, 159, 0.4)';
+                dot.style.boxShadow = 'none';
+                dot.title = "Оппонент не в игре";
+            }
+        }
+        if (telemetry) {
+            telemetry.style.display = isNetworkGame ? 'block' : 'none';
+            if (!isNetworkGame) {
+                const pingVal = document.getElementById('settings-ping-val');
+                const latencyVal = document.getElementById('settings-latency-val');
+                if (pingVal) {
+                    pingVal.textContent = '— ms';
+                    pingVal.className = "text-xs font-mono text-primary font-bold";
+                }
+                if (latencyVal) {
+                    latencyVal.textContent = '— ms';
+                    latencyVal.className = "text-xs font-mono text-primary font-bold";
+                }
+            }
+        }
+    }
+
+    function updateResignButtonState() {
+        const resignBtn = document.getElementById('resign-btn');
+        if (!resignBtn) return;
+        
+        if (gameEnded) {
+            resignBtn.style.display = 'none';
+            return;
+        }
+        
+        const isNetwork = networkState && networkState.connected;
+        const isPC = pcToggle && pcToggle.checked;
+        
+        // Hide in local two-player game on the same device
+        if (!isNetwork && !isPC) {
+            resignBtn.style.display = 'none';
+        } else {
+            resignBtn.style.display = 'block';
         }
     }
 
@@ -1097,7 +1514,8 @@ const ChessUI = (() => {
         }
     }
 
-    function startNewGame(isAutomatic = false) {
+    function startNewGame(isAutomatic = true) {
+        currentAnalysisSessionId++;
         resetDrawButton();
         const gameOverModal = document.getElementById('game-over-modal');
         if (gameOverModal) gameOverModal.style.display = 'none';
@@ -1106,7 +1524,7 @@ const ChessUI = (() => {
         moveCount = 1;
         stateHistory = [];
         hasPlayedLowTimeWarning = false;
-        if (pcMoveTimeoutId) clearTimeout(pcMoveTimeoutId);
+        clearPendingTimers();
         historyListElement.innerHTML = '';
         
         const chatMessages = document.getElementById('chat-messages');
@@ -1121,19 +1539,15 @@ const ChessUI = (() => {
         lastMove = null;
         if (animationLayer) animationLayer.innerHTML = '';
         hideAnalysis();
+        updateAnalysisTabVisibility();
         capturedByWhite = [];
         capturedByBlack = [];
         
         // Reset accuracies stats
-        const statsWhiteText = document.getElementById('stats-white-accuracy-text');
-        const statsWhiteBar = document.getElementById('stats-white-accuracy-bar');
-        const statsBlackText = document.getElementById('stats-black-accuracy-text');
-        const statsBlackBar = document.getElementById('stats-black-accuracy-bar');
-        
-        if (statsWhiteText) statsWhiteText.textContent = `--%`;
-        if (statsWhiteBar) statsWhiteBar.style.width = `0%`;
-        if (statsBlackText) statsBlackText.textContent = `--%`;
-        if (statsBlackBar) statsBlackBar.style.width = `0%`;
+        if (accuracyBarContainer) accuracyBarContainer.style.display = 'none';
+        if (accuracyWhiteBar) accuracyWhiteBar.style.height = '50%';
+        if (accuracyBlackBar) accuracyBlackBar.style.height = '50%';
+        safeSetTimeout(renderBoard, 0);
         
         if (switchTab) switchTab('notation');
         updateCapturesDisplay();
@@ -1141,7 +1555,7 @@ const ChessUI = (() => {
         document.getElementById('top-accuracy').style.display = 'none';
         document.getElementById('bottom-accuracy').style.display = 'none';
 
-        if (document.getElementById('resign-btn')) document.getElementById('resign-btn').disabled = false;
+        updateResignButtonState();
         if (document.getElementById('draw-btn')) {
             const drawBtn = document.getElementById('draw-btn');
             drawBtn.disabled = false;
@@ -1160,16 +1574,23 @@ const ChessUI = (() => {
                 playerColor = Math.random() < 0.5 ? 'w' : 'b';
             }
             pcColor = playerColor === 'w' ? 'b' : 'w';
-            bottomPlayerName.textContent = playerColor === 'w' ? 'Вы (Белые)' : 'Вы (Черные)';
-            topPlayerName.textContent = 'Stockfish';
+            bottomPlayerName.textContent = 'Вы';
+            topPlayerName.textContent = getStockfishName();
         } else if (networkState && networkState.connected) {
-            bottomPlayerName.textContent = playerColor === 'w' ? 'Вы (Белые)' : 'Вы (Черные)';
-            topPlayerName.textContent = playerColor === 'w' ? 'Соперник (Черные)' : 'Соперник (Белые)';
+            bottomPlayerName.textContent = 'Вы';
+            topPlayerName.textContent = 'Соперник';
         } else {
-            playerColor = 'w';
-            pcColor = 'b';
-            bottomPlayerName.textContent = 'Белые';
-            topPlayerName.textContent = 'Черные';
+            const chosenSide = sideSelect ? sideSelect.value : 'random';
+            if (chosenSide === 'w') {
+                playerColor = 'w';
+            } else if (chosenSide === 'b') {
+                playerColor = 'b';
+            } else {
+                playerColor = Math.random() < 0.5 ? 'w' : 'b';
+            }
+            pcColor = playerColor === 'w' ? 'b' : 'w';
+            bottomPlayerName.textContent = playerColor === 'w' ? 'Белые' : 'Черные';
+            topPlayerName.textContent = playerColor === 'w' ? 'Черные' : 'Белые';
         }
 
         // Timers
@@ -1195,19 +1616,30 @@ const ChessUI = (() => {
         renderBoard();
         syncNetworkState();
 
-        if (pcToggle.checked && pcColor === 'w') {
-            if (isAutomatic) {
-                isWaitingForStart = true;
-                isWaitingForPC = true;
-                statusElement.textContent = 'Нажмите "Новая игра" для начала';
-            } else {
-                isWaitingForStart = false;
-                isWaitingForPC = true;
-                statusElement.textContent = 'ПК думает...';
-                pcMoveTimeoutId = setTimeout(makePCMove, 600);
-            }
+        if (isAutomatic) {
+            isWaitingForStart = true;
+            isWaitingForPC = false;
+            statusElement.textContent = 'Нажмите "Новая игра" для начала';
+            gameInfoElement.textContent = (pcToggle && pcToggle.checked) ? 'Чтобы начать игру против ПК' : 'Чтобы начать партию';
         } else {
             isWaitingForStart = false;
+            if (pcToggle && pcToggle.checked) {
+                if (pcColor === 'w') {
+                    isWaitingForPC = true;
+                    statusElement.textContent = 'ПК думает...';
+                    gameInfoElement.textContent = 'Ход ПК';
+                    if (pcMoveTimeoutId) cancelPendingMove();
+                    pcMoveTimeoutId = safeSetTimeout(makePCMove, 600);
+                } else {
+                    isWaitingForPC = false;
+                    statusElement.textContent = 'Ход Белых';
+                    gameInfoElement.textContent = 'Игра продолжается';
+                }
+            } else {
+                isWaitingForPC = false;
+                statusElement.textContent = 'Ход Белых';
+                gameInfoElement.textContent = 'Игра продолжается';
+            }
         }
         
         updateOpponentAvatar();
@@ -1236,12 +1668,19 @@ const ChessUI = (() => {
         const turn = ChessLogic.getTurn();
         const isMyTurn = turn === playerColor;
 
+        const oppCard = document.getElementById('opponent-card');
+        const playerCard = document.getElementById('player-card');
+
         if (isMyTurn) {
             bottomTimerContainer.classList.add('active');
             topTimerContainer.classList.remove('active');
+            if (playerCard) playerCard.classList.add('glow-turn');
+            if (oppCard) oppCard.classList.remove('glow-turn');
         } else {
             topTimerContainer.classList.add('active');
             bottomTimerContainer.classList.remove('active');
+            if (oppCard) oppCard.classList.add('glow-turn');
+            if (playerCard) playerCard.classList.remove('glow-turn');
         }
 
         const myTimeLeft = playerColor === 'w' ? whiteTimeLeft : blackTimeLeft;
@@ -1319,6 +1758,7 @@ const ChessUI = (() => {
     function finishGame(reason = null, loserColor = null) {
         resetDrawButton();
         gameEnded = true;
+        clearPendingTimers();
         stopTimer();
         suggestedMove = null;
 
@@ -1389,10 +1829,12 @@ const ChessUI = (() => {
             analysisBtn.style.display = 'block';
         }
 
-        if (document.getElementById('resign-btn')) document.getElementById('resign-btn').disabled = true;
+        updateResignButtonState();
         if (document.getElementById('draw-btn')) document.getElementById('draw-btn').disabled = true;
         if (document.getElementById('undo-btn')) document.getElementById('undo-btn').disabled = true;
         updateHintButtonState();
+        updateAnalysisTabVisibility();
+        startAutomaticBackgroundAnalysis();
     }
 
     function showGameOverModal(title, reason, icon = '🏆') {
@@ -1414,10 +1856,11 @@ const ChessUI = (() => {
         
         // Resize canvas to match boardElement size
         const size = boardElement.clientWidth;
-        if (size > 0 && (canvas.width !== size || canvas.height !== size)) {
-            const dpr = window.devicePixelRatio || 1;
-            canvas.width = size * dpr;
-            canvas.height = size * dpr;
+        const dpr = window.devicePixelRatio || 1;
+        const expectedWidth = Math.round(size * dpr);
+        if (size > 0 && (canvas.width !== expectedWidth || canvas.height !== expectedWidth)) {
+            canvas.width = expectedWidth;
+            canvas.height = expectedWidth;
             canvas.style.width = `${size}px`;
             canvas.style.height = `${size}px`;
             ctx.scale(dpr, dpr);
@@ -1451,7 +1894,7 @@ const ChessUI = (() => {
                 
                 // Selected Square Highlight
                 if (selectedSquare && selectedSquare.row === r && selectedSquare.col === c) {
-                    ctx.fillStyle = 'rgba(255, 255, 0, 0.4)';
+                    ctx.fillStyle = 'rgba(34, 139, 34, 0.65)';
                     ctx.fillRect(x, y, squareSize, squareSize);
                 }
                 
@@ -1485,11 +1928,50 @@ const ChessUI = (() => {
                 }
                 
                 // Hover square overlay
-                if (hoverSquare && hoverSquare.row === r && hoverSquare.col === c && !isWaitingForPC && !gameEnded && !analysisSnapshot) {
+                if (hoverSquare && hoverSquare.row === r && hoverSquare.col === c && !isWaitingForPC && !isWaitingForStart && !gameEnded && !analysisSnapshot) {
                     ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
                     ctx.fillRect(x, y, squareSize, squareSize);
                 }
             }
+        }
+        
+        // 1.5 Draw Legal Moves Dots
+        if (selectedSquare) {
+            const dests = [];
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (ChessLogic.isValidMove(selectedSquare.row, selectedSquare.col, r, c)) {
+                        dests.push({ row: r, col: c });
+                    }
+                }
+            }
+            dests.forEach(dest => {
+                const displayRow = flipped ? 7 - dest.row : dest.row;
+                const displayCol = flipped ? 7 - dest.col : dest.col;
+                
+                const x = displayCol * squareSize;
+                const y = displayRow * squareSize;
+                
+                const centerX = x + squareSize / 2;
+                const centerY = y + squareSize / 2;
+                
+                ctx.save();
+                ctx.fillStyle = 'rgba(34, 139, 34, 0.6)';
+                ctx.strokeStyle = 'rgba(34, 139, 34, 0.6)';
+                
+                const pieceOnDest = board[dest.row][dest.col];
+                if (pieceOnDest) {
+                    ctx.lineWidth = Math.max(2, squareSize * 0.08);
+                    ctx.beginPath();
+                    ctx.arc(centerX, centerY, squareSize * 0.4, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(centerX, centerY, squareSize * 0.15, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            });
         }
         
         // 2. Draw Coordinates & Pieces
@@ -1521,7 +2003,7 @@ const ChessUI = (() => {
                 if (piece) {
                     const isDraggingThis = isDragging && dragStartSquare && dragStartSquare.row === r && dragStartSquare.col === c;
                     const isBlack = piece === piece.toLowerCase();
-                    const isHovered = hoverSquare && hoverSquare.row === r && hoverSquare.col === c && !isWaitingForPC && !gameEnded && !analysisSnapshot && !isDragging;
+                    const isHovered = hoverSquare && hoverSquare.row === r && hoverSquare.col === c && !isWaitingForPC && !isWaitingForStart && !gameEnded && !analysisSnapshot && !isDragging;
                     
                     ctx.save();
                     if (isDraggingThis) {
@@ -1544,25 +2026,46 @@ const ChessUI = (() => {
                     ctx.translate(x + squareSize / 2, y + squareSize / 2 + floatY);
                     ctx.scale(scale, scale);
                     
-                    // Font size based on cqw equivalent: ~75% of square size
-                    const fontSize = squareSize * 0.75;
-                    ctx.font = `${fontSize}px Outfit, "Arial Unicode MS", sans-serif`;
+                    initPieceImages();
+                    const img = pieceImages[piece];
+                    let drewImage = false;
+                    if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+                        try {
+                            const pieceSize = squareSize * 0.92;
+                            ctx.drawImage(
+                                img,
+                                -pieceSize / 2,
+                                -pieceSize / 2,
+                                pieceSize,
+                                pieceSize
+                            );
+                            drewImage = true;
+                        } catch (e) {
+                            drewImage = false;
+                        }
+                    }
                     
-                    const text = PIECE_UNICODE[piece];
-                    
-                    // Render outlines & fill
-                    if (isBlack) {
-                        ctx.fillStyle = '#0d0d0d';
-                        ctx.strokeStyle = '#ffffff';
-                        ctx.lineWidth = Math.max(1.5, squareSize / 30);
-                        ctx.strokeText(text, 0, 0);
-                        ctx.fillText(text, 0, 0);
-                    } else {
-                        ctx.fillStyle = '#ffffff';
-                        ctx.strokeStyle = '#000000';
-                        ctx.lineWidth = Math.max(1.5, squareSize / 30);
-                        ctx.strokeText(text, 0, 0);
-                        ctx.fillText(text, 0, 0);
+                    if (!drewImage) {
+                        // Font size based on cqw equivalent: ~75% of square size
+                        const fontSize = squareSize * 0.75;
+                        ctx.font = `${fontSize}px Outfit, "Arial Unicode MS", sans-serif`;
+                        
+                        const text = PIECE_UNICODE[piece];
+                        
+                        // Render outlines & fill
+                        if (isBlack) {
+                            ctx.fillStyle = '#0d0d0d';
+                            ctx.strokeStyle = '#ffffff';
+                            ctx.lineWidth = Math.max(1.5, squareSize / 30);
+                            ctx.strokeText(text, 0, 0);
+                            ctx.fillText(text, 0, 0);
+                        } else {
+                            ctx.fillStyle = '#ffffff';
+                            ctx.strokeStyle = '#000000';
+                            ctx.lineWidth = Math.max(1.5, squareSize / 30);
+                            ctx.strokeText(text, 0, 0);
+                            ctx.fillText(text, 0, 0);
+                        }
                     }
                     
                     ctx.restore();
@@ -1586,24 +2089,45 @@ const ChessUI = (() => {
             // Scale dragged piece slightly larger for a premium "picked up" feel
             ctx.scale(1.2, 1.2);
             
-            const fontSize = squareSize * 0.75;
-            ctx.font = `${fontSize}px Outfit, "Arial Unicode MS", sans-serif`;
+            initPieceImages();
+            const img = pieceImages[draggedPiece];
+            let drewImage = false;
+            if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+                try {
+                    const pieceSize = squareSize * 0.92;
+                    ctx.drawImage(
+                        img,
+                        -pieceSize / 2,
+                        -pieceSize / 2,
+                        pieceSize,
+                        pieceSize
+                    );
+                    drewImage = true;
+                } catch (e) {
+                    drewImage = false;
+                }
+            }
             
-            const text = PIECE_UNICODE[draggedPiece];
-            const isBlack = draggedPiece === draggedPiece.toLowerCase();
-            
-            if (isBlack) {
-                ctx.fillStyle = '#0d0d0d';
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = Math.max(1.5, squareSize / 30);
-                ctx.strokeText(text, 0, 0);
-                ctx.fillText(text, 0, 0);
-            } else {
-                ctx.fillStyle = '#ffffff';
-                ctx.strokeStyle = '#000000';
-                ctx.lineWidth = Math.max(1.5, squareSize / 30);
-                ctx.strokeText(text, 0, 0);
-                ctx.fillText(text, 0, 0);
+            if (!drewImage) {
+                const fontSize = squareSize * 0.75;
+                ctx.font = `${fontSize}px Outfit, "Arial Unicode MS", sans-serif`;
+                
+                const text = PIECE_UNICODE[draggedPiece];
+                const isBlack = draggedPiece === draggedPiece.toLowerCase();
+                
+                if (isBlack) {
+                    ctx.fillStyle = '#0d0d0d';
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = Math.max(1.5, squareSize / 30);
+                    ctx.strokeText(text, 0, 0);
+                    ctx.fillText(text, 0, 0);
+                } else {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = Math.max(1.5, squareSize / 30);
+                    ctx.strokeText(text, 0, 0);
+                    ctx.fillText(text, 0, 0);
+                }
             }
             
             ctx.restore();
@@ -1613,6 +2137,8 @@ const ChessUI = (() => {
     }
 
     function executeMove(fromRow, fromCol, toRow, toCol, isRemote = false) {
+        if (gameEnded || analysisSnapshot) return false;
+        if (!isRemote && isWaitingForStart) return false;
         const previousLastMove = lastMove ? { ...lastMove } : null;
         stateHistory.push({
             boardState: ChessLogic.getState(),
@@ -1695,7 +2221,7 @@ const ChessUI = (() => {
     }
 
     function isDraggingPiece(clientX, clientY) {
-        if (isWaitingForPC || gameEnded || analysisSnapshot) return false;
+        if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return false;
         const rect = canvas.getBoundingClientRect();
         const x = clientX - rect.left;
         const y = clientY - rect.top;
@@ -1723,7 +2249,7 @@ const ChessUI = (() => {
     }
 
     function handleMousedown(clientX, clientY) {
-        if (isWaitingForPC || gameEnded || analysisSnapshot) return;
+        if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
         const rect = canvas.getBoundingClientRect();
         const x = clientX - rect.left;
         const y = clientY - rect.top;
@@ -1763,7 +2289,22 @@ const ChessUI = (() => {
         }
     }
 
+    let mousemoveRafId = null;
+    let pendingMouseX = 0;
+    let pendingMouseY = 0;
+
     function handleMousemove(clientX, clientY) {
+        pendingMouseX = clientX;
+        pendingMouseY = clientY;
+        if (mousemoveRafId) return;
+
+        mousemoveRafId = requestAnimationFrame(() => {
+            mousemoveRafId = null;
+            processMousemove(pendingMouseX, pendingMouseY);
+        });
+    }
+
+    function processMousemove(clientX, clientY) {
         const rect = canvas.getBoundingClientRect();
         const x = clientX - rect.left;
         const y = clientY - rect.top;
@@ -1787,7 +2328,7 @@ const ChessUI = (() => {
             }
             renderBoard();
         } else {
-            if (isWaitingForPC || gameEnded || analysisSnapshot) {
+            if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) {
                 if (hoverSquare) {
                     hoverSquare = null;
                     renderBoard();
@@ -1810,7 +2351,7 @@ const ChessUI = (() => {
     }
 
     function handleMouseup(clientX, clientY) {
-        if (isWaitingForPC || gameEnded || analysisSnapshot) return;
+        if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
         const rect = canvas.getBoundingClientRect();
         const x = clientX - rect.left;
         const y = clientY - rect.top;
@@ -1855,6 +2396,7 @@ const ChessUI = (() => {
     }
 
     function handleSquareClick(row, col) {
+        if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
         const currentTurn = ChessLogic.getTurn();
 
         if ((pcToggle.checked || (networkState && networkState.connected)) && currentTurn !== playerColor) return;
@@ -1897,8 +2439,8 @@ const ChessUI = (() => {
     }
 
     function applyPCMove(bestMove) {
+        isWaitingForPC = false;
         if (!bestMove || gameEnded) {
-            isWaitingForPC = false;
             renderBoard();
             return;
         }
@@ -1909,11 +2451,11 @@ const ChessUI = (() => {
         const toC = bestMove.toC !== undefined ? bestMove.toC : bestMove.toCol;
 
         executeMove(fromR, fromC, toR, toC);
-        isWaitingForPC = false;
         renderBoard();
     }
 
     function makePCMove() {
+        pcMoveTimeoutId = null;
         if (gameEnded) return;
         
         const difficulty = difficultySelect.value;
@@ -1925,13 +2467,16 @@ const ChessUI = (() => {
         
         const topPlayerName = document.getElementById('top-player-name');
         if (topPlayerName) {
-            topPlayerName.textContent = 'Stockfish';
+            topPlayerName.textContent = getStockfishName();
         }
 
         const fen = ChessLogic.getFen();
+        const history = (typeof ChessLogic.getGameHistory === 'function')
+            ? ChessLogic.getGameHistory().map(h => h && h.fen).filter(Boolean)
+            : [];
 
         if (typeof ChessAIManager !== 'undefined') {
-            ChessAIManager.getBestMove(fen, difficulty).then(bestMove => {
+            ChessAIManager.getBestMove(fen, difficulty, history).then(bestMove => {
                 if (gameEnded) return;
                 applyPCMove(bestMove);
             }).catch(err => {
@@ -2002,6 +2547,14 @@ const ChessUI = (() => {
     }
 
     function updateStatus(gameStatus = null) {
+        if (isWaitingForStart) {
+            statusElement.textContent = 'Нажмите "Новая игра" для начала';
+            gameInfoElement.textContent = (pcToggle && pcToggle.checked) ? 'Чтобы начать игру против ПК' : 'Чтобы начать партию';
+            updateTimerDisplays();
+            updateHintButtonState();
+            return;
+        }
+
         if (gameEnded) {
             const turn = ChessLogic.getTurn();
             const moveColor = turn === 'w' ? 'Белых' : 'Черных';
@@ -2068,7 +2621,7 @@ const ChessUI = (() => {
 
         const isPlayerTurn = ChessLogic.getTurn() === playerColor;
         const isPlayerVsPC = pcToggle.checked;
-        const canGetHint = isPlayerVsPC && isPlayerTurn && !gameEnded && !isWaitingForPC && !isCalculatingHint;
+        const canGetHint = isPlayerVsPC && isPlayerTurn && !gameEnded && !isWaitingForPC && !isWaitingForStart && !isCalculatingHint;
 
         if (canGetHint) {
             hintBtn.disabled = false;
@@ -2082,7 +2635,7 @@ const ChessUI = (() => {
     }
 
     function getHint() {
-        if (gameEnded || isWaitingForPC || isCalculatingHint) return;
+        if (gameEnded || isWaitingForPC || isWaitingForStart || isCalculatingHint) return;
         
         // Only allowed in player-vs-AI mode
         if (!pcToggle.checked) return;
@@ -2148,10 +2701,7 @@ const ChessUI = (() => {
     // Removed checkGameEnd as it is now handled by updateStatus
 
     function performUndo(levels) {
-        if (pcMoveTimeoutId) {
-            clearTimeout(pcMoveTimeoutId);
-            isWaitingForPC = false;
-        }
+        cancelPendingMove();
 
         if (stateHistory.length < levels) levels = stateHistory.length;
         if (levels === 0) return;
@@ -2211,6 +2761,21 @@ const ChessUI = (() => {
         }
     }
 
+    function updateAnalysisTabVisibility() {
+        const tabBtnAnalysis = document.getElementById('tab-btn-analysis');
+        if (!tabBtnAnalysis) return;
+        
+        if (gameEnded) {
+            tabBtnAnalysis.style.display = '';
+        } else {
+            tabBtnAnalysis.style.display = 'none';
+            const tabContentAnalysis = document.getElementById('tab-content-analysis');
+            if (tabContentAnalysis && !tabContentAnalysis.classList.contains('hidden')) {
+                if (typeof switchTab === 'function') switchTab('notation');
+            }
+        }
+    }
+
     function hideAnalysis() {
         if (analysisPanel) analysisPanel.style.display = 'none';
         if (analysisList) analysisList.innerHTML = '';
@@ -2224,6 +2789,7 @@ const ChessUI = (() => {
         if (typeof AnalysisManager !== 'undefined' && typeof AnalysisManager.stopAnalysis === 'function') {
             AnalysisManager.stopAnalysis();
         }
+        updateAnalysisTabVisibility();
     }
 
     function startAnalysis() {
@@ -2246,8 +2812,10 @@ const ChessUI = (() => {
         }
 
         const history = ChessLogic.getGameHistory();
+        const sessionId = currentAnalysisSessionId;
         
         AnalysisManager.analyzeGame(history, (current, total) => {
+            if (sessionId !== currentAnalysisSessionId) return;
             const progress = (current / total) * 100;
             if (analysisProgress) analysisProgress.innerHTML = `
                 <div class="w-full bg-surface-container-highest rounded overflow-hidden mt-1" style="height: 4px;">
@@ -2256,11 +2824,68 @@ const ChessUI = (() => {
                 <div style="text-align: right; margin-top: 2px;">${Math.round(progress)}%</div>
             `;
         }, (stats) => {
+            if (sessionId !== currentAnalysisSessionId) return;
             if (analysisProgress) analysisProgress.textContent = 'Анализ завершен!';
             analysisResults = stats.moves;
             renderAnalysisList();
             displayAccuracyStats(stats);
         });
+    }
+
+    function startAutomaticBackgroundAnalysis() {
+        if (isFileProtocol) return;
+        
+        const history = ChessLogic.getGameHistory();
+        if (history.length === 0) return;
+
+        // Reset and show accuracy bar container with loading state
+        if (accuracyBarContainer) {
+            accuracyBarContainer.style.display = 'flex';
+            accuracyBarContainer.classList.add('animate-pulse');
+        }
+        if (accuracyWhiteBar) {
+            accuracyWhiteBar.style.height = '50%';
+            accuracyWhiteBar.title = 'Вычисляется точность белых...';
+        }
+        if (accuracyBlackBar) {
+            accuracyBlackBar.style.height = '50%';
+            accuracyBlackBar.title = 'Вычисляется точность черных...';
+        }
+        safeSetTimeout(renderBoard, 0);
+
+        if (analysisProgress) analysisProgress.textContent = 'Подготовка к анализу...';
+        if (analysisList) analysisList.innerHTML = '';
+        if (stockfishTip) {
+            stockfishTip.textContent = '';
+            stockfishTip.style.display = 'none';
+        }
+        if (analysisBtn) analysisBtn.style.display = 'none';
+        if (analysisPanel) analysisPanel.style.display = 'block';
+
+        const sessionId = currentAnalysisSessionId;
+        if (typeof AnalysisManager !== 'undefined') {
+            AnalysisManager.analyzeGame(history, (current, total) => {
+                if (sessionId !== currentAnalysisSessionId) return;
+                const progress = (current / total) * 100;
+                if (analysisProgress) {
+                    analysisProgress.innerHTML = `
+                        <div class="w-full bg-surface-container-highest rounded overflow-hidden mt-1" style="height: 4px;">
+                            <div class="bg-primary h-full transition-all duration-300" style="width: ${Math.round(progress)}%;"></div>
+                        </div>
+                        <div style="text-align: right; margin-top: 2px;">Анализ: ${Math.round(progress)}%</div>
+                    `;
+                }
+            }, (stats) => {
+                if (sessionId !== currentAnalysisSessionId) return;
+                if (analysisProgress) analysisProgress.textContent = 'Анализ завершен!';
+                if (accuracyBarContainer) {
+                    accuracyBarContainer.classList.remove('animate-pulse');
+                }
+                analysisResults = stats.moves;
+                renderAnalysisList();
+                displayAccuracyStats(stats);
+            });
+        }
     }
 
     function displayAccuracyStats(stats) {
@@ -2311,16 +2936,28 @@ const ChessUI = (() => {
             bottomAcc.style.display = 'inline-block';
         }
 
-        // Set Bento card accuracies in the Stats panel
-        const statsWhiteText = document.getElementById('stats-white-accuracy-text');
-        const statsWhiteBar = document.getElementById('stats-white-accuracy-bar');
-        const statsBlackText = document.getElementById('stats-black-accuracy-text');
-        const statsBlackBar = document.getElementById('stats-black-accuracy-bar');
-        
-        if (statsWhiteText) statsWhiteText.textContent = `${stats.whiteAccuracy}%`;
-        if (statsWhiteBar) statsWhiteBar.style.width = `${stats.whiteAccuracy}%`;
-        if (statsBlackText) statsBlackText.textContent = `${stats.blackAccuracy}%`;
-        if (statsBlackBar) statsBlackBar.style.width = `${stats.blackAccuracy}%`;
+        let whitePct = 50;
+        let blackPct = 50;
+        if (stats.whiteAccuracy > 0 || stats.blackAccuracy > 0) {
+            const total = stats.whiteAccuracy + stats.blackAccuracy;
+            whitePct = (stats.whiteAccuracy / total) * 100;
+            blackPct = 100 - whitePct;
+        }
+
+        // Show accuracy bar and set heights
+        if (accuracyBarContainer) {
+            accuracyBarContainer.style.display = 'flex';
+            accuracyBarContainer.classList.remove('animate-pulse');
+        }
+        if (accuracyWhiteBar) {
+            accuracyWhiteBar.style.height = whitePct + '%';
+            accuracyWhiteBar.title = `Точность Белых: ${stats.whiteAccuracy}%`;
+        }
+        if (accuracyBlackBar) {
+            accuracyBlackBar.style.height = blackPct + '%';
+            accuracyBlackBar.title = `Точность Черных: ${stats.blackAccuracy}%`;
+        }
+        safeSetTimeout(renderBoard, 0);
     }
 
     function parseUciMove(uci) {
@@ -2377,29 +3014,48 @@ const ChessUI = (() => {
         const result = analysisResults[index];
         if (!result) return;
         
-        ChessLogic.loadFen(result.fen, { keepHistory: true, skipRecord: true });
-        analysisSnapshot = { turn: ChessLogic.getTurn() };
+        const isBadMove = result.qualityClass === 'inaccuracy' || 
+                          result.qualityClass === 'mistake' || 
+                          result.qualityClass === 'blunder';
+        
+        // For inaccuracies/mistakes/blunders, load position BEFORE the move so active turn matches recommended correction move.
+        // For good/best/brilliant moves, load position AFTER the move to show opponent's best response.
+        const fenToLoad = (isBadMove && result.beforeFen) ? result.beforeFen : result.fen;
+        ChessLogic.loadFen(fenToLoad, { keepHistory: true, skipRecord: true });
+        
+        const currentTurn = ChessLogic.getTurn(); // 'w' or 'b'
+        analysisSnapshot = { turn: currentTurn };
+        
         const uiMove = result.move ? convertToUiMove(result.move) : null;
-        lastMove = uiMove;
+        lastMove = (isBadMove && result.beforeFen) ? null : uiMove;
         
         const formatMove = (uci) => {
             if (!uci || uci === '(none)') return '';
             return uci.replace(/([a-h][1-8])([a-h][1-8])/, '$1-$2');
         };
 
-        const isExcellentOrBetter = result.qualityClass === 'best' || 
-                                    result.qualityClass === 'brilliant' || 
-                                    result.qualityClass === 'excellent';
+        const turnLabel = currentTurn === 'w' ? 'Белых' : 'Чёрных';
         
         let tipText = '';
-        if (isExcellentOrBetter) {
-            tipText = '';
-            suggestedMove = (result.nextBestMove && result.nextBestMove !== '(none)') ? parseUciMove(result.nextBestMove) : null;
-        } else {
+        if (isBadMove) {
+            const playedUci = (result.move && result.move.uci) ? formatMove(result.move.uci) : '';
             if (result.bestmove && result.bestmove !== '(none)') {
-                tipText = `Рекомендуемый ход: ${formatMove(result.bestmove)}`;
+                const bestStr = formatMove(result.bestmove);
+                tipText = playedUci 
+                    ? `Вместо ${playedUci} лучшим ходом за ${turnLabel} было: ${bestStr}`
+                    : `Лучший ход за ${turnLabel}: ${bestStr}`;
+                suggestedMove = parseUciMove(result.bestmove);
+            } else {
+                suggestedMove = null;
             }
-            suggestedMove = (result.nextBestMove && result.nextBestMove !== '(none)') ? parseUciMove(result.nextBestMove) : null;
+        } else {
+            if (result.nextBestMove && result.nextBestMove !== '(none)') {
+                const nextBestStr = formatMove(result.nextBestMove);
+                tipText = `Лучший ответ за ${turnLabel}: ${nextBestStr}`;
+                suggestedMove = parseUciMove(result.nextBestMove);
+            } else {
+                suggestedMove = null;
+            }
         }
         
         if (stockfishTip) {
@@ -2407,11 +3063,10 @@ const ChessUI = (() => {
             stockfishTip.style.display = tipText ? 'flex' : 'none';
         }
         
-        selectedSquare = uiMove ? { row: uiMove.fromRow, col: uiMove.fromCol } : null;
+        selectedSquare = (isBadMove && result.beforeFen) ? null : (uiMove ? { row: uiMove.fromRow, col: uiMove.fromCol } : null);
         
+        updateStatus();
         renderBoard();
-        
-        // Highlight selection is handled by lastMove in renderBoard
     }
 
     // --- Save/Load Feature Core Logic ---
@@ -2458,7 +3113,7 @@ const ChessUI = (() => {
             return false;
         }
 
-        if (pcMoveTimeoutId) clearTimeout(pcMoveTimeoutId);
+        clearPendingTimers();
         
         // Restore chess logic state
         const ok = ChessLogic.loadState(saveObj.boardState);
@@ -2466,11 +3121,7 @@ const ChessUI = (() => {
 
         // Restore settings
         pcToggle.checked = saveObj.settings.pcToggle;
-        document.getElementById('difficulty-container').style.display = pcToggle.checked ? '' : 'none';
-        const sideContainer = document.getElementById('side-container');
-        if (sideContainer) {
-            sideContainer.style.display = pcToggle.checked ? '' : 'none';
-        }
+        updateGameModeControlState();
         if (sideSelect && saveObj.settings.chosenSide) {
             sideSelect.value = saveObj.settings.chosenSide;
         }
@@ -2511,8 +3162,10 @@ const ChessUI = (() => {
         lastMove = saveObj.lastMove;
 
         // Resets
+        currentAnalysisSessionId++;
         selectedSquare = null;
         isWaitingForPC = false;
+        isWaitingForStart = false;
         gameEnded = false;
         analysisResults = [];
         selectedAnalysisIndex = null;
@@ -2522,18 +3175,14 @@ const ChessUI = (() => {
         hideAnalysis();
 
         // Reset accuracy UI
-        const statsWhiteText = document.getElementById('stats-white-accuracy-text');
-        const statsWhiteBar = document.getElementById('stats-white-accuracy-bar');
-        const statsBlackText = document.getElementById('stats-black-accuracy-text');
-        const statsBlackBar = document.getElementById('stats-black-accuracy-bar');
-        if (statsWhiteText) statsWhiteText.textContent = `--%`;
-        if (statsWhiteBar) statsWhiteBar.style.width = `0%`;
-        if (statsBlackText) statsBlackText.textContent = `--%`;
-        if (statsBlackBar) statsBlackBar.style.width = `0%`;
+        if (accuracyBarContainer) accuracyBarContainer.style.display = 'none';
+        if (accuracyWhiteBar) accuracyWhiteBar.style.height = '50%';
+        if (accuracyBlackBar) accuracyBlackBar.style.height = '50%';
         document.getElementById('top-accuracy').style.display = 'none';
         document.getElementById('bottom-accuracy').style.display = 'none';
+        safeSetTimeout(renderBoard, 0);
 
-        if (document.getElementById('resign-btn')) document.getElementById('resign-btn').disabled = false;
+        updateResignButtonState();
         if (document.getElementById('draw-btn')) {
             const drawBtn = document.getElementById('draw-btn');
             drawBtn.disabled = false;
@@ -2543,11 +3192,11 @@ const ChessUI = (() => {
 
         // Update player labels
         if (pcToggle.checked) {
-            bottomPlayerName.textContent = playerColor === 'w' ? 'Вы (Белые)' : 'Вы (Черные)';
-            topPlayerName.textContent = 'Stockfish';
+            bottomPlayerName.textContent = 'Вы';
+            topPlayerName.textContent = getStockfishName();
         } else if (networkState && networkState.connected) {
-            bottomPlayerName.textContent = playerColor === 'w' ? 'Вы (Белые)' : 'Вы (Черные)';
-            topPlayerName.textContent = playerColor === 'w' ? 'Соперник (Черные)' : 'Соперник (Белые)';
+            bottomPlayerName.textContent = 'Вы';
+            topPlayerName.textContent = 'Соперник';
         } else {
             bottomPlayerName.textContent = 'Белые';
             topPlayerName.textContent = 'Черные';
@@ -2565,10 +3214,12 @@ const ChessUI = (() => {
         // Trigger AI if it's PC's turn
         if (pcToggle.checked && ChessLogic.getTurn() === pcColor && !gameEnded) {
             isWaitingForPC = true;
-            pcMoveTimeoutId = setTimeout(makePCMove, 600);
+            if (pcMoveTimeoutId) cancelPendingMove();
+            pcMoveTimeoutId = safeSetTimeout(makePCMove, 600);
         }
 
         renderBoard();
+        updateAnalysisTabVisibility();
         return true;
     }
 
@@ -2751,6 +3402,8 @@ const ChessUI = (() => {
 
     return {
         init,
+        clearPendingTimers,
+        cancelPendingMove,
         applyRemoteMove(move) {
             if (move.timers) {
                 whiteTimeLeft = move.timers.white;
