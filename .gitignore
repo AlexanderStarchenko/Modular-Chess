@@ -16,3 +16,5 @@ __pycache__/
 */__pycache__/
 .freebuff/
 stockfish/stockfish-windows-x86-64-universal.exe
+.VSCodeCounter/
+*.pt
