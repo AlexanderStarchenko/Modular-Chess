@@ -9,9 +9,9 @@ const AnalysisManager = (() => {
 
     function initWorker() {
         if (!stockfish) {
-            console.log("[Analysis] Starting Stockfish Worker v44");
+            console.log("[Analysis] Starting Stockfish Worker v56");
             try {
-                stockfish = new Worker('js/stockfish.js?v=44');
+                stockfish = new Worker('js/stockfish.js?v=56');
                 stockfish.onmessage = function(event) {
                     const line = event.data;
                     if (currentTask && typeof currentTask.onMessage === 'function') {

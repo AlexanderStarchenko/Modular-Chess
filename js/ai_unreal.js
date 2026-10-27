@@ -11,7 +11,7 @@ const ChessAIUnreal = (() => {
 
     function init(skillLevel) {
         if (!stockfish) {
-            stockfish = new Worker('js/stockfish.js?v=40');
+            stockfish = new Worker('js/stockfish.js?v=56');
             stockfish.onmessage = function(event) {
                 const line = event.data;
                 if (line.startsWith('bestmove')) {
@@ -59,7 +59,19 @@ const ChessAIUnreal = (() => {
         return { fromR, fromC, toR, toC };
     }
 
-    const API = { getBestMove };
+    function terminate() {
+        if (stockfish) {
+            try {
+                stockfish.terminate();
+            } catch (e) {}
+            stockfish = null;
+            isThinking = false;
+            resolveMove = null;
+            currentSkillLevel = -1;
+        }
+    }
+
+    const API = { getBestMove, terminate };
     if (typeof module !== 'undefined' && module.exports) module.exports = API;
     return API;
 })();

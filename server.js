@@ -62,7 +62,7 @@ app.use(express.static(__dirname, {
     maxAge: '1d',
     dotfiles: 'deny',
     setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.wasm') || filePath.endsWith('.mp3') || filePath.endsWith('.svg')) {
+        if (filePath.endsWith('.wasm') || filePath.endsWith('.mp3') || filePath.endsWith('.svg') || filePath.endsWith('.onnx') || filePath.endsWith('stockfish.js')) {
             res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         }
     }

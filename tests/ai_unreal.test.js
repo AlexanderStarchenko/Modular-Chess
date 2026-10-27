@@ -92,4 +92,26 @@ describe('ChessAIUnreal', () => {
         const move = await IsolatedChessAIUnreal.getBestMove('startpos FEN...', 20, 50);
         expect(move).toBeNull();
     });
+
+    test('terminate should stop active stockfish worker and reset state', async () => {
+        const terminateMock = jest.fn();
+        global.Worker.mockImplementationOnce(function() {
+            return {
+                onmessage: null,
+                postMessage: jest.fn(),
+                terminate: terminateMock
+            };
+        });
+
+        let IsolatedChessAIUnreal;
+        jest.isolateModules(() => {
+            IsolatedChessAIUnreal = require('../js/ai_unreal');
+        });
+
+        // Trigger worker creation
+        IsolatedChessAIUnreal.getBestMove('startpos FEN...', 20, 50);
+        IsolatedChessAIUnreal.terminate();
+
+        expect(terminateMock).toHaveBeenCalled();
+    });
 });

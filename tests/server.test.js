@@ -22,6 +22,12 @@ describe('Server Headers and Static Files', () => {
         expect(response.status).toBe(200);
         expect(response.headers['cross-origin-opener-policy']).toBe('same-origin');
     });
+
+    test('Should have immutable cache headers on heavy static assets (stockfish.js and .onnx)', async () => {
+        const sfRes = await request(app).get('/js/stockfish.js');
+        expect(sfRes.status).toBe(200);
+        expect(sfRes.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    });
 });
 
 describe('Socket.IO Multiplayer Logic', () => {

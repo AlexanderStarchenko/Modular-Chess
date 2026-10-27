@@ -1371,6 +1371,52 @@ const ChessUI = (() => {
         updateAnalysisTabVisibility();
     }
 
+    let cachedThemeColors = null;
+    function refreshThemeColors() {
+        try {
+            const style = getComputedStyle(document.documentElement);
+            cachedThemeColors = {
+                light: style.getPropertyValue('--board-light').trim() || '#f0d9b5',
+                dark: style.getPropertyValue('--board-dark').trim() || '#b58863',
+                coordLight: style.getPropertyValue('--board-coord-light').trim() || '#ffffff',
+                coordDark: style.getPropertyValue('--board-coord-dark').trim() || '#704828'
+            };
+        } catch (e) {
+            cachedThemeColors = {
+                light: '#f0d9b5',
+                dark: '#b58863',
+                coordLight: '#ffffff',
+                coordDark: '#704828'
+            };
+        }
+    }
+
+    let cachedLegalDests = null;
+    let cachedLegalDestsSquare = null;
+    function getLegalDestsForSelectedSquare() {
+        if (!selectedSquare) {
+            cachedLegalDests = null;
+            cachedLegalDestsSquare = null;
+            return [];
+        }
+        if (cachedLegalDests && cachedLegalDestsSquare &&
+            cachedLegalDestsSquare.row === selectedSquare.row &&
+            cachedLegalDestsSquare.col === selectedSquare.col) {
+            return cachedLegalDests;
+        }
+        const dests = [];
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (ChessLogic.isValidMove(selectedSquare.row, selectedSquare.col, r, c)) {
+                    dests.push({ row: r, col: c });
+                }
+            }
+        }
+        cachedLegalDests = dests;
+        cachedLegalDestsSquare = { row: selectedSquare.row, col: selectedSquare.col };
+        return dests;
+    }
+
     function updateTheme() {
         const theme = themeSelect.value;
         const root = document.documentElement;
@@ -1379,6 +1425,7 @@ const ChessUI = (() => {
         root.style.setProperty('--board-coord-light', `var(--${theme}-coord-light)`);
         root.style.setProperty('--board-coord-dark', `var(--${theme}-coord-dark)`);
         if (typeof ChessStorage !== 'undefined') ChessStorage.setBoardTheme(theme);
+        refreshThemeColors();
         renderBoard();
     }
 
@@ -1872,12 +1919,12 @@ const ChessUI = (() => {
         const board = ChessLogic.getBoard();
         const flipped = isFlipped();
         
-        // Read theme colors
-        const style = getComputedStyle(document.documentElement);
-        const lightColor = style.getPropertyValue('--board-light').trim() || '#f0d9b5';
-        const darkColor = style.getPropertyValue('--board-dark').trim() || '#b58863';
-        const coordLight = style.getPropertyValue('--board-coord-light').trim() || '#ffffff';
-        const coordDark = style.getPropertyValue('--board-coord-dark').trim() || '#704828';
+        // Read theme colors from cache (prevents layout thrashing on every frame)
+        if (!cachedThemeColors) refreshThemeColors();
+        const lightColor = cachedThemeColors.light;
+        const darkColor = cachedThemeColors.dark;
+        const coordLight = cachedThemeColors.coordLight;
+        const coordDark = cachedThemeColors.coordDark;
         
         // 1. Draw Squares & Highlights
         for (let ri = 0; ri < 8; ri++) {
@@ -1937,14 +1984,7 @@ const ChessUI = (() => {
         
         // 1.5 Draw Legal Moves Dots
         if (selectedSquare) {
-            const dests = [];
-            for (let r = 0; r < 8; r++) {
-                for (let c = 0; c < 8; c++) {
-                    if (ChessLogic.isValidMove(selectedSquare.row, selectedSquare.col, r, c)) {
-                        dests.push({ row: r, col: c });
-                    }
-                }
-            }
+            const dests = getLegalDestsForSelectedSquare();
             dests.forEach(dest => {
                 const displayRow = flipped ? 7 - dest.row : dest.row;
                 const displayCol = flipped ? 7 - dest.col : dest.col;
@@ -2132,8 +2172,6 @@ const ChessUI = (() => {
             
             ctx.restore();
         }
-        
-        updateStatus();
     }
 
     function executeMove(fromRow, fromCol, toRow, toCol, isRemote = false) {
@@ -2755,8 +2793,11 @@ const ChessUI = (() => {
             gameEnded = false;
             suggestedMove = null;
             
+            cachedLegalDests = null;
+            cachedLegalDestsSquare = null;
             updateCapturesDisplay();
             renderBoard();
+            updateStatus();
             updateTimerDisplays();
         }
     }
