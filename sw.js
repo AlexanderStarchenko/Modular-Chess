@@ -9,7 +9,7 @@ const ASSETS = [
     `js/wasm_loader.js?v=${VERSION}`,
     `js/logic.js?v=${VERSION}`,
     `js/ai_shared.js?v=${VERSION}`,
-    'js/ort.min.js',
+    `js/ort.min.js?v=${VERSION}`,
     `js/ai_neural.js?v=${VERSION}`,
     `js/ai_easy.js?v=${VERSION}`,
     `js/ai_medium.js?v=${VERSION}`,
@@ -27,6 +27,7 @@ const ASSETS = [
     `js/ai_manager.js?v=${VERSION}`,
     `js/ui.js?v=${VERSION}`,
     `js/stockfish.js?v=${VERSION}`,
+    `images/stockfish.png?v=${VERSION}`,
     'build/release.wasm'
 ];
 

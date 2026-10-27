@@ -29,16 +29,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Модульные Шахматы - Grandmaster Pro</title>
-    <!-- Google Fonts for elite design -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Hanken+Grotesk:wght@600;700;800&amp;family=JetBrains+Mono:wght@500;600&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+    <!-- Google Fonts preconnect & optimized icon subset -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Hanken+Grotesk:wght@600;700;800&family=JetBrains+Mono:wght@500;600&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&display=swap" rel="stylesheet">
     <!-- Preload Chess WASM Engine for lightning-fast startup -->
     <link rel="preload" href="build/release.wasm" as="fetch" crossorigin>
     <!-- Optimized compiled stylesheet containing both Tailwind utility classes and custom styling -->
     <link rel="stylesheet" href="css/output.css?v=56">
 </head>
-<body class="bg-background text-on-background font-body-md overflow-x-hidden md:overflow-hidden min-h-screen md:h-screen flex flex-col">
+<body class="bg-background text-on-background font-body-md overflow-x-hidden md:overflow-hidden min-h-screen min-h-dvh md:h-screen md:h-dvh flex flex-col">
     <!-- TopAppBar Component -->
-    <header class="hidden fixed top-0 left-0 w-full h-16 z-50 flex justify-between items-center px-4 lg:px-8 bg-surface-container/60 backdrop-blur-xl border-b border-outline-variant/10">
+    <header class="hidden fixed top-0 left-0 w-full h-16 z-50 flex justify-between items-center px-4 lg:px-8 bg-surface-container/90 border-b border-outline-variant/10">
         <div class="flex items-center gap-3 lg:gap-8">
             <!-- Hamburger Menu Button -->
             <button id="menu-btn" class="lg:hidden p-2 rounded-lg hover:bg-surface-container-high text-on-surface-variant hover:text-primary transition-all cursor-pointer flex items-center justify-center">
@@ -60,9 +62,9 @@
     </header>
 
     <!-- App Layout Container -->
-    <div class="flex flex-1 min-h-0 w-full relative h-screen lg:h-screen">
+    <div class="flex flex-1 min-h-0 w-full relative h-screen h-dvh lg:h-screen lg:h-dvh">
         <!-- Floating Mobile Hamburger Menu Trigger -->
-        <button id="floating-menu-btn" class="lg:hidden fixed top-4 left-4 z-30 p-3 rounded-full bg-surface-container/85 backdrop-blur border border-outline-variant/20 text-on-surface-variant hover:text-primary transition-all cursor-pointer shadow-lg flex items-center justify-center">
+        <button id="floating-menu-btn" class="lg:hidden fixed top-4 left-4 z-30 p-3 rounded-full bg-surface-container-high/95 border border-outline-variant/20 text-on-surface-variant hover:text-primary transition-all cursor-pointer shadow-lg flex items-center justify-center">
             <span class="material-symbols-outlined text-[26px]">menu</span>
         </button>
 
@@ -228,7 +230,7 @@
                     <div id="opponent-card" class="w-full flex justify-between items-center glass-panel p-2.5 md:p-3 rounded-2xl border border-outline-variant/15 shadow-lg transition-all duration-300">
                         <div class="flex items-center gap-3">
                             <div id="opponent-avatar-container" class="w-10 h-10 md:w-11 md:h-11 rounded-xl bg-surface-container-highest border border-outline-variant/20 flex items-center justify-center shadow-md overflow-hidden p-0.5 relative transition-all duration-300">
-                                <img id="opponent-avatar-img" src="images/stockfish.png" alt="Stockfish" class="w-full h-full object-contain rounded-lg">
+                                <img id="opponent-avatar-img" src="images/stockfish.png?v=56" alt="Stockfish" class="w-full h-full object-contain rounded-lg">
                                 <span class="material-symbols-outlined text-primary text-xl" id="opponent-avatar-icon" style="display: none; font-variation-settings: 'FILL' 1;">person</span>
                             </div>
                             <div>
@@ -588,7 +590,7 @@
     <script src="js/wasm_loader.js?v=56" defer></script>
     <script src="js/logic.js?v=56" defer></script>
     <script src="js/ai_shared.js?v=56" defer></script>
-    <script src="js/ort.min.js" defer></script>
+    <script src="js/ort.min.js?v=56" defer></script>
     <script src="js/ai_neural.js?v=56" defer></script>
     <script src="js/ai_easy.js?v=56" defer></script>
     <script src="js/ai_medium.js?v=56" defer></script>
@@ -608,7 +610,7 @@
     <script>
         if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js').catch(err => {
+                navigator.serviceWorker.register('sw.js?v=56').catch(err => {
                     console.warn('[SW] Registration failed:', err);
                 });
             });

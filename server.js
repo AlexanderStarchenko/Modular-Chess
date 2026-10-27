@@ -166,6 +166,18 @@ function startPythonDaemon() {
         }
     });
 
+    pythonDaemon.on('error', (err) => {
+        if (process.env.NODE_ENV !== 'test') {
+            console.warn('[Neural Daemon] Failed to spawn python daemon:', err.message);
+        }
+        pythonDaemon = null;
+        for (const [id, req] of pendingRequests.entries()) {
+            clearTimeout(req.timer);
+            req.reject(new Error(`Python daemon spawn failed: ${err.message}`));
+        }
+        pendingRequests.clear();
+    });
+
     pythonDaemon.on('exit', (code, signal) => {
         if (process.env.NODE_ENV !== 'test') {
             console.warn(`[Neural Daemon] Exited with code ${code}, signal ${signal}. Restarting...`);
