@@ -466,5 +466,42 @@ describe('SocketTransport with WebRTC signaling', () => {
         expect(consoleSpy).toHaveBeenCalledWith('Failed to read Blob as ArrayBuffer:', expect.any(Error));
         consoleSpy.mockRestore();
     });
+
+    test('Should set dataChannel.binaryType to arraybuffer and ignore player-joined when P2P is open', () => {
+        SocketTransport.init('room-123');
+        const socketListeners = {};
+        mockSocket.on.mock.calls.forEach(([event, cb]) => {
+            socketListeners[event] = cb;
+        });
+
+        socketListeners['player-joined']();
+        expect(mockDataChannel.binaryType).toBe('arraybuffer');
+
+        // Mark channel as open
+        mockDataChannel.readyState = 'open';
+        const initialPcCount = global.RTCPeerConnection.mock.calls.length;
+
+        // Spectator joins: player-joined should NOT re-init WebRTC
+        socketListeners['player-joined']();
+        expect(global.RTCPeerConnection.mock.calls.length).toBe(initialPcCount);
+    });
+
+    test('Should sync state with server in background when P2P is open and socket is connected', () => {
+        SocketTransport.init('room-123');
+        const socketListeners = {};
+        mockSocket.on.mock.calls.forEach(([event, cb]) => {
+            socketListeners[event] = cb;
+        });
+        socketListeners['player-joined']();
+
+        mockDataChannel.readyState = 'open';
+        mockSocket.connected = true;
+
+        transportCallbacks.sendState({ board: [] });
+        expect(mockDataChannel.send).toHaveBeenCalled();
+        expect(mockSocket.emit).toHaveBeenCalledWith('chess-sync', expect.objectContaining({
+            roomId: 'room-123'
+        }));
+    });
 });
 

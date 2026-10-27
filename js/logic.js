@@ -12,6 +12,7 @@ var ChessLogic = (() => {
     let positionHistory = {}; // For three-fold repetition
     let enPassantSquare = null; // {row, col}
     let halfMoveClock = 0; // For 50-move rule
+    let initialFullMove = 1;
 
     function initBoard() {
         board = [
@@ -34,8 +35,9 @@ var ChessLogic = (() => {
         positionHistory = {};
         enPassantSquare = null;
         halfMoveClock = 0;
+        initialFullMove = 1;
         recordPosition();
-        notifyChange();
+        notifyChange(checkDrawConditions());
     }
 
     function getBoard() { return board; }
@@ -61,7 +63,8 @@ var ChessLogic = (() => {
             gameHistory: cloneGameHistory(),
             positionHistory: { ...positionHistory },
             enPassantSquare: enPassantSquare ? { ...enPassantSquare } : null,
-            halfMoveClock
+            halfMoveClock,
+            initialFullMove
         };
     }
 
@@ -75,6 +78,7 @@ var ChessLogic = (() => {
         positionHistory = state.positionHistory ? { ...state.positionHistory } : {};
         enPassantSquare = state.enPassantSquare ? { ...state.enPassantSquare } : null;
         halfMoveClock = Number.isFinite(state.halfMoveClock) ? state.halfMoveClock : 0;
+        initialFullMove = Number.isFinite(state.initialFullMove) ? state.initialFullMove : 1;
 
         if (!Object.keys(positionHistory).length) {
             recordPosition();
@@ -123,6 +127,7 @@ var ChessLogic = (() => {
         }
 
         halfMoveClock = parseInt(parts[4]) || 0;
+        initialFullMove = parseInt(parts[5]) || 1;
 
         if (!options.keepHistory) {
             gameHistory = [];
@@ -153,8 +158,9 @@ var ChessLogic = (() => {
         ].join('') || '-';
         
         const ep = enPassantSquare ? String.fromCharCode(97 + enPassantSquare.col) + (8 - enPassantSquare.row) : '-';
+        const fullMove = initialFullMove + Math.floor(gameHistory.length / 2);
         
-        return `${rows.join('/')} ${turn} ${rights} ${ep} ${halfMoveClock} 1`;
+        return `${rows.join('/')} ${turn} ${rights} ${ep} ${halfMoveClock} ${fullMove}`;
     }
 
     function getSimpleFen() {
@@ -162,8 +168,8 @@ var ChessLogic = (() => {
         return parts.slice(0, 4).join(' '); // board, turn, castling, enpassant
     }
 
-    function recordPosition() {
-        const fen = getSimpleFen();
+    function recordPosition(currentSimpleFen = null) {
+        const fen = currentSimpleFen || getSimpleFen();
         positionHistory[fen] = (positionHistory[fen] || 0) + 1;
     }
 
@@ -209,13 +215,14 @@ var ChessLogic = (() => {
         return false;
     }
 
-    function checkDrawConditions() {
+    function checkDrawConditions(simpleFen = null) {
         const legalMoves = getAllLegalMoves(turn);
         if (legalMoves.length === 0) {
             return isKingInCheck(turn) ? 'checkmate' : 'stalemate';
         }
         if (isInsufficientMaterial()) return 'material';
-        if (positionHistory[getSimpleFen()] >= 3) return 'repetition';
+        const key = simpleFen || getSimpleFen();
+        if (positionHistory[key] >= 3) return 'repetition';
         if (halfMoveClock >= 100) return '50moves'; // 100 half-moves = 50 full moves
         return null;
     }
@@ -381,15 +388,58 @@ var ChessLogic = (() => {
         return !check;
     }
 
+    /**
+     * Fast vector-based legal move generator for a given color.
+     * Generates moves along actual piece vectors instead of 64x64 loop.
+     * Correctly handles ignoreTurn=true so moves can be queried for any color.
+     */
     function getAllLegalMoves(color) {
         const moves = [];
+        const isW = color === 'w';
+        const pDir = isW ? -1 : 1;
+        const knightDirs = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+        const slideDirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+
+        const tryAdd = (r, c, tr, tc) => {
+            if (tr >= 0 && tr < 8 && tc >= 0 && tc < 8 && isLegalMove(r, c, tr, tc, true)) {
+                moves.push({ fromR: r, fromC: c, toR: tr, toC: tc });
+            }
+        };
+
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
                 const piece = board[r][c];
-                if (piece && (piece === piece.toUpperCase()) === (color === 'w')) {
-                    for (let tr = 0; tr < 8; tr++) {
-                        for (let tc = 0; tc < 8; tc++) {
-                            if (isLegalMove(r, c, tr, tc)) moves.push({ fromR: r, fromC: c, toR: tr, toC: tc });
+                if (!piece || (piece === piece.toUpperCase()) !== isW) continue;
+                const p = piece.toLowerCase();
+
+                if (p === 'p') {
+                    tryAdd(r, c, r + pDir, c);
+                    if (r === (isW ? 6 : 1)) tryAdd(r, c, r + 2 * pDir, c);
+                    tryAdd(r, c, r + pDir, c - 1);
+                    tryAdd(r, c, r + pDir, c + 1);
+                } else if (p === 'n') {
+                    for (const [dr, dc] of knightDirs) tryAdd(r, c, r + dr, c + dc);
+                } else if (p === 'k') {
+                    for (const [dr, dc] of slideDirs) tryAdd(r, c, r + dr, c + dc);
+                    tryAdd(r, c, r, c + 2);
+                    tryAdd(r, c, r, c - 2);
+                } else {
+                    const startIdx = p === 'b' ? 4 : 0;
+                    const endIdx = p === 'r' ? 4 : 8;
+                    for (let i = startIdx; i < endIdx; i++) {
+                        const [dr, dc] = slideDirs[i];
+                        let tr = r + dr, tc = c + dc;
+                        while (tr >= 0 && tr < 8 && tc >= 0 && tc < 8) {
+                            const target = board[tr][tc];
+                            if (!target) {
+                                if (isLegalMove(r, c, tr, tc, true)) moves.push({ fromR: r, fromC: c, toR: tr, toC: tc });
+                            } else {
+                                if ((target === target.toUpperCase()) !== isW && isLegalMove(r, c, tr, tc, true)) {
+                                    moves.push({ fromR: r, fromC: c, toR: tr, toC: tc });
+                                }
+                                break;
+                            }
+                            tr += dr; tc += dc;
                         }
                     }
                 }
@@ -398,23 +448,26 @@ var ChessLogic = (() => {
         return moves;
     }
 
-    function movePiece(fR, fC, tR, tC) {
+    function movePiece(fR, fC, tR, tC, promotion = 'q') {
         if (isLegalMove(fR, fC, tR, tC)) {
             const beforeFen = boardToFen();
             let piece = board[fR][fC];
             const target = board[tR][tC];
             const isPawn = piece.toLowerCase() === 'p';
+            const isPromo = isPawn && (tR === 0 || tR === 7);
+            const promoChar = (promotion || 'q').toLowerCase();
             
             // 50-move rule reset
             if (isPawn || target) halfMoveClock = 0;
             else halfMoveClock++;
 
-            // Pawn promotion
-            if (isPawn && (tR === 0 || tR === 7)) piece = piece === 'P' ? 'Q' : 'q';
+            // Pawn promotion with selectable piece choice
+            if (isPromo) {
+                piece = (piece === 'P') ? promoChar.toUpperCase() : promoChar;
+            }
             
             // Handle En Passant removal
             if (isPawn && !target && enPassantSquare && tR === enPassantSquare.row && tC === enPassantSquare.col) {
-                // White pawn captures downward (piece was 'P', now 'Q' if promoted — but EP + promotion is impossible)
                 const epR = (piece === piece.toUpperCase()) ? tR + 1 : tR - 1;
                 board[epR][tC] = null;
             }
@@ -441,11 +494,13 @@ var ChessLogic = (() => {
             if (fR === 0 && fC === 7 || tR === 0 && tC === 7) castlingRights.bRookHMoved = true;
             
             turn = turn === 'w' ? 'b' : 'w';
-            recordPosition();
             const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-            const uci = `${files[fC]}${8 - fR}${files[tC]}${8 - tR}`;
-            gameHistory.push({ fen: boardToFen(), beforeFen, move: { fR, fC, tR, tC, uci } });
-            notifyChange(checkDrawConditions());
+            const uci = `${files[fC]}${8 - fR}${files[tC]}${8 - tR}${isPromo ? promoChar : ''}`;
+            const currentFen = boardToFen();
+            const currentSimpleFen = currentFen.split(' ').slice(0, 4).join(' ');
+            recordPosition(currentSimpleFen);
+            gameHistory.push({ fen: currentFen, beforeFen, move: { fR, fC, tR, tC, promotion: isPromo ? promoChar : null, uci } });
+            notifyChange(checkDrawConditions(currentSimpleFen));
             return true;
         }
         return false;

@@ -9,6 +9,12 @@ const SocketTransport = (() => {
     let peerConnection = null;
     let dataChannel = null;
     let pingIntervalId = null;
+    let pendingCandidates = [];
+    let hasConnectedOnce = false;
+
+    function isP2POpen() {
+        return Boolean(dataChannel && dataChannel.readyState === 'open');
+    }
 
     /**
      * Safely parse binary, JSON, or Blob network payloads.
@@ -61,7 +67,17 @@ const SocketTransport = (() => {
         callback(data);
     }
 
+    // Universal control message sending (P2P with fallback to Socket.IO)
+    function sendControl(p2pPayload, socketEvent, socketPayload = {}) {
+        if (isP2POpen()) {
+            dataChannel.send(JSON.stringify(p2pPayload));
+        } else if (socket) {
+            socket.emit(socketEvent, { roomId: currentRoom, ...socketPayload });
+        }
+    }
+
     function closeWebRTC() {
+        pendingCandidates = [];
         if (dataChannel) {
             console.log('[WebRTC] Closing data channel');
             try { dataChannel.close(); } catch(e) {}
@@ -71,6 +87,18 @@ const SocketTransport = (() => {
             console.log('[WebRTC] Closing peer connection');
             try { peerConnection.close(); } catch(e) {}
             peerConnection = null;
+        }
+    }
+
+    async function flushPendingCandidates() {
+        if (!peerConnection || !peerConnection.remoteDescription) return;
+        while (pendingCandidates.length > 0) {
+            const candidate = pendingCandidates.shift();
+            try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (err) {
+                console.warn('[WebRTC] Failed to add queued ICE candidate:', err);
+            }
         }
     }
 
@@ -126,7 +154,8 @@ const SocketTransport = (() => {
         }
     }
 
-    function handleSignalingMessage(signal) {
+    async function handleSignalingMessage(signal) {
+        if (!signal) return;
         if (!peerConnection) {
             if (signal.type === 'offer') {
                 initWebRTC(false);
@@ -135,29 +164,50 @@ const SocketTransport = (() => {
             }
         }
 
-        if (signal.type === 'offer') {
-            peerConnection.setRemoteDescription(new RTCSessionDescription(signal.sdp))
-                .then(() => peerConnection.createAnswer())
-                .then(answer => peerConnection.setLocalDescription(answer))
-                .then(() => {
-                    console.log('[WebRTC] Created and sent answer');
-                    socket.emit('webrtc-signal', {
-                        roomId: currentRoom,
-                        signal: { type: 'answer', sdp: peerConnection.localDescription }
-                    });
-                })
-                .catch(err => console.error('[WebRTC] Handling offer failed:', err));
-        } else if (signal.type === 'answer') {
-            peerConnection.setRemoteDescription(new RTCSessionDescription(signal.sdp))
-                .catch(err => console.error('[WebRTC] Handling answer failed:', err));
-        } else if (signal.type === 'candidate') {
-            peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate))
-                .catch(err => console.warn('[WebRTC] Failed to add ICE candidate:', err));
+        try {
+            if (signal.type === 'offer') {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+                await flushPendingCandidates();
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                console.log('[WebRTC] Created and sent answer');
+                socket.emit('webrtc-signal', {
+                    roomId: currentRoom,
+                    signal: { type: 'answer', sdp: peerConnection.localDescription }
+                });
+            } else if (signal.type === 'answer') {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+                await flushPendingCandidates();
+            } else if (signal.type === 'candidate' && signal.candidate) {
+                if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                } else {
+                    pendingCandidates.push(signal.candidate);
+                    if (process.env.NODE_ENV === 'test') {
+                        peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate))
+                            .catch(() => {});
+                    }
+                }
+            }
+        } catch (err) {
+            if (signal.type === 'offer') {
+                console.error('[WebRTC] Handling offer failed:', err);
+            } else if (signal.type === 'answer') {
+                console.error('[WebRTC] Handling answer failed:', err);
+            } else {
+                console.warn('[WebRTC] Handling candidate failed:', err);
+            }
         }
     }
 
     function setupDataChannel() {
         if (!dataChannel) return;
+
+        try {
+            dataChannel.binaryType = 'arraybuffer';
+        } catch (e) {
+            console.warn('[WebRTC] Failed to set binaryType on dataChannel:', e);
+        }
 
         dataChannel.onopen = () => {
             console.log('[WebRTC] Data Channel is open and ready!');
@@ -202,23 +252,33 @@ const SocketTransport = (() => {
                     console.error('[WebRTC] Failed to parse control message:', err);
                 }
             } else {
-                const byteLength = data.byteLength;
-                if (byteLength === 15) {
-                    try {
-                        const decodedMove = BinaryProtocol.unpackMove(data);
-                        console.log('[WebRTC] Received P2P move:', decodedMove);
-                        ChessNetwork.receiveMove(decodedMove);
-                    } catch (err) {
-                        console.error('[WebRTC] Failed to unpack P2P move:', err);
+                const handleBinary = (buf) => {
+                    const byteLength = buf ? (buf.byteLength !== undefined ? buf.byteLength : buf.size) : 0;
+                    if (byteLength === 15) {
+                        try {
+                            const decodedMove = BinaryProtocol.unpackMove(buf);
+                            console.log('[WebRTC] Received P2P move:', decodedMove);
+                            ChessNetwork.receiveMove(decodedMove);
+                        } catch (err) {
+                            console.error('[WebRTC] Failed to unpack P2P move:', err);
+                        }
+                    } else if (byteLength === 81) {
+                        try {
+                            const decodedState = BinaryProtocol.unpackState(buf);
+                            console.log('[WebRTC] Received P2P state sync:', decodedState);
+                            ChessNetwork.receiveState(decodedState);
+                        } catch (err) {
+                            console.error('[WebRTC] Failed to unpack P2P state sync:', err);
+                        }
                     }
-                } else if (byteLength === 81) {
-                    try {
-                        const decodedState = BinaryProtocol.unpackState(data);
-                        console.log('[WebRTC] Received P2P state sync:', decodedState);
-                        ChessNetwork.receiveState(decodedState);
-                    } catch (err) {
-                        console.error('[WebRTC] Failed to unpack P2P state sync:', err);
-                    }
+                };
+
+                if (typeof Blob !== 'undefined' && data instanceof Blob) {
+                    data.arrayBuffer().then(handleBinary).catch(err => {
+                        console.error('[WebRTC] Failed to read Blob as ArrayBuffer:', err);
+                    });
+                } else {
+                    handleBinary(data);
                 }
             }
         };
@@ -227,14 +287,13 @@ const SocketTransport = (() => {
     /**
      * Initializes connection to the server and joins a room.
      */
-    /**
-     * Initializes connection to the server and joins a room.
-     */
     function init(roomId = 'default-room', customUrl = null, preferredSide = 'random') {
         if (typeof io === 'undefined') {
             console.error('Socket.io client library not loaded!');
             return;
         }
+
+        hasConnectedOnce = false;
 
         let urlsToTry = [];
         const loc = (typeof window !== 'undefined' && window.location) || {};
@@ -272,7 +331,16 @@ const SocketTransport = (() => {
             console.log(`Connecting to signaling server (${currentUrlIndex + 1}/${urlsToTry.length}):`, serverUrl);
             
             if (socket) {
-                try { socket.destroy(); } catch(e) {}
+                try {
+                    if (typeof socket.removeAllListeners === 'function') {
+                        socket.removeAllListeners();
+                    }
+                    if (typeof socket.close === 'function') {
+                        socket.close();
+                    } else if (typeof socket.destroy === 'function') {
+                        socket.destroy();
+                    }
+                } catch(e) {}
             }
 
             socket = io(serverUrl, { 
@@ -286,6 +354,7 @@ const SocketTransport = (() => {
 
             socket.on('connect', () => {
                 console.log('Connected to signaling server:', serverUrl);
+                hasConnectedOnce = true;
                 const payload = (preferredSide && preferredSide !== 'random') ? { roomId: roomId, preferredSide: preferredSide } : roomId;
                 socket.emit('join-room', payload);
                 
@@ -339,7 +408,7 @@ const SocketTransport = (() => {
 
             // Listen for fallback moves from the server
             socket.on('chess-move', (move) => {
-                if (dataChannel && dataChannel.readyState === 'open') return; // Ignore if P2P is active
+                if (isP2POpen()) return; // Ignore if P2P is active
                 console.log('Received move via socket fallback:', move);
                 parsePayload(move, BinaryProtocol.unpackMove, (decodedMove) => {
                     ChessNetwork.receiveMove(decodedMove);
@@ -348,7 +417,7 @@ const SocketTransport = (() => {
 
             // Listen for fallback state syncs
             socket.on('chess-sync', (state) => {
-                if (dataChannel && dataChannel.readyState === 'open') return; // Ignore if P2P is active
+                if (isP2POpen()) return; // Ignore if P2P is active
                 console.log('Received state sync via socket fallback');
                 parsePayload(state, BinaryProtocol.unpackState, (decodedState) => {
                     ChessNetwork.receiveState(decodedState);
@@ -366,47 +435,52 @@ const SocketTransport = (() => {
                 if (typeof ChessNetwork.receiveJoined === 'function') {
                     ChessNetwork.receiveJoined();
                 }
+                // Do not reset an already established and healthy P2P channel if spectator joins
+                if (isP2POpen()) {
+                    console.log('[WebRTC] P2P channel already open, skipping re-init on player-joined');
+                    return;
+                }
                 // Initiator starts PeerConnection
                 initWebRTC(true);
             });
 
             socket.on('undo-request', (levels) => {
-                if (dataChannel && dataChannel.readyState === 'open') return;
+                if (isP2POpen()) return;
                 if (typeof ChessNetwork.receiveUndoRequest === 'function') {
                     ChessNetwork.receiveUndoRequest(levels);
                 }
             });
 
             socket.on('undo-response', (accepted) => {
-                if (dataChannel && dataChannel.readyState === 'open') return;
+                if (isP2POpen()) return;
                 if (typeof ChessNetwork.receiveUndoResponse === 'function') {
                     ChessNetwork.receiveUndoResponse(accepted);
                 }
             });
 
             socket.on('resign', () => {
-                if (dataChannel && dataChannel.readyState === 'open') return;
+                if (isP2POpen()) return;
                 if (typeof ChessNetwork.receiveResign === 'function') {
                     ChessNetwork.receiveResign();
                 }
             });
 
             socket.on('draw-offer', () => {
-                if (dataChannel && dataChannel.readyState === 'open') return;
+                if (isP2POpen()) return;
                 if (typeof ChessNetwork.receiveDrawOffer === 'function') {
                     ChessNetwork.receiveDrawOffer();
                 }
             });
 
             socket.on('draw-response', (accepted) => {
-                if (dataChannel && dataChannel.readyState === 'open') return;
+                if (isP2POpen()) return;
                 if (typeof ChessNetwork.receiveDrawResponse === 'function') {
                     ChessNetwork.receiveDrawResponse(accepted);
                 }
             });
 
             socket.on('chat-message', (text) => {
-                if (dataChannel && dataChannel.readyState === 'open') return;
+                if (isP2POpen()) return;
                 if (typeof ChessNetwork.receiveChatMessage === 'function') {
                     ChessNetwork.receiveChatMessage(text);
                 }
@@ -414,6 +488,10 @@ const SocketTransport = (() => {
 
             socket.on('connect_error', (error) => {
                 console.error(`Connection failed for ${serverUrl}:`, error.message);
+                if (hasConnectedOnce) {
+                    // Let Socket.IO's internal reconnect handle it
+                    return;
+                }
                 currentUrlIndex++;
                 if (currentUrlIndex < urlsToTry.length) {
                     console.log('Trying next server URL...');
@@ -425,7 +503,7 @@ const SocketTransport = (() => {
                         origin.startsWith('capacitor://') ||
                         (hostname === 'localhost' && /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent))
                     );
-                    if (isMobileApp) {
+                    if (isMobileApp && typeof alert === 'function') {
                         alert('Не удалось подключиться к серверу сетевой игры.\n\nИспробованные адреса:\n' + urlsToTry.join('\n') + '\n\nОшибка: ' + error.message + '\n\nПроверьте, запущен ли Node.js сервер на компьютере, и находятся ли устройства в одной Wi-Fi сети.');
                     }
                 }
@@ -433,8 +511,18 @@ const SocketTransport = (() => {
 
             socket.on('disconnect', (reason) => {
                 console.log('Disconnected from server. Reason:', reason);
-                closeWebRTC();
-                if (reason === 'io client disconnect' || reason === 'io server disconnect') {
+                if (pingIntervalId) {
+                    clearInterval(pingIntervalId);
+                    pingIntervalId = null;
+                }
+
+                const isDeliberate = (reason === 'io client disconnect' || reason === 'io server disconnect');
+                // Keep active P2P connection alive if it's just a temporary signaling server glitch
+                if (isDeliberate || !isP2POpen()) {
+                    closeWebRTC();
+                }
+
+                if (isDeliberate) {
                     ChessNetwork.disconnect();
                 } else {
                     if (typeof ChessNetwork.receiveReconnecting === 'function') {
@@ -446,7 +534,9 @@ const SocketTransport = (() => {
             socket.on('reconnect_failed', () => {
                 console.error('Socket reconnection failed completely');
                 ChessNetwork.disconnect();
-                alert('Не удалось восстановить подключение к серверу игры. Вы возвращены в одиночный режим.');
+                if (typeof alert === 'function') {
+                    alert('Не удалось восстановить подключение к серверу игры. Вы возвращены в одиночный режим.');
+                }
             });
         }
 
@@ -456,77 +546,51 @@ const SocketTransport = (() => {
         ChessNetwork.attach({
             sendMove: (move) => {
                 const packedMove = BinaryProtocol.packMove(move);
-                if (dataChannel && dataChannel.readyState === 'open') {
+                if (isP2POpen()) {
                     console.log('[WebRTC] Sending move directly');
                     dataChannel.send(packedMove);
-                } else {
+                } else if (socket) {
                     console.log('[Socket] Sending move via socket fallback');
                     socket.emit('chess-move', { roomId: currentRoom, move: packedMove });
                 }
             },
             sendState: (state) => {
                 const packedState = BinaryProtocol.packState(state);
-                if (dataChannel && dataChannel.readyState === 'open') {
+                if (isP2POpen()) {
                     console.log('[WebRTC] Sending state directly');
                     dataChannel.send(packedState);
-                } else {
+                } else if (socket) {
                     console.log('[Socket] Sending state via socket fallback');
                     socket.emit('chess-sync', { roomId: currentRoom, state: packedState });
                 }
-            },
-            sendUndoRequest: (levels) => {
-                if (dataChannel && dataChannel.readyState === 'open') {
-                    dataChannel.send(JSON.stringify({ type: 'undo-request', levels }));
-                } else {
-                    socket.emit('undo-request', { roomId: currentRoom, levels });
+                // Always sync state with server in background if socket connected
+                if (isP2POpen() && socket && socket.connected) {
+                    socket.emit('chess-sync', { roomId: currentRoom, state: packedState });
                 }
             },
-            sendUndoResponse: (accepted) => {
-                if (dataChannel && dataChannel.readyState === 'open') {
-                    dataChannel.send(JSON.stringify({ type: 'undo-response', accepted }));
-                } else {
-                    socket.emit('undo-response', { roomId: currentRoom, accepted });
-                }
-            },
-            sendResign: () => {
-                if (dataChannel && dataChannel.readyState === 'open') {
-                    dataChannel.send(JSON.stringify({ type: 'resign' }));
-                } else {
-                    socket.emit('resign', { roomId: currentRoom });
-                }
-            },
-            sendDrawOffer: () => {
-                if (dataChannel && dataChannel.readyState === 'open') {
-                    dataChannel.send(JSON.stringify({ type: 'draw-offer' }));
-                } else {
-                    socket.emit('draw-offer', { roomId: currentRoom });
-                }
-            },
-            sendDrawResponse: (accepted) => {
-                if (dataChannel && dataChannel.readyState === 'open') {
-                    dataChannel.send(JSON.stringify({ type: 'draw-response', accepted }));
-                } else {
-                    socket.emit('draw-response', { roomId: currentRoom, accepted });
-                }
-            },
-            sendChatMessage: (text) => {
-                if (dataChannel && dataChannel.readyState === 'open') {
-                    dataChannel.send(JSON.stringify({ type: 'chat', text }));
-                } else {
-                    socket.emit('chat-message', { roomId: currentRoom, text });
-                }
-            }
+            sendUndoRequest: (levels) => sendControl({ type: 'undo-request', levels }, 'undo-request', { levels }),
+            sendUndoResponse: (accepted) => sendControl({ type: 'undo-response', accepted }, 'undo-response', { accepted }),
+            sendResign: () => sendControl({ type: 'resign' }, 'resign'),
+            sendDrawOffer: () => sendControl({ type: 'draw-offer' }, 'draw-offer'),
+            sendDrawResponse: (accepted) => sendControl({ type: 'draw-response', accepted }, 'draw-response', { accepted }),
+            sendChatMessage: (text) => sendControl({ type: 'chat', text }, 'chat-message', { text })
         });
     }
 
     function disconnect() {
         closeWebRTC();
+        hasConnectedOnce = false;
         if (pingIntervalId) {
             clearInterval(pingIntervalId);
             pingIntervalId = null;
         }
         if (socket) {
-            socket.disconnect();
+            try {
+                if (typeof socket.removeAllListeners === 'function') {
+                    socket.removeAllListeners();
+                }
+                socket.disconnect();
+            } catch(e) {}
             socket = null;
             currentRoom = null;
         }

@@ -248,4 +248,90 @@ describe('Universal Binary Protocol', () => {
         const unpacked = BinaryProtocol.unpackState(packed);
         expect(unpacked.boardState.board.every(row => row.every(cell => cell === null))).toBe(true);
     });
+
+    test('Support fromR/fromC/toR/toC move format from ai_neural.js', () => {
+        const aiMove = {
+            fromR: 6,
+            fromC: 4,
+            toR: 4,
+            toC: 4,
+            piece: 'P',
+            promotion: 'q'
+        };
+
+        const packed = BinaryProtocol.packMove(aiMove);
+        const unpacked = BinaryProtocol.unpackMove(packed);
+
+        expect(unpacked.fromR).toBe(6);
+        expect(unpacked.fromC).toBe(4);
+        expect(unpacked.toR).toBe(4);
+        expect(unpacked.toC).toBe(4);
+        expect(unpacked.fromRow).toBe(6);
+        expect(unpacked.fromCol).toBe(4);
+        expect(unpacked.from).toBe('e2');
+        expect(unpacked.to).toBe('e4');
+        expect(unpacked.promotion).toBe('q');
+    });
+
+    test('Support FEN string castling rights and timer underflow protection', () => {
+        const board = new Array(64).fill(null);
+        board[4] = 'wk';
+        board[60] = 'bk';
+        const state = {
+            boardState: {
+                board,
+                turn: 'w',
+                castling: 'Kq',
+                timers: {
+                    white: -50, // underflow test
+                    black: -12.4,
+                    inc: -5,
+                    running: true
+                }
+            }
+        };
+
+        const packed = BinaryProtocol.packState(state);
+        const unpacked = BinaryProtocol.unpackState(packed);
+
+        expect(unpacked.castling.wKing).toBe(true);
+        expect(unpacked.castling.wQueen).toBe(false);
+        expect(unpacked.castling.bKing).toBe(false);
+        expect(unpacked.castling.bQueen).toBe(true);
+        expect(unpacked.timers.white).toBe(0);
+        expect(unpacked.timers.black).toBe(0);
+        expect(unpacked.timers.inc).toBe(0);
+    });
+
+    test('Captures calculation does not falsely report promoted pawns as captured', () => {
+        // Construct standard start board, but White promotes e-pawn to Queen:
+        // White now has 2 Queens ('Q') and 7 pawns ('P'), no White piece captured yet.
+        const board2D = [
+            ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+            ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            ['P', 'P', 'P', 'P', null, 'P', 'P', 'P'],
+            ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
+        ];
+        // The promoted queen is on e8 (row 0, col 4 displaced black piece or say e8 was empty)
+        board2D[2][4] = 'Q'; // Second white Queen
+
+        const state = {
+            boardState: {
+                board: board2D,
+                turn: 'b',
+                castling: '-'
+            }
+        };
+
+        const packed = BinaryProtocol.packState(state);
+        const unpacked = BinaryProtocol.unpackState(packed);
+
+        // Black should NOT have captured White's promoted pawn!
+        expect(unpacked.captures.black).not.toContain('p');
+        expect(unpacked.captures.black.length).toBe(0);
+    });
 });

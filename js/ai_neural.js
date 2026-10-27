@@ -31,89 +31,125 @@ const ChessAINeural = (() => {
     let sessionV16 = null;
     let sessionV17 = null;
     let activeSession = null;
+    let activeModelVer = null;
+
+    async function createOrtSession(modelPath) {
+        if (typeof navigator !== 'undefined' && navigator.gpu) {
+            try {
+                return await ort.InferenceSession.create(modelPath, { executionProviders: ['webgpu', 'wasm'] });
+            } catch (gpuErr) {
+                console.warn('[Neural AI] WebGPU provider unavailable, falling back to WASM:', gpuErr);
+            }
+        }
+        return await ort.InferenceSession.create(modelPath, { executionProviders: ['wasm'] });
+    }
 
     async function init(modelVer = 'v1') {
         if (typeof ort === 'undefined') {
             throw new Error('ONNX Runtime Web (ort) is not loaded.');
         }
 
-        if (ort.env && ort.env.wasm) {
-            ort.env.wasm.wasmPaths = 'js/';
-            ort.env.wasm.numThreads = 2;
+        if (activeSession && activeModelVer === modelVer) {
+            return activeSession;
         }
 
-        if (modelVer === 'v1_7' || modelVer === 'v1.7') {
-            if (sessionV17) {
-                activeSession = sessionV17;
-                session = sessionV17;
-                return sessionV17;
+        if (initPromise) {
+            return initPromise;
+        }
+
+        initPromise = (async () => {
+            if (ort.env && ort.env.wasm) {
+                ort.env.wasm.wasmPaths = 'js/';
+                ort.env.wasm.numThreads = 2;
             }
+
+            if (modelVer === 'v1_7' || modelVer === 'v1.7') {
+                if (sessionV17) {
+                    activeSession = sessionV17;
+                    session = sessionV17;
+                    activeModelVer = modelVer;
+                    return sessionV17;
+                }
+                try {
+                    console.log('[Neural AI] Initializing ModularChessNet V1.7 (modular_chess_v1_7.onnx)...');
+                    sessionV17 = await createOrtSession('modular_chess_v1_7.onnx');
+                    console.log('[Neural AI] ModularChessNet V1.7 session ready!');
+                    activeSession = sessionV17;
+                    session = sessionV17;
+                    activeModelVer = modelVer;
+                    return sessionV17;
+                } catch (err) {
+                    console.warn('[Neural AI] modular_chess_v1_7.onnx not loaded, falling back to V1.6:', err);
+                    return init('v1_6');
+                }
+            }
+
+            if (modelVer === 'v1_6') {
+                if (sessionV16) {
+                    activeSession = sessionV16;
+                    session = sessionV16;
+                    activeModelVer = modelVer;
+                    return sessionV16;
+                }
+                try {
+                    console.log('[Neural AI] Initializing ModularChessNet V1.6 (modular_chess_v1_6.onnx)...');
+                    sessionV16 = await createOrtSession('modular_chess_v1_6.onnx');
+                    console.log('[Neural AI] ModularChessNet V1.6 session ready!');
+                    activeSession = sessionV16;
+                    session = sessionV16;
+                    activeModelVer = modelVer;
+                    return sessionV16;
+                } catch (err) {
+                    console.warn('[Neural AI] modular_chess_v1_6.onnx not loaded, falling back to V1.5:', err);
+                    return init('v1_5');
+                }
+            }
+
+            if (modelVer === 'v1_5') {
+                if (sessionV15) {
+                    activeSession = sessionV15;
+                    session = sessionV15;
+                    activeModelVer = modelVer;
+                    return sessionV15;
+                }
+                try {
+                    console.log('[Neural AI] Initializing ModularChessNet V1.5 (modular_chess_v1_5.onnx)...');
+                    sessionV15 = await createOrtSession('modular_chess_v1_5.onnx');
+                    console.log('[Neural AI] ModularChessNet V1.5 session ready!');
+                    activeSession = sessionV15;
+                    session = sessionV15;
+                    activeModelVer = modelVer;
+                    return sessionV15;
+                } catch (err) {
+                    console.warn('[Neural AI] modular_chess_v1_5.onnx not loaded, falling back to V1.0:', err);
+                }
+            }
+
+            if (sessionV1) {
+                activeSession = sessionV1;
+                session = sessionV1;
+                activeModelVer = modelVer;
+                return sessionV1;
+            }
+
+            console.log('[Neural AI] Initializing ModularChessNet V1 (modular_chess_v1.onnx)...');
             try {
-                console.log('[Neural AI] Initializing ModularChessNet V1.7 (modular_chess_v1_7.onnx)...');
-                sessionV17 = await ort.InferenceSession.create('modular_chess_v1_7.onnx', { executionProviders: ['wasm'] });
-                console.log('[Neural AI] ModularChessNet V1.7 session ready!');
-                activeSession = sessionV17;
-                session = sessionV17;
-                return sessionV17;
+                sessionV1 = await createOrtSession('modular_chess_v1.onnx');
+                console.log('[Neural AI] ModularChessNet V1 session ready!');
+                activeSession = sessionV1;
+                session = sessionV1;
+                activeModelVer = modelVer;
+                return sessionV1;
             } catch (err) {
-                console.warn('[Neural AI] modular_chess_v1_7.onnx not loaded, falling back to V1.6:', err);
-                return init('v1_6');
+                console.error('[Neural AI] Failed to load ONNX model locally:', err);
+                throw err;
             }
-        }
+        })();
 
-        if (modelVer === 'v1_6') {
-            if (sessionV16) {
-                activeSession = sessionV16;
-                session = sessionV16;
-                return sessionV16;
-            }
-            try {
-                console.log('[Neural AI] Initializing ModularChessNet V1.6 (modular_chess_v1_6.onnx)...');
-                sessionV16 = await ort.InferenceSession.create('modular_chess_v1_6.onnx', { executionProviders: ['wasm'] });
-                console.log('[Neural AI] ModularChessNet V1.6 session ready!');
-                activeSession = sessionV16;
-                session = sessionV16;
-                return sessionV16;
-            } catch (err) {
-                console.warn('[Neural AI] modular_chess_v1_6.onnx not loaded, falling back to V1.5:', err);
-                return init('v1_5');
-            }
-        }
-
-        if (modelVer === 'v1_5') {
-            if (sessionV15) {
-                activeSession = sessionV15;
-                session = sessionV15;
-                return sessionV15;
-            }
-            try {
-                console.log('[Neural AI] Initializing ModularChessNet V1.5 (modular_chess_v1_5.onnx)...');
-                sessionV15 = await ort.InferenceSession.create('modular_chess_v1_5.onnx', { executionProviders: ['wasm'] });
-                console.log('[Neural AI] ModularChessNet V1.5 session ready!');
-                activeSession = sessionV15;
-                session = sessionV15;
-                return sessionV15;
-            } catch (err) {
-                console.warn('[Neural AI] modular_chess_v1_5.onnx not loaded, falling back to V1.0:', err);
-            }
-        }
-
-        if (sessionV1) {
-            activeSession = sessionV1;
-            session = sessionV1;
-            return sessionV1;
-        }
-
-        console.log('[Neural AI] Initializing ModularChessNet V1 (modular_chess_v1.onnx)...');
         try {
-            sessionV1 = await ort.InferenceSession.create('modular_chess_v1.onnx', { executionProviders: ['wasm'] });
-            console.log('[Neural AI] ModularChessNet V1 session ready!');
-            activeSession = sessionV1;
-            session = sessionV1;
-            return sessionV1;
-        } catch (err) {
-            console.error('[Neural AI] Failed to load ONNX model locally:', err);
-            throw err;
+            return await initPromise;
+        } finally {
+            initPromise = null;
         }
     }
 
@@ -610,10 +646,24 @@ const ChessAINeural = (() => {
             }
         }
 
+        let kr = -1, kc = -1;
+        const kChar = isW ? 'K' : 'k';
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (board[r][c] === kChar) {
+                    kr = r; kc = c; break;
+                }
+            }
+            if (kr !== -1) break;
+        }
+
         const legal = [];
+        const oppT = isW ? 'b' : 'w';
         for (const m of moves) {
             const nb = simulateMove(board, m.fromR, m.fromC, m.toR, m.toC);
-            if (!isKingInCheck(nb, turn)) {
+            const curKr = (m.fromR === kr && m.fromC === kc) ? m.toR : kr;
+            const curKc = (m.fromR === kr && m.fromC === kc) ? m.toC : kc;
+            if (curKr !== -1 && !isSquareAttacked(nb, curKr, curKc, oppT)) {
                 legal.push(m);
             }
         }
@@ -835,6 +885,7 @@ const ChessAINeural = (() => {
         const safeMoves = [];
         for (const m of pool) {
             const blunder = checkMoveTacticalBlunder(board, turn, m, castling);
+            m.blunder = blunder;
             if (!blunder) safeMoves.push(m);
         }
 
@@ -1101,7 +1152,7 @@ const ChessAINeural = (() => {
                     s += 12.0;
                 }
             } else {
-                const blunder = checkMoveTacticalBlunder(board, turn, m);
+                const blunder = (m.blunder !== undefined) ? m.blunder : checkMoveTacticalBlunder(board, turn, m);
                 if (blunder === 'skewer_fork') s -= 15.0;
                 else if (blunder === 'hanging_piece') s -= 15.0;
                 else if (blunder === 'bad_trade') s -= 10.0;
@@ -1256,18 +1307,24 @@ const ChessAINeural = (() => {
 
         for (let i = 0; i < numCandidates; i++) {
             const offset = i * polDim;
-            const oppIndexed = [];
-            for (let j = 0; j < polDim; j++) {
-                oppIndexed.push({ idx: j, s: p2Policies[offset + j] });
+            const oppLegal = getLegalMovesForBoard(p1Boards[i], oppTurn, castling);
+            const scoredOpp = [];
+            for (const om of oppLegal) {
+                const p = p1Boards[i][om.fromR][om.fromC];
+                const isPromo = p && p.toLowerCase() === 'p' && (om.toR === 0 || om.toR === 7);
+                const idx = (polDim === 4672)
+                    ? moveTo4672(om.fromR, om.fromC, om.toR, om.toC, isPromo ? 'q' : null)
+                    : (om.fromR * 8 + om.fromC) * 64 + (om.toR * 8 + om.toC);
+                scoredOpp.push({ m: om, s: (idx !== null && p2Policies[offset + idx] !== undefined) ? p2Policies[offset + idx] : -999 });
             }
-            oppIndexed.sort((a, b) => b.s - a.s);
+            scoredOpp.sort((a, b) => b.s - a.s);
 
             const candBranches = [];
-            for (let k = 0; k < topK2; k++) {
-                const bestIdx = oppIndexed[k].idx;
-                const coords = (polDim === 4672) ? idx4672ToMove(bestIdx) : decode4096(bestIdx);
-                const oNb = simulateMove(p1Boards[i], coords.fr, coords.fc, coords.tr, coords.tc);
-                candBranches.push({ board: oNb, fr: coords.fr, fc: coords.fc, tr: coords.tr, tc: coords.tc });
+            const limit = Math.min(topK2, scoredOpp.length);
+            for (let k = 0; k < limit; k++) {
+                const { fromR, fromC, toR, toC } = scoredOpp[k].m;
+                const oNb = simulateMove(p1Boards[i], fromR, fromC, toR, toC);
+                candBranches.push({ board: oNb, fr: fromR, fc: fromC, tr: toR, tc: toC });
             }
             p2Branches.push(candBranches);
             totalP2Branches += candBranches.length;
@@ -1300,18 +1357,24 @@ const ChessAINeural = (() => {
                 const offset = p3PlaneCounter * polDim3;
                 p3PlaneCounter++;
 
-                const ourIndexed = [];
-                for (let j = 0; j < polDim3; j++) {
-                    ourIndexed.push({ idx: j, s: p3Policies[offset + j] });
+                const ourLegal = getLegalMovesForBoard(b.board, turn, castling);
+                const scoredOur = [];
+                for (const cm of ourLegal) {
+                    const p = b.board[cm.fromR][cm.fromC];
+                    const isPromo = p && p.toLowerCase() === 'p' && (cm.toR === 0 || cm.toR === 7);
+                    const idx = (polDim3 === 4672)
+                        ? moveTo4672(cm.fromR, cm.fromC, cm.toR, cm.toC, isPromo ? 'q' : null)
+                        : (cm.fromR * 8 + cm.fromC) * 64 + (cm.toR * 8 + cm.toC);
+                    scoredOur.push({ m: cm, s: (idx !== null && p3Policies[offset + idx] !== undefined) ? p3Policies[offset + idx] : -999 });
                 }
-                ourIndexed.sort((a, b) => b.s - a.s);
+                scoredOur.sort((a, b) => b.s - a.s);
 
                 const counterList = [];
-                for (let k = 0; k < topK3; k++) {
-                    const cIdx = ourIndexed[k].idx;
-                    const coords = (polDim3 === 4672) ? idx4672ToMove(cIdx) : decode4096(cIdx);
-                    const cNb = simulateMove(b.board, coords.fr, coords.fc, coords.tr, coords.tc);
-                    counterList.push({ board: cNb, fr: coords.fr, fc: coords.fc, tr: coords.tr, tc: coords.tc });
+                const limit = Math.min(topK3, scoredOur.length);
+                for (let k = 0; k < limit; k++) {
+                    const { fromR, fromC, toR, toC } = scoredOur[k].m;
+                    const cNb = simulateMove(b.board, fromR, fromC, toR, toC);
+                    counterList.push({ board: cNb, fr: fromR, fc: fromC, tr: toR, tc: toC });
                 }
                 candList.push(counterList);
                 totalP3Counters += counterList.length;
@@ -1346,16 +1409,22 @@ const ChessAINeural = (() => {
                     const offset = p4PlaneCounter * polDim4;
                     p4PlaneCounter++;
 
-                    const opp2Indexed = [];
-                    for (let j = 0; j < polDim4; j++) {
-                        opp2Indexed.push({ idx: j, s: p4Policies[offset + j] });
+                    const opp2Legal = getLegalMovesForBoard(cItem.board, oppTurn, castling);
+                    const scoredOpp2 = [];
+                    for (const om2 of opp2Legal) {
+                        const p = cItem.board[om2.fromR][om2.fromC];
+                        const isPromo = p && p.toLowerCase() === 'p' && (om2.toR === 0 || om2.toR === 7);
+                        const idx = (polDim4 === 4672)
+                            ? moveTo4672(om2.fromR, om2.fromC, om2.toR, om2.toC, isPromo ? 'q' : null)
+                            : (om2.fromR * 8 + om2.fromC) * 64 + (om2.toR * 8 + om2.toC);
+                        scoredOpp2.push({ m: om2, s: (idx !== null && p4Policies[offset + idx] !== undefined) ? p4Policies[offset + idx] : -999 });
                     }
-                    opp2Indexed.sort((a, b) => b.s - a.s);
+                    scoredOpp2.sort((a, b) => b.s - a.s);
 
-                    for (let k = 0; k < topK4; k++) {
-                        const o2Idx = opp2Indexed[k].idx;
-                        const coords = (polDim4 === 4672) ? idx4672ToMove(o2Idx) : decode4096(o2Idx);
-                        const o2Nb = simulateMove(cItem.board, coords.fr, coords.fc, coords.tr, coords.tc);
+                    const limit = Math.min(topK4, scoredOpp2.length);
+                    for (let k = 0; k < limit; k++) {
+                        const { fromR, fromC, toR, toC } = scoredOpp2[k].m;
+                        const o2Nb = simulateMove(cItem.board, fromR, fromC, toR, toC);
                         p5Map.push({ candI: i, bIdx: bIdx, cIdx: cIdx, board: o2Nb });
                     }
                 }
@@ -1389,7 +1458,7 @@ const ChessAINeural = (() => {
             const neuralV = p5Values[l];
             const qCp = quiesce(item.board, turn, -10000, 10000, 4);
             const qEval = Math.tanh(qCp / 400.0);
-            const leafScore = (0.65 * (persp * neuralV)) + (0.35 * (persp * qEval));
+            const leafScore = (0.65 * (persp * neuralV)) + (0.35 * qEval);
             tree[item.candI][item.bIdx][item.cIdx].push(leafScore);
         }
 
@@ -1418,9 +1487,9 @@ const ChessAINeural = (() => {
 
             let repPenalty = 0.0;
             if (historySet && historySet.size > 0) {
-                const destKey = boardToSimpleKey(m.board, oppTurn);
+                const destKey = boardToSimpleKey(p1Boards[i], oppTurn);
                 if (historySet.has(destKey)) {
-                    const inEg = isEndgamePosition(m.board);
+                    const inEg = isEndgamePosition(p1Boards[i]);
                     const repCount = historyCounts[destKey] || 0;
                     const isOsc = (lastOwnKey && destKey === lastOwnKey);
                     if (inEg) {
@@ -1586,7 +1655,7 @@ const ChessAINeural = (() => {
                 } else if (findInstantMateMove(node.board, cTurn, nextLegal)) {
                     leafVal = 1.0; // cTurn can deliver instant checkmate!
                 } else {
-                    const cacheKey = JSON.stringify(node.board) + ':' + cTurn;
+                    const cacheKey = boardToSimpleKey(node.board, cTurn) + ':' + node.castling;
                     let leafPolicy = null;
                     if (evalCache.has(cacheKey)) {
                         const cached = evalCache.get(cacheKey);
@@ -1602,7 +1671,7 @@ const ChessAINeural = (() => {
                         const qCp = quiesce(node.board, cTurn, -10000, 10000, 2);
                         const qVal = Math.tanh(qCp / 400.0);
                         const pVal = (cTurn === 'w' ? nnVal : -nnVal);
-                        leafVal = 0.75 * pVal + 0.25 * (cTurn === 'w' ? qVal : -qVal);
+                        leafVal = 0.75 * pVal + 0.25 * qVal;
                         if (evalCache.size < 2000) {
                             evalCache.set(cacheKey, { policy: leafPolicy, val: leafVal });
                         }
@@ -1754,6 +1823,8 @@ const ChessAINeural = (() => {
 
         const tt = new Map();
         const killerMoves = new Map(); // ply -> move
+        let nodes = 0;
+        let isTimeOut = false;
 
         function orderMovesInner(b, cTurn, nextMoves, ttMove, ply) {
             const scored = [];
@@ -1783,10 +1854,20 @@ const ChessAINeural = (() => {
         }
 
         function negamax(b, cTurn, cast, depth, alpha, beta, ply) {
-            const posKey = JSON.stringify(b) + ':' + cTurn + ':' + cast;
+            nodes++;
+            if ((nodes & 1023) === 0) {
+                if (performance.now() - startTime >= timeLimitMs) {
+                    isTimeOut = true;
+                }
+            }
+            if (isTimeOut) {
+                return { score: 0.0, bestMove: null };
+            }
+
+            const keyStr = boardToSimpleKey(b, cTurn);
+            const posKey = keyStr + ':' + cast;
 
             // Repetition check in tree
-            const keyStr = boardToSimpleKey(b, cTurn);
             if (ply > 0 && historySet.has(keyStr)) {
                 const inEg = isEndgamePosition(b);
                 return { score: (inEg ? -0.85 : -0.20), bestMove: null };
@@ -1841,6 +1922,8 @@ const ChessAINeural = (() => {
                 if (!nCast) nCast = '-';
 
                 const { score: childScore } = negamax(nb, nextTurn, nCast, depth - 1, -beta, -alpha, ply + 1);
+                if (isTimeOut) break;
+
                 const score = -childScore;
                 if (score > bestScore) {
                     bestScore = score;
@@ -1851,6 +1934,10 @@ const ChessAINeural = (() => {
                     killerMoves.set(ply, m);
                     break; // Beta cutoff
                 }
+            }
+
+            if (isTimeOut) {
+                return { score: 0.0, bestMove: null };
             }
 
             let flag = 'EXACT';
@@ -1867,7 +1954,10 @@ const ChessAINeural = (() => {
 
         // Iterative deepening from depth 1 to maxDepth
         for (let d = 1; d <= maxDepth; d++) {
-            if (performance.now() - startTime > timeLimitMs) break;
+            if (performance.now() - startTime >= timeLimitMs || isTimeOut) break;
+
+            let iterBestMove = bestMoveRoot;
+            let iterBestScore = -9999.0;
 
             // Policy-guided root move ordering
             const orderedRoot = [];
@@ -1895,14 +1985,21 @@ const ChessAINeural = (() => {
                 if (!nCast) nCast = '-';
 
                 const { score: childScore } = negamax(nb, nextTurn, nCast, d - 1, -beta, -alpha, 1);
+                if (isTimeOut) break;
+
                 const score = -childScore;
                 const blended = score + 0.05 * prior;
                 const moveKey = `${m.fromR},${m.fromC}->${m.toR},${m.toC}`;
                 moveScores.set(moveKey, blended);
                 if (score > alpha) {
                     alpha = score;
-                    bestMoveRoot = m;
+                    iterBestMove = m;
+                    iterBestScore = score;
                 }
+            }
+
+            if (!isTimeOut && iterBestMove) {
+                bestMoveRoot = iterBestMove;
             }
         }
 
@@ -1931,10 +2028,24 @@ const ChessAINeural = (() => {
             return egMove;
         }
 
-        // 2. Transposition Table cache lookup (only if no repetition history)
-        const hasHistory = Array.isArray(history) && history.length > 0;
+        function isPositionInHistory(currentFen, hist) {
+            if (!Array.isArray(hist) || hist.length === 0) return false;
+            const parts = currentFen.trim().split(/\s+/);
+            const currentKey = parts.length >= 2 ? (parts[0] + ' ' + parts[1]) : parts[0];
+            for (const h of hist) {
+                if (typeof h === 'string') {
+                    const hParts = h.trim().split(/\s+/);
+                    const hKey = hParts.length >= 2 ? (hParts[0] + ' ' + hParts[1]) : hParts[0];
+                    if (hKey === currentKey) return true;
+                }
+            }
+            return false;
+        }
+
+        // 2. Transposition Table cache lookup (safe if current position is not in repetition history)
+        const inHistory = isPositionInHistory(fen, history);
         const posKey = modelVer + ':' + searchType + ':' + fen.split(' ').slice(0, 4).join(' ');
-        if (!hasHistory && transpositionTable.has(posKey)) {
+        if (!inHistory && transpositionTable.has(posKey)) {
             const cached = transpositionTable.get(posKey);
             console.log(`[Neural AI:${modelVer}:${searchType}] ⚡ Transposition cache hit: (${cached.fromR},${cached.fromC}) -> (${cached.toR},${cached.toC})`);
             return cached;
@@ -1953,7 +2064,7 @@ const ChessAINeural = (() => {
                     move = await alphaBetaSearch(fen, 6, 4000, history);
                 }
                 if (move) {
-                    if (!hasHistory) {
+                    if (!inHistory) {
                         if (transpositionTable.size >= MAX_TT_SIZE) {
                             const firstKey = transpositionTable.keys().next().value;
                             transpositionTable.delete(firstKey);
@@ -1985,7 +2096,7 @@ const ChessAINeural = (() => {
                             if (matched) {
                                 console.log(`[Neural AI:Server ${data.searchType || searchType}] Move chosen: ${cand.uci} in ${data.elapsedMs?.toFixed(1)}ms`);
                                 const finalMove = { ...matched, promotion: cand.promotion || null };
-                                if (!hasHistory) {
+                                if (!inHistory) {
                                     if (transpositionTable.size >= MAX_TT_SIZE) {
                                         const firstKey = transpositionTable.keys().next().value;
                                         transpositionTable.delete(firstKey);
@@ -1996,7 +2107,7 @@ const ChessAINeural = (() => {
                             }
                         }
                         const firstMove = { fromR: data.topMoves[0].fromR, fromC: data.topMoves[0].fromC, toR: data.topMoves[0].toR, toC: data.topMoves[0].toC, promotion: data.topMoves[0].promotion || null };
-                        if (!hasHistory) transpositionTable.set(posKey, firstMove);
+                        if (!inHistory) transpositionTable.set(posKey, firstMove);
                         return firstMove;
                     }
                 }
@@ -2011,6 +2122,7 @@ const ChessAINeural = (() => {
     const API = {
         init,
         getBestMove,
+        alphaBetaSearch,
         search5Ply,
         search4Ply: search5Ply,
         search2Ply: search5Ply, // Backwards compatibility

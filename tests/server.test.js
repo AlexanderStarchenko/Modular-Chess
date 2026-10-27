@@ -1,5 +1,5 @@
 const request = require('supertest');
-const { app, server } = require('../server.js');
+const { app, server, stopPythonDaemon, closeTelemetryStream } = require('../server.js');
 const { io: Client } = require('socket.io-client');
 const fs = require('fs');
 const path = require('path');
@@ -35,6 +35,8 @@ describe('Socket.IO Multiplayer Logic', () => {
 
     afterAll(() => {
         server.close();
+        stopPythonDaemon();
+        closeTelemetryStream();
     });
 
     beforeEach((done) => {
@@ -388,6 +390,11 @@ describe('Neural Move API Endpoint', () => {
         expect(response.body.topMoves.length).toBeGreaterThan(0);
         expect(response.body.topMoves[0].visits).toBeDefined();
     }, 15000);
+
+    afterAll(() => {
+        stopPythonDaemon();
+        closeTelemetryStream();
+    });
 });
 
 
