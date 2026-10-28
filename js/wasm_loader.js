@@ -84,7 +84,9 @@ glob.ChessWASM = (() => {
 
     function getSafePtr(size) {
         if (!instance) return 0;
-        const base = 32768; // Safe heap base determined by tests
+        const base = (typeof instance.getBoardPtr === 'function')
+            ? instance.getBoardPtr()
+            : 32768;
         
         // Ensure memory is large enough
         const required = base + size;

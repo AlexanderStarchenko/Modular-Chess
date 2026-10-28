@@ -67,13 +67,25 @@ const SocketTransport = (() => {
         callback(data);
     }
 
-    // Universal control message sending (P2P with fallback to Socket.IO)
-    function sendControl(p2pPayload, socketEvent, socketPayload = {}) {
+    function sendP2POrFallback(p2pData, socketEvent, socketPayload = {}) {
         if (isP2POpen()) {
-            dataChannel.send(JSON.stringify(p2pPayload));
-        } else if (socket) {
+            try {
+                dataChannel.send(p2pData);
+                return true;
+            } catch (err) {
+                console.warn('[WebRTC] Send failed, falling back to Socket.IO:', err);
+                closeWebRTC();
+            }
+        }
+        if (socket) {
             socket.emit(socketEvent, { roomId: currentRoom, ...socketPayload });
         }
+        return false;
+    }
+
+    // Universal control message sending (P2P with fallback to Socket.IO)
+    function sendControl(p2pPayload, socketEvent, socketPayload = {}) {
+        sendP2POrFallback(JSON.stringify(p2pPayload), socketEvent, socketPayload);
     }
 
     function closeWebRTC() {
@@ -126,7 +138,11 @@ const SocketTransport = (() => {
         };
 
         peerConnection.onconnectionstatechange = () => {
-            console.log('[WebRTC] Connection state changed:', peerConnection.connectionState);
+            const state = peerConnection.connectionState;
+            console.log('[WebRTC] Connection state changed:', state);
+            if (state === 'failed' || state === 'closed') {
+                closeWebRTC();
+            }
         };
 
         if (isInitiator) {
@@ -183,7 +199,7 @@ const SocketTransport = (() => {
                     await peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
                 } else {
                     pendingCandidates.push(signal.candidate);
-                    if (process.env.NODE_ENV === 'test') {
+                    if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'test') {
                         peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate))
                             .catch(() => {});
                     }
@@ -252,7 +268,7 @@ const SocketTransport = (() => {
                     console.error('[WebRTC] Failed to parse control message:', err);
                 }
             } else {
-                const handleBinary = (buf) => {
+                const unpackP2P = (buf) => {
                     const byteLength = buf ? (buf.byteLength !== undefined ? buf.byteLength : buf.size) : 0;
                     if (byteLength === 15) {
                         try {
@@ -273,13 +289,7 @@ const SocketTransport = (() => {
                     }
                 };
 
-                if (typeof Blob !== 'undefined' && data instanceof Blob) {
-                    data.arrayBuffer().then(handleBinary).catch(err => {
-                        console.error('[WebRTC] Failed to read Blob as ArrayBuffer:', err);
-                    });
-                } else {
-                    handleBinary(data);
-                }
+                parsePayload(data, buf => buf, unpackP2P);
             }
         };
     }
@@ -293,6 +303,11 @@ const SocketTransport = (() => {
             return;
         }
 
+        closeWebRTC();
+        if (pingIntervalId) {
+            clearInterval(pingIntervalId);
+            pingIntervalId = null;
+        }
         hasConnectedOnce = false;
 
         let urlsToTry = [];
@@ -301,16 +316,16 @@ const SocketTransport = (() => {
         const origin = loc.origin || '';
         const hostname = loc.hostname || '';
 
+        const isMobileApp = typeof window !== 'undefined' && (
+            Boolean(window.Capacitor) || 
+            protocol === 'capacitor:' || 
+            (origin && origin.startsWith('capacitor://')) ||
+            (hostname === 'localhost' && typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent))
+        );
+
         if (customUrl) {
             urlsToTry.push(customUrl);
         } else {
-            const isMobileApp = typeof window !== 'undefined' && (
-                !!window.Capacitor || 
-                protocol === 'capacitor:' || 
-                origin.startsWith('capacitor://') ||
-                (hostname === 'localhost' && /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent))
-            );
-            
             if (isMobileApp) {
                 if (typeof MobileConfig !== 'undefined' && MobileConfig.serverUrl) {
                     urlsToTry.push(MobileConfig.serverUrl);
@@ -354,24 +369,26 @@ const SocketTransport = (() => {
 
             socket.on('connect', () => {
                 console.log('Connected to signaling server:', serverUrl);
+                const isReconnect = hasConnectedOnce;
                 hasConnectedOnce = true;
+
                 const payload = (preferredSide && preferredSide !== 'random') ? { roomId: roomId, preferredSide: preferredSide } : roomId;
                 socket.emit('join-room', payload);
                 
-                ChessNetwork.connect({ 
-                    roomId, 
-                    connected: true,
-                    playerColor: null
-                });
+                if (!isReconnect) {
+                    ChessNetwork.connect({ 
+                        roomId, 
+                        connected: true,
+                        playerColor: null
+                    });
+                } else if (typeof ChessNetwork.receiveReconnected === 'function') {
+                    ChessNetwork.receiveReconnected();
+                }
 
                 if (socket.io && socket.io.opts) {
                     socket.io.opts.reconnection = true;
                     socket.io.opts.reconnectionAttempts = 8;
                     socket.io.opts.reconnectionDelay = 2000;
-                }
-
-                if (typeof ChessNetwork.receiveReconnected === 'function') {
-                    ChessNetwork.receiveReconnected();
                 }
 
                 // Start pinging the server
@@ -435,9 +452,13 @@ const SocketTransport = (() => {
                 if (typeof ChessNetwork.receiveJoined === 'function') {
                     ChessNetwork.receiveJoined();
                 }
-                // Do not reset an already established and healthy P2P channel if spectator joins
-                if (isP2POpen()) {
-                    console.log('[WebRTC] P2P channel already open, skipping re-init on player-joined');
+                const isConnecting = peerConnection && (
+                    peerConnection.connectionState === 'connecting' || 
+                    (peerConnection.signalingState && peerConnection.signalingState !== 'stable')
+                );
+
+                if (isP2POpen() || isConnecting) {
+                    console.log('[WebRTC] P2P already open or negotiating, skipping re-init');
                     return;
                 }
                 // Initiator starts PeerConnection
@@ -497,12 +518,6 @@ const SocketTransport = (() => {
                     console.log('Trying next server URL...');
                     tryConnect();
                 } else {
-                    const isMobileApp = typeof window !== 'undefined' && (
-                        !!window.Capacitor || 
-                        protocol === 'capacitor:' || 
-                        origin.startsWith('capacitor://') ||
-                        (hostname === 'localhost' && /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent))
-                    );
                     if (isMobileApp && typeof alert === 'function') {
                         alert('Не удалось подключиться к серверу сетевой игры.\n\nИспробованные адреса:\n' + urlsToTry.join('\n') + '\n\nОшибка: ' + error.message + '\n\nПроверьте, запущен ли Node.js сервер на компьютере, и находятся ли устройства в одной Wi-Fi сети.');
                     }
@@ -531,13 +546,18 @@ const SocketTransport = (() => {
                 }
             });
 
-            socket.on('reconnect_failed', () => {
+            const onReconnectFailed = () => {
                 console.error('Socket reconnection failed completely');
                 ChessNetwork.disconnect();
                 if (typeof alert === 'function') {
                     alert('Не удалось восстановить подключение к серверу игры. Вы возвращены в одиночный режим.');
                 }
-            });
+            };
+
+            socket.on('reconnect_failed', onReconnectFailed);
+            if (socket.io && typeof socket.io.on === 'function') {
+                socket.io.on('reconnect_failed', onReconnectFailed);
+            }
         }
 
         tryConnect();
@@ -546,25 +566,13 @@ const SocketTransport = (() => {
         ChessNetwork.attach({
             sendMove: (move) => {
                 const packedMove = BinaryProtocol.packMove(move);
-                if (isP2POpen()) {
-                    console.log('[WebRTC] Sending move directly');
-                    dataChannel.send(packedMove);
-                } else if (socket) {
-                    console.log('[Socket] Sending move via socket fallback');
-                    socket.emit('chess-move', { roomId: currentRoom, move: packedMove });
-                }
+                sendP2POrFallback(packedMove, 'chess-move', { move: packedMove });
             },
             sendState: (state) => {
                 const packedState = BinaryProtocol.packState(state);
-                if (isP2POpen()) {
-                    console.log('[WebRTC] Sending state directly');
-                    dataChannel.send(packedState);
-                } else if (socket) {
-                    console.log('[Socket] Sending state via socket fallback');
-                    socket.emit('chess-sync', { roomId: currentRoom, state: packedState });
-                }
+                const sentP2P = sendP2POrFallback(packedState, 'chess-sync', { state: packedState });
                 // Always sync state with server in background if socket connected
-                if (isP2POpen() && socket && socket.connected) {
+                if (sentP2P && socket && socket.connected) {
                     socket.emit('chess-sync', { roomId: currentRoom, state: packedState });
                 }
             },

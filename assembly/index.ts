@@ -1,7 +1,7 @@
 // WebAssembly Chess Core (AssemblyScript)
 
 // Piece-Square Tables (PST) matching the JavaScript engine exactly
-const pstPawn: i32[] = [
+const pstPawn: StaticArray<i32> = [
     0,  0,  0,  0,  0,  0,  0,  0,
     50, 50, 50, 50, 50, 50, 50, 50,
     10, 10, 20, 30, 30, 20, 10, 10,
@@ -12,7 +12,7 @@ const pstPawn: i32[] = [
     0,  0,  0,  0,  0,  0,  0,  0
 ];
 
-const pstKnight: i32[] = [
+const pstKnight: StaticArray<i32> = [
     -50,-40,-30,-30,-30,-30,-40,-50,
     -40,-20,  0,  0,  0,  0,-20,-40,
     -30,  0, 10, 15, 15, 10,  0,-30,
@@ -23,7 +23,7 @@ const pstKnight: i32[] = [
     -50,-40,-30,-30,-30,-30,-40,-50
 ];
 
-const pstBishop: i32[] = [
+const pstBishop: StaticArray<i32> = [
     -20,-10,-10,-10,-10,-10,-10,-20,
     -10,  0,  0,  0,  0,  0,  0,-10,
     -10,  0,  5, 10, 10,  5,  0,-10,
@@ -34,7 +34,7 @@ const pstBishop: i32[] = [
     -20,-10,-10,-10,-10,-10,-10,-20
 ];
 
-const pstRook: i32[] = [
+const pstRook: StaticArray<i32> = [
     0,  0,  0,  0,  0,  0,  0,  0,
     5, 10, 10, 10, 10, 10, 10,  5,
     -5,  0,  0,  0,  0,  0,  0, -5,
@@ -45,7 +45,7 @@ const pstRook: i32[] = [
     0,  0,  0,  5,  5,  0,  0,  0
 ];
 
-const pstQueen: i32[] = [
+const pstQueen: StaticArray<i32> = [
     -20,-10,-10, -5, -5,-10,-10,-20,
     -10,  0,  0,  0,  0,  0,  0,-10,
     -10,  0,  5,  5,  5,  5,  0,-10,
@@ -56,7 +56,7 @@ const pstQueen: i32[] = [
     -20,-10,-10, -5, -5,-10,-10,-20
 ];
 
-const pstKing: i32[] = [
+const pstKing: StaticArray<i32> = [
     -30,-40,-40,-50,-50,-40,-40,-30,
     -30,-40,-40,-50,-50,-40,-40,-30,
     -30,-40,-40,-50,-50,-40,-40,-30,
@@ -67,8 +67,18 @@ const pstKing: i32[] = [
     20, 30, 10,  0,  0, 10, 30, 20
 ];
 
+// Pre-allocated StaticArrays for move offsets to avoid GC heap allocation
+const KNIGHT_DRS: StaticArray<i32> = [-2, -2, -1, -1, 1, 1, 2, 2];
+const KNIGHT_DCS: StaticArray<i32> = [-1, 1, -2, 2, -2, 2, -1, 1];
+
+// 0..3: Diagonals (Bishop)
+// 4..7: Orthogonals (Rook)
+// 0..7: All 8 directions (Queen / King)
+const DIRS_R: StaticArray<i32> = [-1, -1, 1, 1, -1, 1, 0, 0];
+const DIRS_C: StaticArray<i32> = [-1, 1, -1, 1, 0, 0, -1, 1];
+
 /**
- * Checks if a square is attacked by a certain color.
+ * Checks if a square is attacked by a certain color using ray-casting from target square.
  */
 export function isSquareAttacked(
   targetR: i32, 
@@ -77,72 +87,73 @@ export function isSquareAttacked(
   boardPtr: usize
 ): i32 {
   const isWhiteAttacker = attackerColor === 0;
-  
-  for (let r: i32 = 0; r < 8; r++) {
-    for (let c: i32 = 0; c < 8; c++) {
-      const piece = load<u8>(boardPtr + (r << 3) + c);
-      if (piece === 0) continue;
 
-      const isWhitePiece = piece >= 65 && piece <= 90;
-      if (isWhitePiece !== isWhiteAttacker) continue;
+  // 1. Pawn attacks: white pawns attack from targetR + 1; black pawns from targetR - 1
+  const pawnR = isWhiteAttacker ? targetR + 1 : targetR - 1;
+  const pawnChar: u8 = isWhiteAttacker ? 80 : 112; // 'P' or 'p'
+  if (pawnR >= 0 && pawnR < 8) {
+    if (targetC > 0 && load<u8>(boardPtr + (pawnR << 3) + (targetC - 1)) === pawnChar) return 1;
+    if (targetC < 7 && load<u8>(boardPtr + (pawnR << 3) + (targetC + 1)) === pawnChar) return 1;
+  }
 
-      const type = isWhitePiece ? piece : piece - 32; // Normalize to uppercase
-      
-      // Manual ABS for safety in WASM
-      const dr = r > targetR ? r - targetR : targetR - r;
-      const dc = c > targetC ? c - targetC : targetC - c;
-
-      // 1. Pawn
-      if (type === 80) { // 'P'
-        if (isWhiteAttacker) {
-          if (r === targetR + 1 && dc === 1) return 1;
-        } else {
-          if (r === targetR - 1 && dc === 1) return 1;
-        }
-      }
-      // 2. Knight
-      else if (type === 78) { // 'N'
-        if ((dr === 2 && dc === 1) || (dr === 1 && dc === 2)) return 1;
-      }
-      // 3. King
-      else if (type === 75) { // 'K'
-        if (dr <= 1 && dc <= 1) return 1;
-      }
-      // 4. Sliding: Bishop / Queen (Diagonals)
-      else if (type === 66 || type === 81) { // 'B' or 'Q'
-        if (dr === dc && dr > 0) {
-          if (isPathClear(r, c, targetR, targetC, boardPtr)) return 1;
-        }
-      }
-      
-      // 5. Sliding: Rook / Queen (Files/Rows)
-      if (type === 82 || type === 81) { // 'R' or 'Q'
-        if (r === targetR || c === targetC) {
-          if (dr + dc > 0 && isPathClear(r, c, targetR, targetC, boardPtr)) return 1;
-        }
-      }
+  // 2. Knight attacks
+  const knightChar: u8 = isWhiteAttacker ? 78 : 110; // 'N' or 'n'
+  for (let i = 0; i < 8; i++) {
+    const nr = targetR + unchecked(KNIGHT_DRS[i]);
+    const nc = targetC + unchecked(KNIGHT_DCS[i]);
+    if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+      if (load<u8>(boardPtr + (nr << 3) + nc) === knightChar) return 1;
     }
   }
-  return 0;
-}
 
-/**
- * Checks if path between two squares is clear of obstacles.
- */
-function isPathClear(r1: i32, c1: i32, r2: i32, c2: i32, boardPtr: usize): bool {
-  const stepR = r1 === r2 ? 0 : (r2 > r1 ? 1 : -1);
-  const stepC = c1 === c2 ? 0 : (c2 > c1 ? 1 : -1);
-  
-  let currR = r1 + stepR;
-  let currC = c1 + stepC;
-  
-  while (currR !== r2 || currC !== c2) {
-    if (currR < 0 || currR >= 8 || currC < 0 || currC >= 8) return false;
-    if (load<u8>(boardPtr + (currR << 3) + currC) !== 0) return false;
-    currR += stepR;
-    currC += stepC;
+  // 3. King attacks
+  const kingChar: u8 = isWhiteAttacker ? 75 : 107; // 'K' or 'k'
+  for (let i = 0; i < 8; i++) {
+    const nr = targetR + unchecked(DIRS_R[i]);
+    const nc = targetC + unchecked(DIRS_C[i]);
+    if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+      if (load<u8>(boardPtr + (nr << 3) + nc) === kingChar) return 1;
+    }
   }
-  return true;
+
+  // 4. Sliding: Bishop / Queen (Diagonals: indices 0..3)
+  const bishopChar: u8 = isWhiteAttacker ? 66 : 98;  // 'B' or 'b'
+  const queenChar: u8 = isWhiteAttacker ? 81 : 113;  // 'Q' or 'q'
+  for (let d = 0; d < 4; d++) {
+    const dr = unchecked(DIRS_R[d]);
+    const dc = unchecked(DIRS_C[d]);
+    let nr = targetR + dr;
+    let nc = targetC + dc;
+    while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+      const p = load<u8>(boardPtr + (nr << 3) + nc);
+      if (p !== 0) {
+        if (p === bishopChar || p === queenChar) return 1;
+        break; // Obstacle hit
+      }
+      nr += dr;
+      nc += dc;
+    }
+  }
+
+  // 5. Sliding: Rook / Queen (Orthogonals: indices 4..7)
+  const rookChar: u8 = isWhiteAttacker ? 82 : 114;  // 'R' or 'r'
+  for (let d = 4; d < 8; d++) {
+    const dr = unchecked(DIRS_R[d]);
+    const dc = unchecked(DIRS_C[d]);
+    let nr = targetR + dr;
+    let nc = targetC + dc;
+    while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+      const p = load<u8>(boardPtr + (nr << 3) + nc);
+      if (p !== 0) {
+        if (p === rookChar || p === queenChar) return 1;
+        break; // Obstacle hit
+      }
+      nr += dr;
+      nc += dc;
+    }
+  }
+
+  return 0;
 }
 
 // Pre-allocated static buffers for evaluation to avoid GC heap allocation overhead in search loops
@@ -184,28 +195,28 @@ export function evaluateMaterial(boardPtr: usize): i32 {
       
       let val: i32 = 0;
       if (lower === 112) { // 'p'
-        val = 100 + (isWhite ? pstPawn[idx] : pstPawn[((7 - r) << 3) + c]);
+        val = 100 + (isWhite ? unchecked(pstPawn[idx]) : unchecked(pstPawn[((7 - r) << 3) + c]));
         if (isWhite) {
-          wPawnsInCol[c]++;
+          unchecked(wPawnsInCol[c]++);
         } else {
-          bPawnsInCol[c]++;
+          unchecked(bPawnsInCol[c]++);
         }
       } else if (lower === 110) { // 'n'
-        val = 320 + (isWhite ? pstKnight[idx] : pstKnight[((7 - r) << 3) + c]);
+        val = 320 + (isWhite ? unchecked(pstKnight[idx]) : unchecked(pstKnight[((7 - r) << 3) + c]));
       } else if (lower === 98) { // 'b'
-        val = 330 + (isWhite ? pstBishop[idx] : pstBishop[((7 - r) << 3) + c]);
+        val = 330 + (isWhite ? unchecked(pstBishop[idx]) : unchecked(pstBishop[((7 - r) << 3) + c]));
         if (isWhite) wBishops++; else bBishops++;
       } else if (lower === 114) { // 'r'
-        val = 500 + (isWhite ? pstRook[idx] : pstRook[((7 - r) << 3) + c]);
+        val = 500 + (isWhite ? unchecked(pstRook[idx]) : unchecked(pstRook[((7 - r) << 3) + c]));
         if (isWhite) {
-          wRooksInCol[c]++;
+          unchecked(wRooksInCol[c]++);
         } else {
-          bRooksInCol[c]++;
+          unchecked(bRooksInCol[c]++);
         }
       } else if (lower === 113) { // 'q'
-        val = 900 + (isWhite ? pstQueen[idx] : pstQueen[((7 - r) << 3) + c]);
+        val = 900 + (isWhite ? unchecked(pstQueen[idx]) : unchecked(pstQueen[((7 - r) << 3) + c]));
       } else if (lower === 107) { // 'k'
-        val = 20000 + (isWhite ? pstKing[idx] : pstKing[((7 - r) << 3) + c]);
+        val = 20000 + (isWhite ? unchecked(pstKing[idx]) : unchecked(pstKing[((7 - r) << 3) + c]));
         if (isWhite) {
           wKingR = r; wKingC = c;
         } else {
@@ -363,7 +374,26 @@ export function getHeapBase(): usize {
 // NEW WEBASSEMBLY CHESS SEARCH AND MOVE GENERATOR CORE
 // -------------------------------------------------------------
 
-const boardPtr: usize = 32768; // Safe pointer base
+const boardBuffer = new Uint8Array(64);
+const boardPtr: usize = boardBuffer.dataStart;
+
+export function getBoardPtr(): usize {
+  return boardPtr;
+}
+
+// Track king squares for O(1) king lookup in isKingInCheck
+let wKingSq: i32 = -1;
+let bKingSq: i32 = -1;
+
+function findKings(): void {
+  wKingSq = -1;
+  bKingSq = -1;
+  for (let sq: i32 = 0; sq < 64; sq++) {
+    const p = load<u8>(boardPtr + sq);
+    if (p === 75) wKingSq = sq;
+    else if (p === 107) bKingSq = sq;
+  }
+}
 
 // Game state variables
 let turn: u8 = 0;              // 0 = white, 1 = black
@@ -389,14 +419,14 @@ let zobristInitialized = false;
 
 function initZobrist(): void {
   for (let i = 0; i < 12 * 64; i++) {
-    zobristPieces[i] = random64();
+    unchecked(zobristPieces[i] = random64());
   }
   zobristBlackToMove = random64();
   for (let i = 0; i < 16; i++) {
-    zobristCastling[i] = random64();
+    unchecked(zobristCastling[i] = random64());
   }
   for (let i = 0; i < 8; i++) {
-    zobristEnPassant[i] = random64();
+    unchecked(zobristEnPassant[i] = random64());
   }
 }
 
@@ -429,14 +459,14 @@ function computeZobristHash(): u64 {
     const piece = load<u8>(boardPtr + sq);
     if (piece !== 0) {
       const pieceIdx = getPieceIndex(piece);
-      h ^= zobristPieces[pieceIdx * 64 + sq];
+      h ^= unchecked(zobristPieces[pieceIdx * 64 + sq]);
     }
   }
   if (turn === 1) h ^= zobristBlackToMove;
-  h ^= zobristCastling[castlingRights];
+  h ^= unchecked(zobristCastling[castlingRights]);
   if (enPassantSquare !== -1) {
     const epCol = enPassantSquare & 7;
-    h ^= zobristEnPassant[epCol];
+    h ^= unchecked(zobristEnPassant[epCol]);
   }
   return h;
 }
@@ -468,7 +498,7 @@ function addMove(depth: i32, count: i32, from: u8, to: u8, type: u8, captured: u
   }
   
   const moveVal = (<u32>from) | ((<u32>to) << 6) | ((<u32>type) << 12) | ((<u32>captured) << 16) | (score << 24);
-  moveBuffer[depth * 128 + count] = moveVal;
+  unchecked(moveBuffer[depth * 128 + count] = moveVal);
   return count + 1;
 }
 
@@ -482,7 +512,11 @@ function isSquareAttackedWASM(r: i32, c: i32, attackerColor: u8): boolean {
 }
 
 function isKingInCheck(color: u8): boolean {
-  const kingChar = color === 0 ? 75 : 107; // 'K' or 'k'
+  const sq = color === 0 ? wKingSq : bKingSq;
+  if (sq >= 0 && sq < 64) {
+    return isSquareAttackedWASM(sq >> 3, sq & 7, 1 - color);
+  }
+  const kingChar: u8 = color === 0 ? 75 : 107; // 'K' or 'k'
   for (let r: i32 = 0; r < 8; r++) {
     for (let c: i32 = 0; c < 8; c++) {
       if (load<u8>(boardPtr + (r << 3) + c) === kingChar) {
@@ -530,9 +564,8 @@ function generateMovesAtDepth(depth: i32, color: u8): i32 {
         }
         
         // 3. Captures
-        const captureCols = [c - 1, c + 1];
-        for (let i = 0; i < 2; i++) {
-          const capC = captureCols[i];
+        for (let dc: i32 = -1; dc <= 1; dc += 2) {
+          const capC = c + dc;
           if (inBounds(nextR, capC)) {
             const targetSq = (nextR << 3) + capC;
             const targetPiece = load<u8>(boardPtr + targetSq);
@@ -559,11 +592,9 @@ function generateMovesAtDepth(depth: i32, color: u8): i32 {
       
       // KNIGHT MOVES
       else if (type === 78) { // 'N'
-        const drs = [-2, -2, -1, -1, 1, 1, 2, 2];
-        const dcs = [-1, 1, -2, 2, -2, 2, -1, 1];
         for (let i = 0; i < 8; i++) {
-          const nr = r + drs[i];
-          const nc = c + dcs[i];
+          const nr = r + unchecked(KNIGHT_DRS[i]);
+          const nc = c + unchecked(KNIGHT_DCS[i]);
           if (inBounds(nr, nc)) {
             const targetSq = (nr << 3) + nc;
             const targetPiece = load<u8>(boardPtr + targetSq);
@@ -581,16 +612,11 @@ function generateMovesAtDepth(depth: i32, color: u8): i32 {
       
       // SLIDING PIECES (B, R, Q)
       else if (type === 66 || type === 82 || type === 81) {
-        const isBishop = type === 66 || type === 81;
-        const isRook = type === 82 || type === 81;
-        
-        const dirsR = isBishop ? (isRook ? [-1, -1, 1, 1, -1, 1, 0, 0] : [-1, -1, 1, 1]) : [-1, 1, 0, 0];
-        const dirsC = isBishop ? (isRook ? [-1, 1, -1, 1, 0, 0, -1, 1] : [-1, 1, -1, 1]) : [0, 0, -1, 1];
-        
-        const numDirs = dirsR.length;
-        for (let d = 0; d < numDirs; d++) {
-          const stepR = dirsR[d];
-          const stepC = dirsC[d];
+        const startDir: i32 = (type === 82) ? 4 : 0;
+        const endDir: i32 = (type === 66) ? 4 : 8;
+        for (let d = startDir; d < endDir; d++) {
+          const stepR = unchecked(DIRS_R[d]);
+          const stepC = unchecked(DIRS_C[d]);
           let nr = r + stepR;
           let nc = c + stepC;
           while (inBounds(nr, nc)) {
@@ -613,11 +639,9 @@ function generateMovesAtDepth(depth: i32, color: u8): i32 {
       
       // KING MOVES
       else if (type === 75) { // 'K'
-        const dirsR = [-1, -1, -1, 0, 0, 1, 1, 1];
-        const dirsC = [-1, 0, 1, -1, 1, -1, 0, 1];
         for (let i = 0; i < 8; i++) {
-          const nr = r + dirsR[i];
-          const nc = c + dirsC[i];
+          const nr = r + unchecked(DIRS_R[i]);
+          const nc = c + unchecked(DIRS_C[i]);
           if (inBounds(nr, nc)) {
             const targetSq = (nr << 3) + nc;
             const targetPiece = load<u8>(boardPtr + targetSq);
@@ -706,16 +730,20 @@ function applyMoveWASM(move: u32, depth: i32): boolean {
   const piece = load<u8>(boardPtr + from);
   
   // Save undo properties
-  undoOrig[depth] = piece;
-  undoTarget[depth] = captured;
-  undoEpCaptured[depth] = 0;
-  undoEpSq[depth] = -1;
-  undoRookFromSq[depth] = -1;
-  undoRookToSq[depth] = -1;
-  undoCastlingRights[depth] = castlingRights;
-  undoEnPassantSquare[depth] = <i8>enPassantSquare;
-  undoHalfMoveClock[depth] = halfMoveClock;
-  undoHash[depth] = currentHash;
+  unchecked(undoOrig[depth] = piece);
+  unchecked(undoTarget[depth] = captured);
+  unchecked(undoEpCaptured[depth] = 0);
+  unchecked(undoEpSq[depth] = -1);
+  unchecked(undoRookFromSq[depth] = -1);
+  unchecked(undoRookToSq[depth] = -1);
+  unchecked(undoCastlingRights[depth] = castlingRights);
+  unchecked(undoEnPassantSquare[depth] = <i8>enPassantSquare);
+  unchecked(undoHalfMoveClock[depth] = halfMoveClock);
+  unchecked(undoHash[depth] = currentHash);
+  
+  // Track king position
+  if (piece === 75) wKingSq = to;
+  else if (piece === 107) bKingSq = to;
   
   // Clocks
   const isPawn = piece === 80 || piece === 112;
@@ -750,8 +778,8 @@ function applyMoveWASM(move: u32, depth: i32): boolean {
     const rook = load<u8>(boardPtr + rFrom);
     store<u8>(boardPtr + rFrom, 0);
     store<u8>(boardPtr + rTo, rook);
-    undoRookFromSq[depth] = <i8>rFrom;
-    undoRookToSq[depth] = <i8>rTo;
+    unchecked(undoRookFromSq[depth] = <i8>rFrom);
+    unchecked(undoRookToSq[depth] = <i8>rTo);
   }
   else if (type === 3) {
     store<u8>(boardPtr + to, piece);
@@ -760,14 +788,14 @@ function applyMoveWASM(move: u32, depth: i32): boolean {
     const rook = load<u8>(boardPtr + rFrom);
     store<u8>(boardPtr + rFrom, 0);
     store<u8>(boardPtr + rTo, rook);
-    undoRookFromSq[depth] = <i8>rFrom;
-    undoRookToSq[depth] = <i8>rTo;
+    unchecked(undoRookFromSq[depth] = <i8>rFrom);
+    unchecked(undoRookToSq[depth] = <i8>rTo);
   }
   else if (type === 4) {
     store<u8>(boardPtr + to, piece);
     const epCapSq = to + (piece === 80 ? 8 : -8);
-    undoEpCaptured[depth] = load<u8>(boardPtr + epCapSq);
-    undoEpSq[depth] = <i8>epCapSq;
+    unchecked(undoEpCaptured[depth] = load<u8>(boardPtr + epCapSq));
+    unchecked(undoEpSq[depth] = <i8>epCapSq);
     store<u8>(boardPtr + epCapSq, 0);
   }
   else if (type === 5) {
@@ -779,25 +807,25 @@ function applyMoveWASM(move: u32, depth: i32): boolean {
   let newHash = currentHash;
   
   // 1. Piece leaves 'from'
-  newHash ^= zobristPieces[getPieceIndex(piece) * 64 + from];
+  newHash ^= unchecked(zobristPieces[getPieceIndex(piece) * 64 + from]);
   
   // 2. Captured piece leaves destination
   if (captured !== 0) {
     const capIdx = getPieceIndex(captured);
     if (type === 4) { // En Passant
       const epCapSq = to + (piece === 80 ? 8 : -8);
-      newHash ^= zobristPieces[capIdx * 64 + epCapSq];
+      newHash ^= unchecked(zobristPieces[capIdx * 64 + epCapSq]);
     } else { // Normal capture
-      newHash ^= zobristPieces[capIdx * 64 + to];
+      newHash ^= unchecked(zobristPieces[capIdx * 64 + to]);
     }
   }
   
   // 3. Piece arrives at 'to'
   if (type === 5) { // Promotion
     const promoPiece: u8 = piece === 80 ? 81 : 113; // 'Q' or 'q'
-    newHash ^= zobristPieces[getPieceIndex(promoPiece) * 64 + to];
+    newHash ^= unchecked(zobristPieces[getPieceIndex(promoPiece) * 64 + to]);
   } else {
-    newHash ^= zobristPieces[getPieceIndex(piece) * 64 + to];
+    newHash ^= unchecked(zobristPieces[getPieceIndex(piece) * 64 + to]);
   }
   
   // 4. Castling rook moves
@@ -806,30 +834,30 @@ function applyMoveWASM(move: u32, depth: i32): boolean {
     const rTo = from + 1;
     const rook = load<u8>(boardPtr + rTo);
     const rookIdx = getPieceIndex(rook);
-    newHash ^= zobristPieces[rookIdx * 64 + rFrom];
-    newHash ^= zobristPieces[rookIdx * 64 + rTo];
+    newHash ^= unchecked(zobristPieces[rookIdx * 64 + rFrom]);
+    newHash ^= unchecked(zobristPieces[rookIdx * 64 + rTo]);
   } else if (type === 3) {
     const rFrom = from - 4;
     const rTo = from - 1;
     const rook = load<u8>(boardPtr + rTo);
     const rookIdx = getPieceIndex(rook);
-    newHash ^= zobristPieces[rookIdx * 64 + rFrom];
-    newHash ^= zobristPieces[rookIdx * 64 + rTo];
+    newHash ^= unchecked(zobristPieces[rookIdx * 64 + rFrom]);
+    newHash ^= unchecked(zobristPieces[rookIdx * 64 + rTo]);
   }
   
   // 5. Toggle turn
   newHash ^= zobristBlackToMove;
   
   // 6. Castling rights change
-  newHash ^= zobristCastling[undoCastlingRights[depth]];
-  newHash ^= zobristCastling[castlingRights];
+  newHash ^= unchecked(zobristCastling[undoCastlingRights[depth]]);
+  newHash ^= unchecked(zobristCastling[castlingRights]);
   
   // 7. En Passant square change
-  if (undoEnPassantSquare[depth] !== -1) {
-    newHash ^= zobristEnPassant[undoEnPassantSquare[depth] & 7];
+  if (unchecked(undoEnPassantSquare[depth]) !== -1) {
+    newHash ^= unchecked(zobristEnPassant[undoEnPassantSquare[depth] & 7]);
   }
   if (enPassantSquare !== -1) {
-    newHash ^= zobristEnPassant[enPassantSquare & 7];
+    newHash ^= unchecked(zobristEnPassant[enPassantSquare & 7]);
   }
   
   currentHash = newHash;
@@ -849,23 +877,27 @@ function undoMoveWASM(move: u32, depth: i32): void {
   const from = <i32>(move & 0x3F);
   const to = <i32>((move >> 6) & 0x3F);
   
-  store<u8>(boardPtr + from, undoOrig[depth]);
-  store<u8>(boardPtr + to, undoTarget[depth]);
+  const orig = unchecked(undoOrig[depth]);
+  store<u8>(boardPtr + from, orig);
+  store<u8>(boardPtr + to, unchecked(undoTarget[depth]));
   
-  if (undoEpSq[depth] !== -1) {
-    store<u8>(boardPtr + <usize>undoEpSq[depth], undoEpCaptured[depth]);
+  if (orig === 75) wKingSq = from;
+  else if (orig === 107) bKingSq = from;
+  
+  if (unchecked(undoEpSq[depth]) !== -1) {
+    store<u8>(boardPtr + <usize>unchecked(undoEpSq[depth]), unchecked(undoEpCaptured[depth]));
   }
   
-  if (undoRookFromSq[depth] !== -1) {
-    const rook = load<u8>(boardPtr + <usize>undoRookToSq[depth]);
-    store<u8>(boardPtr + <usize>undoRookFromSq[depth], rook);
-    store<u8>(boardPtr + <usize>undoRookToSq[depth], 0);
+  if (unchecked(undoRookFromSq[depth]) !== -1) {
+    const rook = load<u8>(boardPtr + <usize>unchecked(undoRookToSq[depth]));
+    store<u8>(boardPtr + <usize>unchecked(undoRookFromSq[depth]), rook);
+    store<u8>(boardPtr + <usize>unchecked(undoRookToSq[depth]), 0);
   }
   
-  castlingRights = undoCastlingRights[depth];
-  enPassantSquare = undoEnPassantSquare[depth];
-  halfMoveClock = undoHalfMoveClock[depth];
-  currentHash = undoHash[depth];
+  castlingRights = unchecked(undoCastlingRights[depth]);
+  enPassantSquare = unchecked(undoEnPassantSquare[depth]);
+  halfMoveClock = unchecked(undoHalfMoveClock[depth]);
+  currentHash = unchecked(undoHash[depth]);
   turn = 1 - turn;
 }
 
@@ -879,12 +911,12 @@ const tt_move = new Uint32Array(TT_SIZE);
 
 function storeTT(depth: i32, score: i32, flag: u8, bestMove: u32): void {
   const index = <u32>(currentHash & <u64>(TT_SIZE - 1));
-  if (tt_hash[index] !== currentHash || depth >= tt_depth[index]) {
-    tt_hash[index] = currentHash;
-    tt_depth[index] = depth;
-    tt_score[index] = score;
-    tt_flag[index] = flag;
-    tt_move[index] = bestMove;
+  if (unchecked(tt_hash[index]) !== currentHash || depth >= unchecked(tt_depth[index])) {
+    unchecked(tt_hash[index] = currentHash);
+    unchecked(tt_depth[index] = depth);
+    unchecked(tt_score[index] = score);
+    unchecked(tt_flag[index] = flag);
+    unchecked(tt_move[index] = bestMove);
   }
 }
 
@@ -893,26 +925,26 @@ function orderMovesWASM(searchDepth: i32, count: i32, ttMove: u32): void {
   
   for (let i = 0; i < count; i++) {
     const idx = startIdx + i;
-    let move = moveBuffer[idx];
+    let move = unchecked(moveBuffer[idx]);
     const rawMove = move & 0xFFFFFF;
     const isTT = (ttMove !== 0) && (rawMove === (ttMove & 0xFFFFFF));
     
     if (isTT) {
       move = rawMove | (255 << 24);
-      moveBuffer[idx] = move;
+      unchecked(moveBuffer[idx] = move);
     }
   }
   
   // Insertion Sort
   for (let i = 1; i < count; i++) {
-    const key = moveBuffer[startIdx + i];
+    const key = unchecked(moveBuffer[startIdx + i]);
     const keyScore = key >> 24;
     let j = i - 1;
-    while (j >= 0 && (moveBuffer[startIdx + j] >> 24) < keyScore) {
-      moveBuffer[startIdx + j + 1] = moveBuffer[startIdx + j];
+    while (j >= 0 && (unchecked(moveBuffer[startIdx + j]) >> 24) < keyScore) {
+      unchecked(moveBuffer[startIdx + j + 1] = moveBuffer[startIdx + j]);
       j--;
     }
-    moveBuffer[startIdx + j + 1] = key;
+    unchecked(moveBuffer[startIdx + j + 1] = key);
   }
 }
 
@@ -924,7 +956,6 @@ function quiesceWASM(alpha: i32, beta: i32, isMaximizing: boolean, searchDepth: 
   
   if (isMaximizing) {
     if (standPat >= beta) return beta;
-    // alpha = score > alpha ? score : alpha
     alpha = standPat > alpha ? standPat : alpha;
     
     const moveStartIdx = searchDepth * 128;
@@ -932,11 +963,12 @@ function quiesceWASM(alpha: i32, beta: i32, isMaximizing: boolean, searchDepth: 
     orderMovesWASM(searchDepth, count, 0);
     
     for (let i = 0; i < count; i++) {
-      const move = moveBuffer[moveStartIdx + i];
+      const move = unchecked(moveBuffer[moveStartIdx + i]);
       const captured = <u8>((move >> 16) & 0xFF);
       const type = <u8>((move >> 12) & 0x0F);
       
-      if (captured === 0 && type !== 4) continue; // Only captures
+      // Captures, en passant (4), and queen promotions (5)
+      if (captured === 0 && type !== 4 && type !== 5) continue;
       
       if (!applyMoveWASM(move, searchDepth)) continue;
       
@@ -956,11 +988,12 @@ function quiesceWASM(alpha: i32, beta: i32, isMaximizing: boolean, searchDepth: 
     orderMovesWASM(searchDepth, count, 0);
     
     for (let i = 0; i < count; i++) {
-      const move = moveBuffer[moveStartIdx + i];
+      const move = unchecked(moveBuffer[moveStartIdx + i]);
       const captured = <u8>((move >> 16) & 0xFF);
       const type = <u8>((move >> 12) & 0x0F);
       
-      if (captured === 0 && type !== 4) continue; // Only captures
+      // Captures, en passant (4), and queen promotions (5)
+      if (captured === 0 && type !== 4 && type !== 5) continue;
       
       if (!applyMoveWASM(move, searchDepth)) continue;
       
@@ -980,16 +1013,21 @@ function minimaxInternal(depth: i32, isMaximizing: boolean, alpha: i32, beta: i3
   if (searchDepth >= MAX_SEARCH_DEPTH - 1) {
     return evaluateMaterial(boardPtr);
   }
+
   const color: u8 = isMaximizing ? 0 : 1;
+
+  if (depth <= 0 && !isKingInCheck(color)) {
+    return quiesceWASM(alpha, beta, isMaximizing, searchDepth);
+  }
   
   // Transposition Table lookup
   let ttMove: u32 = 0;
   const index = <u32>(currentHash & <u64>(TT_SIZE - 1));
-  if (tt_hash[index] === currentHash) {
-    ttMove = tt_move[index];
-    if (tt_depth[index] >= depth) {
-      const score = tt_score[index];
-      const flag = tt_flag[index];
+  if (unchecked(tt_hash[index]) === currentHash) {
+    ttMove = unchecked(tt_move[index]);
+    if (unchecked(tt_depth[index]) >= depth) {
+      const score = unchecked(tt_score[index]);
+      const flag = unchecked(tt_flag[index]);
       if (flag === 0) return score;
       if (flag === 1 && score <= alpha) return alpha;
       if (flag === 2 && score >= beta) return beta;
@@ -1000,38 +1038,21 @@ function minimaxInternal(depth: i32, isMaximizing: boolean, alpha: i32, beta: i3
   const moveStartIdx = searchDepth * 128;
   const count = generateMovesAtDepth(searchDepth, color);
   
-  let hasLegalMove = false;
-  for (let i = 0; i < count; i++) {
-    const move = moveBuffer[moveStartIdx + i];
-    if (applyMoveWASM(move, searchDepth)) {
-      undoMoveWASM(move, searchDepth);
-      hasLegalMove = true;
-      break;
-    }
-  }
-  
-  if (!hasLegalMove) {
-    if (isKingInCheck(color)) {
-      return isMaximizing ? -100000 + searchDepth : 100000 - searchDepth;
-    }
-    return 0; // Stalemate
-  }
-  
-  if (depth === 0) {
-    return quiesceWASM(alpha, beta, isMaximizing, searchDepth);
-  }
-  
   orderMovesWASM(searchDepth, count, ttMove);
   
+  const origAlpha = alpha;
+  const origBeta = beta;
   let bestVal = isMaximizing ? -2000000 : 2000000;
   let bestM: u32 = 0;
+  let legalMoves = 0;
   
   for (let i = 0; i < count; i++) {
-    const move = moveBuffer[moveStartIdx + i];
+    const move = unchecked(moveBuffer[moveStartIdx + i]);
     
     if (!applyMoveWASM(move, searchDepth)) {
       continue;
     }
+    legalMoves++;
     
     const score = minimaxInternal(depth - 1, !isMaximizing, alpha, beta, searchDepth + 1);
     
@@ -1056,9 +1077,21 @@ function minimaxInternal(depth: i32, isMaximizing: boolean, alpha: i32, beta: i3
     }
   }
   
-  let flag: u8 = 0;
-  if (bestVal <= alpha) flag = 1;
-  else if (bestVal >= beta) flag = 2;
+  if (legalMoves === 0) {
+    if (isKingInCheck(color)) {
+      return isMaximizing ? -100000 + searchDepth : 100000 - searchDepth;
+    }
+    return 0; // Stalemate
+  }
+  
+  let flag: u8 = 0; // EXACT
+  if (isMaximizing) {
+    if (bestVal <= origAlpha) flag = 1;      // UPPERBOUND (fail-low)
+    else if (bestVal >= beta) flag = 2;      // LOWERBOUND (fail-high)
+  } else {
+    if (bestVal >= origBeta) flag = 2;       // LOWERBOUND (fail-low для минимизатора)
+    else if (bestVal <= alpha) flag = 1;     // UPPERBOUND (fail-high для минимизатора)
+  }
   storeTT(depth, bestVal, flag, bestM);
   
   if (searchDepth === 0) {
@@ -1080,6 +1113,29 @@ let searchScoreRoot: i32 = 0;
 export function searchWASM(depth: i32, isMaximizing: i32, alpha: i32, beta: i32): u32 {
   bestMoveRoot = 0;
   ensureZobristInitialized();
+
+  // If boardBuffer is empty and legacy caller wrote directly to 32768, copy it over
+  let hasPieces = false;
+  for (let i = 0; i < 64; i++) {
+    if (unchecked(boardBuffer[i]) !== 0) {
+      hasPieces = true;
+      break;
+    }
+  }
+  if (!hasPieces) {
+    let legacyHasPieces = false;
+    for (let i: usize = 0; i < 64; i++) {
+      if (load<u8>(32768 + i) !== 0) {
+        legacyHasPieces = true;
+        break;
+      }
+    }
+    if (legacyHasPieces) {
+      memory.copy(boardBuffer.dataStart, 32768, 64);
+    }
+  }
+
+  findKings();
   currentHash = computeZobristHash();
   
   searchScoreRoot = minimaxInternal(depth, isMaximizing === 1, alpha, beta, 0);

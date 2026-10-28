@@ -503,5 +503,69 @@ describe('SocketTransport with WebRTC signaling', () => {
             roomId: 'room-123'
         }));
     });
+
+    test('Should handle reconnect correctly without resetting color and calling receiveReconnected', () => {
+        mockChessNetwork.receiveReconnected = jest.fn();
+        SocketTransport.init('room-123');
+        const socketListeners = {};
+        mockSocket.on.mock.calls.forEach(([event, cb]) => {
+            socketListeners[event] = cb;
+        });
+
+        // 1st connect
+        socketListeners['connect']();
+        expect(mockChessNetwork.connect).toHaveBeenCalledTimes(1);
+        expect(mockChessNetwork.receiveReconnected).not.toHaveBeenCalled();
+
+        // 2nd connect (reconnection)
+        socketListeners['connect']();
+        expect(mockChessNetwork.connect).toHaveBeenCalledTimes(1); // not called again
+        expect(mockChessNetwork.receiveReconnected).toHaveBeenCalledTimes(1);
+    });
+
+    test('Should fall back to socket when dataChannel.send throws in sendP2POrFallback', () => {
+        SocketTransport.init('room-123');
+        const socketListeners = {};
+        mockSocket.on.mock.calls.forEach(([event, cb]) => {
+            socketListeners[event] = cb;
+        });
+        socketListeners['player-joined']();
+
+        mockDataChannel.readyState = 'open';
+        mockDataChannel.send.mockImplementation(() => {
+            throw new Error('DataChannel closed unexpectedly');
+        });
+
+        // Sending move should not throw and should fall back to socket
+        expect(() => {
+            transportCallbacks.sendMove({ from: 'e2', to: 'e4' });
+        }).not.toThrow();
+
+        expect(mockSocket.emit).toHaveBeenCalledWith('chess-move', expect.objectContaining({
+            roomId: 'room-123'
+        }));
+        expect(mockPeerConnection.close).toHaveBeenCalled();
+    });
+
+    test('Should close WebRTC when connectionState becomes failed or closed', () => {
+        SocketTransport.init('room-123');
+        const socketListeners = {};
+        mockSocket.on.mock.calls.forEach(([event, cb]) => {
+            socketListeners[event] = cb;
+        });
+        socketListeners['player-joined']();
+
+        mockPeerConnection.connectionState = 'failed';
+        mockPeerConnection.onconnectionstatechange();
+        expect(mockPeerConnection.close).toHaveBeenCalled();
+    });
+
+    test('Should register reconnect_failed on socket.io manager if present', () => {
+        const mockManager = { on: jest.fn(), opts: {} };
+        mockSocket.io = mockManager;
+        SocketTransport.init('room-123');
+
+        expect(mockManager.on).toHaveBeenCalledWith('reconnect_failed', expect.any(Function));
+    });
 });
 

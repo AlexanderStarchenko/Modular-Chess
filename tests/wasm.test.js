@@ -22,7 +22,9 @@ describe('WebAssembly Chess Core - Safety & Logic', () => {
         wasmInstance = wasm.instance.exports;
         
         // Dynamically determine the safe memory address starting point from exported function
-        boardPtr = 32768;
+        boardPtr = (typeof wasmInstance.getBoardPtr === 'function')
+            ? wasmInstance.getBoardPtr()
+            : 32768;
         
         // Ensure memory is large enough to hold our board data (at least boardPtr + 64 bytes)
         const requiredBytes = boardPtr + 64;

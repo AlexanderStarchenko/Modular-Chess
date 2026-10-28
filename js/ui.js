@@ -76,6 +76,40 @@ const ChessUI = (() => {
     let lastMousedownSquare = null;
     let draggedOccurred = false;
     let isWaitingForStart = false;
+    let animatingMove = null;
+    let renderScheduled = false;
+    let cachedCanvasRect = null;
+    let cachedOppCard = null;
+    let cachedPlayerCard = null;
+    let activeAnalysisItem = null;
+
+    function safeRaf(cb) {
+        if (typeof requestAnimationFrame === 'function') return requestAnimationFrame(cb);
+        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') return window.requestAnimationFrame(cb);
+        return setTimeout(cb, 0);
+    }
+
+    function scheduleRender() {
+        if (renderScheduled) return;
+        renderScheduled = true;
+        safeRaf(() => {
+            renderScheduled = false;
+            renderBoard();
+        });
+    }
+
+    function updateCanvasRect() {
+        if (canvas && typeof canvas.getBoundingClientRect === 'function') {
+            cachedCanvasRect = canvas.getBoundingClientRect();
+        }
+    }
+
+    function getCanvasRect() {
+        if (!cachedCanvasRect && canvas && typeof canvas.getBoundingClientRect === 'function') {
+            cachedCanvasRect = canvas.getBoundingClientRect();
+        }
+        return cachedCanvasRect;
+    }
 
     function isFlipped() {
         return playerColor === 'b';
@@ -267,6 +301,14 @@ const ChessUI = (() => {
         const layer = getBoardOverlay();
         if (!layer) return;
 
+        animatingMove = { toRow, toCol };
+        const clearAnimatingMove = () => {
+            if (animatingMove && animatingMove.toRow === toRow && animatingMove.toCol === toCol) {
+                animatingMove = null;
+                scheduleRender();
+            }
+        };
+
         const flyPiece = document.createElement('img');
         flyPiece.className = 'piece-fly';
         flyPiece.src = `pieces/${PIECE_CODES[piece]}.svg`;
@@ -280,7 +322,7 @@ const ChessUI = (() => {
         
         layer.appendChild(flyPiece);
 
-        requestAnimationFrame(() => {
+        safeRaf(() => {
             const dx = (tC - fC) * squareSize;
             const dy = (tR - fR) * squareSize;
             flyPiece.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.02)`;
@@ -288,16 +330,27 @@ const ChessUI = (() => {
 
         flyPiece.addEventListener('transitionend', () => {
             flyPiece.remove();
+            clearAnimatingMove();
         }, { once: true });
 
         safeSetTimeout(() => {
             if (flyPiece.isConnected) flyPiece.remove();
+            clearAnimatingMove();
         }, 320);
     }
 
     function init() {
         console.log("Chess UI Initializing... [Version v40]");
         clearPendingTimers();
+        cachedCanvasRect = null;
+        cachedOppCard = null;
+        cachedPlayerCard = null;
+        activeAnalysisItem = null;
+        renderScheduled = false;
+        animatingMove = null;
+        cachedLegalDests = null;
+        cachedLegalDestsSquare = null;
+        cachedLegalDestsFen = null;
         initPieceImages();
         
         if (typeof ChessWASM !== 'undefined') {
@@ -331,7 +384,7 @@ const ChessUI = (() => {
                     return;
                 }
                 if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
-                const rect = canvas.getBoundingClientRect();
+                const rect = getCanvasRect() || canvas.getBoundingClientRect();
                 const x = event.clientX - rect.left;
                 const y = event.clientY - rect.top;
                 
@@ -394,12 +447,18 @@ const ChessUI = (() => {
             });
 
             window.addEventListener('resize', () => {
+                updateCanvasRect();
                 renderBoard();
             });
+            if (typeof window !== 'undefined' && window.addEventListener) {
+                window.addEventListener('scroll', updateCanvasRect, { passive: true });
+            }
         }
 
         statusElement = document.getElementById('status');
         gameInfoElement = document.getElementById('game-info');
+        cachedOppCard = document.getElementById('opponent-card');
+        cachedPlayerCard = document.getElementById('player-card');
         historyListElement = document.getElementById('history-list');
         resetBtn = document.getElementById('reset-btn');
         pcToggle = document.getElementById('pc-toggle');
@@ -1190,7 +1249,7 @@ const ChessUI = (() => {
             logicUnsubscribe = null;
         }
         logicUnsubscribe = ChessLogic.subscribe(state => {
-            renderBoard();
+            scheduleRender();
             updateStatus(state.status);
             
             // Auto PC move if it's PC's turn
@@ -1393,15 +1452,19 @@ const ChessUI = (() => {
 
     let cachedLegalDests = null;
     let cachedLegalDestsSquare = null;
+    let cachedLegalDestsFen = null;
     function getLegalDestsForSelectedSquare() {
         if (!selectedSquare) {
             cachedLegalDests = null;
             cachedLegalDestsSquare = null;
+            cachedLegalDestsFen = null;
             return [];
         }
+        const currentFen = (typeof ChessLogic.getFen === 'function') ? ChessLogic.getFen() : null;
         if (cachedLegalDests && cachedLegalDestsSquare &&
             cachedLegalDestsSquare.row === selectedSquare.row &&
-            cachedLegalDestsSquare.col === selectedSquare.col) {
+            cachedLegalDestsSquare.col === selectedSquare.col &&
+            cachedLegalDestsFen === currentFen) {
             return cachedLegalDests;
         }
         const dests = [];
@@ -1414,6 +1477,7 @@ const ChessUI = (() => {
         }
         cachedLegalDests = dests;
         cachedLegalDestsSquare = { row: selectedSquare.row, col: selectedSquare.col };
+        cachedLegalDestsFen = currentFen;
         return dests;
     }
 
@@ -1594,7 +1658,7 @@ const ChessUI = (() => {
         if (accuracyBarContainer) accuracyBarContainer.style.display = 'none';
         if (accuracyWhiteBar) accuracyWhiteBar.style.height = '50%';
         if (accuracyBlackBar) accuracyBlackBar.style.height = '50%';
-        safeSetTimeout(renderBoard, 0);
+        scheduleRender();
         
         if (switchTab) switchTab('notation');
         updateCapturesDisplay();
@@ -1703,31 +1767,32 @@ const ChessUI = (() => {
         if (whiteTimeLeft === 0 && blackTimeLeft === 0 && parseTimeControl().time === 0) return;
 
         const isWhiteBottom = playerColor === 'w';
-        
-        if (isWhiteBottom) {
-            bottomTimerDisplay.textContent = formatTime(whiteTimeLeft);
-            topTimerDisplay.textContent = formatTime(blackTimeLeft);
-        } else {
-            bottomTimerDisplay.textContent = formatTime(blackTimeLeft);
-            topTimerDisplay.textContent = formatTime(whiteTimeLeft);
+        const bottomFormatted = formatTime(isWhiteBottom ? whiteTimeLeft : blackTimeLeft);
+        const topFormatted = formatTime(isWhiteBottom ? blackTimeLeft : whiteTimeLeft);
+
+        if (bottomTimerDisplay && bottomTimerDisplay.textContent !== bottomFormatted) {
+            bottomTimerDisplay.textContent = bottomFormatted;
+        }
+        if (topTimerDisplay && topTimerDisplay.textContent !== topFormatted) {
+            topTimerDisplay.textContent = topFormatted;
         }
 
         const turn = ChessLogic.getTurn();
         const isMyTurn = turn === playerColor;
 
-        const oppCard = document.getElementById('opponent-card');
-        const playerCard = document.getElementById('player-card');
+        if (!cachedOppCard) cachedOppCard = document.getElementById('opponent-card');
+        if (!cachedPlayerCard) cachedPlayerCard = document.getElementById('player-card');
 
         if (isMyTurn) {
             bottomTimerContainer.classList.add('active');
             topTimerContainer.classList.remove('active');
-            if (playerCard) playerCard.classList.add('glow-turn');
-            if (oppCard) oppCard.classList.remove('glow-turn');
+            if (cachedPlayerCard) cachedPlayerCard.classList.add('glow-turn');
+            if (cachedOppCard) cachedOppCard.classList.remove('glow-turn');
         } else {
             topTimerContainer.classList.add('active');
             bottomTimerContainer.classList.remove('active');
-            if (oppCard) oppCard.classList.add('glow-turn');
-            if (playerCard) playerCard.classList.remove('glow-turn');
+            if (cachedOppCard) cachedOppCard.classList.add('glow-turn');
+            if (cachedPlayerCard) cachedPlayerCard.classList.remove('glow-turn');
         }
 
         const myTimeLeft = playerColor === 'w' ? whiteTimeLeft : blackTimeLeft;
@@ -2041,6 +2106,9 @@ const ChessUI = (() => {
                 // Piece
                 const piece = board[r][c];
                 if (piece) {
+                    if (animatingMove && animatingMove.toRow === r && animatingMove.toCol === c) {
+                        continue;
+                    }
                     const isDraggingThis = isDragging && dragStartSquare && dragStartSquare.row === r && dragStartSquare.col === c;
                     const isBlack = piece === piece.toLowerCase();
                     const isHovered = hoverSquare && hoverSquare.row === r && hoverSquare.col === c && !isWaitingForPC && !isWaitingForStart && !gameEnded && !analysisSnapshot && !isDragging;
@@ -2050,10 +2118,16 @@ const ChessUI = (() => {
                         ctx.globalAlpha = 0.25;
                     }
                     
-                    // Shadow effect
-                    ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-                    ctx.shadowBlur = isHovered ? 8 : 4;
-                    ctx.shadowOffsetY = isHovered ? 5 : 3;
+                    // Shadow effect: disable blur for stationary pieces during dragging to avoid GPU rasterization lag
+                    if (!isDragging || isHovered) {
+                        ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+                        ctx.shadowBlur = isHovered ? 8 : 4;
+                        ctx.shadowOffsetY = isHovered ? 5 : 3;
+                    } else {
+                        ctx.shadowColor = 'transparent';
+                        ctx.shadowBlur = 0;
+                        ctx.shadowOffsetY = 0;
+                    }
                     
                     // Centering
                     ctx.textAlign = 'center';
@@ -2174,7 +2248,7 @@ const ChessUI = (() => {
         }
     }
 
-    function executeMove(fromRow, fromCol, toRow, toCol, isRemote = false) {
+    function executeMove(fromRow, fromCol, toRow, toCol, isRemote = false, skipAnimation = false) {
         if (gameEnded || analysisSnapshot) return false;
         if (!isRemote && isWaitingForStart) return false;
         const previousLastMove = lastMove ? { ...lastMove } : null;
@@ -2222,7 +2296,9 @@ const ChessUI = (() => {
                 ChessAudio.move();
             }
 
-            animateMove(fromRow, fromCol, toRow, toCol, movingPiece);
+            if (!skipAnimation) {
+                animateMove(fromRow, fromCol, toRow, toCol, movingPiece);
+            }
 
             if (wasCapture) {
                 const movingIsWhite = movingPiece === movingPiece.toUpperCase();
@@ -2249,9 +2325,7 @@ const ChessUI = (() => {
                         running: isTimerRunning
                     }
                 });
-                syncNetworkState();
             }
-            updateStatus();
             return true;
         }
         stateHistory.pop();
@@ -2260,7 +2334,7 @@ const ChessUI = (() => {
 
     function isDraggingPiece(clientX, clientY) {
         if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return false;
-        const rect = canvas.getBoundingClientRect();
+        const rect = getCanvasRect() || canvas.getBoundingClientRect();
         const x = clientX - rect.left;
         const y = clientY - rect.top;
         
@@ -2288,7 +2362,8 @@ const ChessUI = (() => {
 
     function handleMousedown(clientX, clientY) {
         if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
-        const rect = canvas.getBoundingClientRect();
+        updateCanvasRect();
+        const rect = getCanvasRect() || canvas.getBoundingClientRect();
         const x = clientX - rect.left;
         const y = clientY - rect.top;
         
@@ -2336,14 +2411,14 @@ const ChessUI = (() => {
         pendingMouseY = clientY;
         if (mousemoveRafId) return;
 
-        mousemoveRafId = requestAnimationFrame(() => {
+        mousemoveRafId = safeRaf(() => {
             mousemoveRafId = null;
             processMousemove(pendingMouseX, pendingMouseY);
         });
     }
 
     function processMousemove(clientX, clientY) {
-        const rect = canvas.getBoundingClientRect();
+        const rect = getCanvasRect() || canvas.getBoundingClientRect();
         const x = clientX - rect.left;
         const y = clientY - rect.top;
         
@@ -2390,7 +2465,7 @@ const ChessUI = (() => {
 
     function handleMouseup(clientX, clientY) {
         if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
-        const rect = canvas.getBoundingClientRect();
+        const rect = getCanvasRect() || canvas.getBoundingClientRect();
         const x = clientX - rect.left;
         const y = clientY - rect.top;
         
@@ -2416,7 +2491,7 @@ const ChessUI = (() => {
                     handleSquareClick(r, c);
                 } else {
                     // Try to execute the move
-                    const success = executeMove(startRow, startCol, r, c);
+                    const success = executeMove(startRow, startCol, r, c, false, true);
                     if (success) {
                         selectedSquare = null;
                     } else {
@@ -2781,7 +2856,16 @@ const ChessUI = (() => {
                 startTimer();
             }
             
-            historyListElement.innerHTML = previousState.history;
+            if (previousState.history !== undefined) {
+                historyListElement.innerHTML = previousState.history;
+            } else if (historyListElement && historyListElement.lastElementChild) {
+                const lastLi = historyListElement.lastElementChild;
+                if (lastLi.children[2] && lastLi.children[2].textContent) {
+                    lastLi.children[2].textContent = '';
+                } else {
+                    lastLi.remove();
+                }
+            }
             moveCount = previousState.moveCount;
             capturedByWhite = previousState.captures.white;
             capturedByBlack = previousState.captures.black;
@@ -2892,7 +2976,7 @@ const ChessUI = (() => {
             accuracyBlackBar.style.height = '50%';
             accuracyBlackBar.title = 'Вычисляется точность черных...';
         }
-        safeSetTimeout(renderBoard, 0);
+        scheduleRender();
 
         if (analysisProgress) analysisProgress.textContent = 'Подготовка к анализу...';
         if (analysisList) analysisList.innerHTML = '';
@@ -2998,7 +3082,7 @@ const ChessUI = (() => {
             accuracyBlackBar.style.height = blackPct + '%';
             accuracyBlackBar.title = `Точность Черных: ${stats.blackAccuracy}%`;
         }
-        safeSetTimeout(renderBoard, 0);
+        scheduleRender();
     }
 
     function parseUciMove(uci) {
@@ -3015,6 +3099,10 @@ const ChessUI = (() => {
     function renderAnalysisList() {
         if (!analysisList) return;
         analysisList.innerHTML = '';
+        activeAnalysisItem = null;
+        const fragment = (typeof document !== 'undefined' && typeof document.createDocumentFragment === 'function')
+            ? document.createDocumentFragment()
+            : null;
         
         analysisResults.forEach((result, index) => {
             const li = document.createElement('li');
@@ -3041,13 +3129,23 @@ const ChessUI = (() => {
             
             li.addEventListener('click', () => {
                 selectAnalysisMove(index);
-                // Highlight selection
-                Array.from(analysisList.children).forEach(child => child.style.backgroundColor = 'transparent');
+                if (activeAnalysisItem) {
+                    activeAnalysisItem.style.backgroundColor = 'transparent';
+                }
                 li.style.backgroundColor = 'rgba(128, 128, 128, 0.2)';
+                activeAnalysisItem = li;
             });
             
-            analysisList.appendChild(li);
+            if (fragment) {
+                fragment.appendChild(li);
+            } else {
+                analysisList.appendChild(li);
+            }
         });
+
+        if (fragment) {
+            analysisList.appendChild(fragment);
+        }
     }
 
     function selectAnalysisMove(index) {
@@ -3129,11 +3227,14 @@ const ChessUI = (() => {
                 black: [...capturedByBlack]
             },
             lastMove: lastMove ? { ...lastMove } : null,
-            stateHistory: stateHistory.map(entry => ({
-                ...entry,
-                boardState: entry.boardState ? { ...entry.boardState } : null,
-                lastMove: entry.lastMove ? { ...entry.lastMove } : null
-            })),
+            stateHistory: stateHistory.map(entry => {
+                const { history, ...rest } = entry;
+                return {
+                    ...rest,
+                    boardState: entry.boardState ? { ...entry.boardState } : null,
+                    lastMove: entry.lastMove ? { ...entry.lastMove } : null
+                };
+            }),
             settings: {
                 pcToggle: pcToggle.checked,
                 difficulty: difficultySelect.value,
@@ -3221,7 +3322,7 @@ const ChessUI = (() => {
         if (accuracyBlackBar) accuracyBlackBar.style.height = '50%';
         document.getElementById('top-accuracy').style.display = 'none';
         document.getElementById('bottom-accuracy').style.display = 'none';
-        safeSetTimeout(renderBoard, 0);
+        scheduleRender();
 
         updateResignButtonState();
         if (document.getElementById('draw-btn')) {
