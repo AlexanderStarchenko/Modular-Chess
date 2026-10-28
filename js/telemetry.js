@@ -46,7 +46,8 @@ const ChessTelemetry = (() => {
         });
 
         // Use sendBeacon if available and not on mobile (since sendBeacon doesn't always support custom CORS/headers cleanly on capacitor), otherwise use fetch
-        if (typeof navigator !== 'undefined' && navigator.sendBeacon && !window.Capacitor) {
+        const isCapacitor = typeof window !== 'undefined' && !!window.Capacitor;
+        if (typeof navigator !== 'undefined' && navigator.sendBeacon && !isCapacitor) {
             try {
                 const blob = new Blob([body], { type: 'application/json' });
                 if (navigator.sendBeacon(url, blob)) return;

@@ -28,13 +28,26 @@ const ASSETS = [
     `js/ui.js?v=${VERSION}`,
     `js/stockfish.js?v=${VERSION}`,
     `images/stockfish.png?v=${VERSION}`,
-    'build/release.wasm'
+    'build/release.wasm',
+    // Chess piece SVGs
+    'pieces/wP.svg', 'pieces/wR.svg', 'pieces/wN.svg', 'pieces/wB.svg', 'pieces/wQ.svg', 'pieces/wK.svg',
+    'pieces/bP.svg', 'pieces/bR.svg', 'pieces/bN.svg', 'pieces/bB.svg', 'pieces/bQ.svg', 'pieces/bK.svg',
+    // Audio assets
+    'sounds/move.mp3',
+    'sounds/capture.mp3',
+    'sounds/low_time.mp3'
 ];
 
 self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
-            .then(cache => cache.addAll(ASSETS))
+            .then(cache => {
+                return Promise.allSettled(
+                    ASSETS.map(asset => cache.add(asset).catch(err => {
+                        console.warn(`[SW] Failed to pre-cache ${asset}:`, err.message);
+                    }))
+                );
+            })
             .then(() => self.skipWaiting())
     );
 });
@@ -66,6 +79,21 @@ self.addEventListener('fetch', event => {
     event.respondWith(
         caches.match(req)
             .then(cached => cached || caches.match(req, { ignoreSearch: true }))
-            .then(cached => cached || fetch(req))
+            .then(cached => {
+                if (cached) return cached;
+                return fetch(req).then(networkResponse => {
+                    if (
+                        networkResponse &&
+                        networkResponse.status === 200 &&
+                        (networkResponse.type === 'basic' || networkResponse.type === 'cors')
+                    ) {
+                        const responseToCache = networkResponse.clone();
+                        caches.open(CACHE_NAME).then(cache => {
+                            cache.put(req, responseToCache);
+                        }).catch(() => {});
+                    }
+                    return networkResponse;
+                });
+            })
     );
 });

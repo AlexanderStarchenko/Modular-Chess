@@ -5,37 +5,66 @@
 
 const ChessStorage = (() => {
     const SAVE_SLOTS_KEY_PREFIX = 'modular-chess-save-slot-';
+    const memoryStore = {};
+
+    function safeGet(key, defaultVal) {
+        try {
+            if (typeof localStorage !== 'undefined') {
+                const val = localStorage.getItem(key);
+                return val !== null ? val : defaultVal;
+            }
+        } catch (e) {}
+        return key in memoryStore ? memoryStore[key] : defaultVal;
+    }
+
+    function safeSet(key, value) {
+        try {
+            if (typeof localStorage !== 'undefined') {
+                localStorage.setItem(key, value);
+            }
+        } catch (e) {}
+        memoryStore[key] = String(value);
+    }
+
+    function safeRemove(key) {
+        try {
+            if (typeof localStorage !== 'undefined') {
+                localStorage.removeItem(key);
+            }
+        } catch (e) {}
+        delete memoryStore[key];
+    }
 
     const API = {
         getBoardTheme(defaultVal = 'classic') {
-            return localStorage.getItem('board-theme') || defaultVal;
+            return safeGet('board-theme', defaultVal);
         },
         setBoardTheme(theme) {
-            localStorage.setItem('board-theme', theme);
+            safeSet('board-theme', theme);
         },
         getUITheme(defaultVal = 'system') {
-            return localStorage.getItem('ui-theme') || defaultVal;
+            return safeGet('ui-theme', defaultVal);
         },
         setUITheme(theme) {
-            localStorage.setItem('ui-theme', theme);
+            safeSet('ui-theme', theme);
         },
         getSoundMuted(defaultVal = false) {
-            const saved = localStorage.getItem('sound-muted');
+            const saved = safeGet('sound-muted', null);
             return saved !== null ? saved === 'true' : defaultVal;
         },
         setSoundMuted(muted) {
-            localStorage.setItem('sound-muted', muted);
+            safeSet('sound-muted', muted);
         },
         getSoundVolume(defaultVal = 1.0) {
-            const saved = localStorage.getItem('sound-volume');
+            const saved = safeGet('sound-volume', null);
             return saved !== null ? parseFloat(saved) : defaultVal;
         },
         setSoundVolume(volume) {
-            localStorage.setItem('sound-volume', volume);
+            safeSet('sound-volume', volume);
         },
         getSaveSlot(slotNum) {
             try {
-                const data = localStorage.getItem(SAVE_SLOTS_KEY_PREFIX + slotNum);
+                const data = safeGet(SAVE_SLOTS_KEY_PREFIX + slotNum, null);
                 return data ? JSON.parse(data) : null;
             } catch (err) {
                 console.error('[Storage] Error loading save slot', slotNum, err);
@@ -44,7 +73,7 @@ const ChessStorage = (() => {
         },
         setSaveSlot(slotNum, data) {
             try {
-                localStorage.setItem(SAVE_SLOTS_KEY_PREFIX + slotNum, JSON.stringify(data));
+                safeSet(SAVE_SLOTS_KEY_PREFIX + slotNum, JSON.stringify(data));
                 return true;
             } catch (err) {
                 console.error('[Storage] Error saving slot', slotNum, err);
@@ -52,7 +81,7 @@ const ChessStorage = (() => {
             }
         },
         deleteSaveSlot(slotNum) {
-            localStorage.removeItem(SAVE_SLOTS_KEY_PREFIX + slotNum);
+            safeRemove(SAVE_SLOTS_KEY_PREFIX + slotNum);
         }
     };
 

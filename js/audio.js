@@ -74,6 +74,12 @@ const ChessAudio = (() => {
                 gainNode.gain.value = soundVolume;
                 source.connect(gainNode);
                 gainNode.connect(ctx.destination);
+                source.onended = () => {
+                    try {
+                        source.disconnect();
+                        gainNode.disconnect();
+                    } catch (e) {}
+                };
                 source.start(0);
                 return;
             } catch (err) {

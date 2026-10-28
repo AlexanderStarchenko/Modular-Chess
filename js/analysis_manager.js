@@ -6,6 +6,15 @@ const AnalysisManager = (() => {
     let stockfish = null;
     let isAnalyzing = false;
     let currentTask = null;
+    let taskIdCounter = 0;
+
+    function getScoreValue(ev) {
+        if (!ev) return 0;
+        if (ev.mate !== null && ev.mate !== undefined) {
+            return ev.mate > 0 ? 10000 - ev.mate : -10000 - ev.mate;
+        }
+        return ev.cp || 0;
+    }
 
     function initWorker() {
         if (!stockfish) {
@@ -39,6 +48,7 @@ const AnalysisManager = (() => {
             let evalResult = { cp: 0, mate: null, bestmove: null };
             let resolved = false;
             let safetyTimeout = null;
+            const taskId = ++taskIdCounter;
 
             if (!stockfish) {
                 resolve(evalResult);
@@ -63,7 +73,9 @@ const AnalysisManager = (() => {
             }, 800);
 
             currentTask = {
+                id: taskId,
                 onMessage: (line) => {
+                    if (currentTask && currentTask.id !== taskId) return;
                     if (typeof line === 'string' && line.startsWith('info depth')) {
                         const scoreMatch = line.match(/score (cp|mate) (-?\d+)/);
                         if (scoreMatch) {
@@ -159,13 +171,6 @@ const AnalysisManager = (() => {
             // evalAfter is from perspective of opponent.
             // So scoreAfter for the player who made the move is -evalAfter.
             
-            function getScoreValue(ev) {
-                if (ev.mate !== null) {
-                    return ev.mate > 0 ? 10000 - ev.mate : -10000 - ev.mate;
-                }
-                return ev.cp || 0;
-            }
-
             let scoreBefore = getScoreValue(evalBefore);
             let scoreAfter = getScoreValue(evalAfter);
             let myScoreAfter = -scoreAfter;

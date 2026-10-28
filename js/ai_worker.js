@@ -52,7 +52,7 @@ onmessage = function(e) {
             bestMove = ChessAIMedium.getBestMove(turn);
         } else if (difficulty === '3') {
             bestMove = ChessAIHard.getBestMove(turn);
-        } else if (difficulty === '4') {
+        } else if (difficulty === '4' || difficulty === '5') {
             bestMove = ChessAIVeryHard.getBestMove(turn);
         }
         

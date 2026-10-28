@@ -80,7 +80,7 @@ const ChessAINeural = (() => {
                     return sessionV17;
                 } catch (err) {
                     console.warn('[Neural AI] modular_chess_v1_7.onnx not loaded, falling back to V1.6:', err);
-                    return init('v1_6');
+                    modelVer = 'v1_6';
                 }
             }
 
@@ -101,7 +101,7 @@ const ChessAINeural = (() => {
                     return sessionV16;
                 } catch (err) {
                     console.warn('[Neural AI] modular_chess_v1_6.onnx not loaded, falling back to V1.5:', err);
-                    return init('v1_5');
+                    modelVer = 'v1_5';
                 }
             }
 
@@ -122,6 +122,7 @@ const ChessAINeural = (() => {
                     return sessionV15;
                 } catch (err) {
                     console.warn('[Neural AI] modular_chess_v1_5.onnx not loaded, falling back to V1.0:', err);
+                    modelVer = 'v1';
                 }
             }
 
