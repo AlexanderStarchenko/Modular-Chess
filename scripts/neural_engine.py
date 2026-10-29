@@ -2041,12 +2041,13 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
         # TT probe
         hit, tt_depth, tt_score, tt_flag, tt_move = GLOBAL_TT.probe(z_hash, c_turn)
         if hit and tt_depth >= depth:
+            actual_score = tt_score if c_turn == 'w' else -tt_score
             if tt_flag == TT_FLAG_EXACT:
-                return tt_score, tt_move
-            elif tt_flag == TT_FLAG_LOWER and tt_score >= beta:
-                return tt_score, tt_move
-            elif tt_flag == TT_FLAG_UPPER and tt_score <= alpha:
-                return tt_score, tt_move
+                return actual_score, tt_move
+            elif tt_flag == TT_FLAG_LOWER and actual_score >= beta:
+                return actual_score, tt_move
+            elif tt_flag == TT_FLAG_UPPER and actual_score <= alpha:
+                return actual_score, tt_move
 
         my_kpos = w_kpos if c_turn == 'w' else b_kpos
         opp_turn = 'b' if c_turn == 'w' else 'w'
@@ -2095,28 +2096,33 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
             # Reconstruct quiet board in-place ONLY if neural eval needed and not cached
             if quiet_z_hash not in eval_cache and best_line:
                 undo_stack = []
-                # Apply moves of best_line in-place
+                broken = False
                 curr_c, curr_e, curr_wk, curr_bk, curr_m, curr_nkm, curr_z = cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash
                 for lm in best_line:
                     lfr, lfc, ltr, ltc = lm[0], lm[1], lm[2], lm[3]
                     lpr = lm[4] if len(lm) > 4 else None
                     if board[lfr][lfc] is None:
+                        broken = True
                         break
                     curr_c, curr_e, curr_wk, curr_bk, curr_m, curr_nkm, curr_z, u_inf = make_move(
                         board, lfr, lfc, ltr, ltc, lpr, curr_c, curr_e, curr_wk, curr_bk, curr_m, curr_nkm, curr_z
                     )
                     undo_stack.append((lfr, lfc, ltr, ltc, u_inf))
 
-                neural_val = get_neural_val(board, quiet_turn, quiet_cast_mask, quiet_z_hash)
+                if not broken:
+                    neural_val = get_neural_val(board, quiet_turn, quiet_cast_mask, quiet_z_hash)
+                else:
+                    neural_val = 0.0
 
-                # Unmake moves
+                # Unmake moves in reverse order
                 for lfr, lfc, ltr, ltc, u_inf in reversed(undo_stack):
                     unmake_move(board, lfr, lfc, ltr, ltc, u_inf)
             else:
                 neural_val = get_neural_val(board, quiet_turn, quiet_cast_mask, quiet_z_hash)
 
             leaf_eval = 0.70 * (persp * neural_val) + mat_part
-            GLOBAL_TT.store(z_hash, 0, leaf_eval, TT_FLAG_EXACT, None, c_turn)
+            leaf_score_to_store = leaf_eval if c_turn == 'w' else -leaf_eval
+            GLOBAL_TT.store(z_hash, 0, leaf_score_to_store, TT_FLAG_EXACT, None, c_turn)
             return leaf_eval, None
 
         pseudo_moves = generate_pseudo_legal_moves(board, c_turn, cast_mask, ep_col)
@@ -2160,9 +2166,9 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
             else:
                 # Dynamic LMR from precomputed table
                 reduction = 0
-                if depth >= 2 and legal_count >= 4 and not captured_piece and not in_check and not promo:
+                if depth >= 2 and (move_idx + 1) >= 4 and not captured_piece and not in_check and not promo:
                     d_idx = min(depth, MAX_LMR_DEPTH - 1)
-                    m_idx = min(legal_count, MAX_LMR_MOVES - 1)
+                    m_idx = min(move_idx + 1, MAX_LMR_MOVES - 1)
                     reduction = LMR_TABLE[d_idx][m_idx]
                     # Don't reduce into negative or zero depth
                     if reduction >= depth:
@@ -2201,7 +2207,8 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
             flag = TT_FLAG_UPPER
         elif best_score >= beta:
             flag = TT_FLAG_LOWER
-        GLOBAL_TT.store(z_hash, depth, best_score, flag, best_move, c_turn)
+        score_to_store = best_score if c_turn == 'w' else -best_score
+        GLOBAL_TT.store(z_hash, depth, score_to_store, flag, best_move, c_turn)
         return best_score, best_move
 
     # Root iterative deepening with Aspiration Windows
