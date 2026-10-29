@@ -52,6 +52,14 @@ if os.path.exists(_book_json_path):
     except Exception:
         pass
 
+OPENING_BOOK_3PART = {}
+for _k, _v in OPENING_BOOK.items():
+    _kp = _k.split()
+    if len(_kp) >= 3:
+        _k3 = ' '.join(_kp[:3])
+        if _k3 not in OPENING_BOOK_3PART:
+            OPENING_BOOK_3PART[_k3] = _v
+
 ENDGAME_TABLEBASE = {}
 
 def create_onnx_session(model_path):
@@ -698,19 +706,21 @@ def check_move_tactical_blunder(board, turn, m, castling='-', en_passant='-'):
 
     return None
 
-def filter_tactical_blunders(board, turn, legal_moves, castling='-', en_passant='-'):
-    """Filters out moves that immediately allow opponent instant mate, check-skewers, or hang pieces."""
+def filter_mating_blunders(board, turn, legal_moves, castling='-', en_passant='-'):
+    """Filters out moves that immediately allow opponent instant mate in 1."""
     if not legal_moves or len(legal_moves) <= 1:
         return legal_moves
     opp_turn = 'b' if turn == 'w' else 'w'
-    
-    # Priority 1: Do not allow instant mate in 1
     non_mating = []
     for m in legal_moves:
         nb, ncast = simulate_move_full(board, m[0], m[1], m[2], m[3], castling, en_passant)
         if not find_instant_mate(nb, opp_turn, ncast):
             non_mating.append(m)
-    pool = non_mating if len(non_mating) > 0 else legal_moves
+    return non_mating if len(non_mating) > 0 else legal_moves
+
+def filter_tactical_blunders(board, turn, legal_moves, castling='-', en_passant='-'):
+    """Filters out moves that immediately allow opponent instant mate, check-skewers, or hang pieces."""
+    pool = filter_mating_blunders(board, turn, legal_moves, castling, en_passant)
     if len(pool) <= 1:
         return pool
 
@@ -722,8 +732,6 @@ def filter_tactical_blunders(board, turn, legal_moves, castling='-', en_passant=
             safe_moves.append(m)
 
     return safe_moves if len(safe_moves) > 0 else pool
-
-filter_mating_blunders = filter_tactical_blunders
 
 def is_elementary_mating_endgame(board, turn):
     is_w = (turn == 'w')
@@ -1025,10 +1033,20 @@ def deep_search_5ply(session, fen, top_k1=14, top_k2=8, top_k3=4, top_k4=3, hist
     
     # 1. Opening book check (0ms)
     parts = fen.split()
-    book_key = ' '.join(parts[:4]) if len(parts) >= 4 else parts[0]
-    if book_key in OPENING_BOOK:
-        chosen = random.choice(OPENING_BOOK[book_key])
-        move_obj = uci_to_move(chosen)
+    book_move = None
+    if len(parts) >= 4:
+        key_4 = ' '.join(parts[:4])
+        if key_4 in OPENING_BOOK:
+            book_move = random.choice(OPENING_BOOK[key_4])
+    if not book_move and len(parts) >= 3:
+        key_3 = ' '.join(parts[:3])
+        if key_3 in OPENING_BOOK_3PART:
+            book_move = random.choice(OPENING_BOOK_3PART[key_3])
+    if not book_move and len(parts) >= 1:
+        if parts[0] in OPENING_BOOK:
+            book_move = random.choice(OPENING_BOOK[parts[0]])
+    if book_move:
+        move_obj = uci_to_move(book_move)
         return [move_obj], 0.0, 0.5
 
     # Build history set for repetition penalty
@@ -1397,11 +1415,6 @@ def init_board_metadata(board):
                     b_kpos = (r, c)
                 else:
                     non_king_mat += PIECE_ABS_VALUES.get(p, 0)
-                if p.lower() == 'p' and is_passed_pawn(board, r, c, p.isupper()):
-                    adv = (7 - r) if p.isupper() else r
-                    if adv >= 3:
-                        bonus = [0, 0, 0, 20, 50, 110, 250, 0][adv]
-                        mat_score += bonus if p.isupper() else -bonus
     return mat_score, non_king_mat, w_kpos, b_kpos
 
 def make_move(board, fr, fc, tr, tc, promo, cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash):
@@ -1813,8 +1826,8 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
                     history_hashes.add(compute_zobrist(hb, ht, castling_to_mask(hc), ep_to_col(he)))
         last_own_key = recent_keys[-2] if len(recent_keys) >= 2 else None
 
-    # Filter out fatal tactical blunders at root
-    active_moves = filter_tactical_blunders(board, turn, legal_moves, castling, en_passant)
+    # Filter out fatal mate blunders at root
+    active_moves = filter_mating_blunders(board, turn, legal_moves, castling, en_passant)
     if len(active_moves) == 1:
         m = active_moves[0]
         p = board[m[0]][m[1]]
@@ -1831,6 +1844,7 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
     mat_score_root, non_king_mat_root, w_kpos_root, b_kpos_root = init_board_metadata(board)
     z_hash_root = compute_zobrist(board, turn, cast_mask_root, ep_col_root)
     history_hashes.add(z_hash_root)
+    path_hashes = set(history_hashes)
 
     # Root neural evaluation
     inp = board_to_tensor(board, turn, castling)[np.newaxis, ...]
@@ -1884,7 +1898,7 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
             policy_cache[z_h] = pols[idx]
 
     # Quiescence Search with ZERO board copies: returns (best_score, quiet_turn, quiet_cast_mask, quiet_z_hash, is_mate, best_line)
-    def material_quiesce_leaf(cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, c_turn, alpha=-100000, beta=100000, qdepth=5):
+    def material_quiesce_leaf(cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, c_turn, alpha=-100000, beta=100000, qdepth=3):
         my_kpos = w_kpos if c_turn == 'w' else b_kpos
         opp_turn = 'b' if c_turn == 'w' else 'w'
         in_check = is_square_attacked(board, my_kpos[0], my_kpos[1], opp_turn)
@@ -2029,13 +2043,17 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
 
     def negamax(cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, c_turn, depth, alpha, beta, ply):
         node_counter[0] += 1
-        if (node_counter[0] & 63) == 0:
+        if (node_counter[0] & 15) == 0:
             if (time.time() - t0) * 1000 > time_limit_ms:
                 time_expired[0] = True
                 return alpha, None
 
-        # Repetition check in tree: draw
-        if ply > 0 and (z_hash in history_hashes):
+        # Repetition check in search path or game history: draw
+        if ply > 0 and (z_hash in path_hashes or z_hash in history_hashes):
+            return 0.0, None
+
+        # Insufficient material draw
+        if non_king_mat in (0, 320, 330):
             return 0.0, None
 
         # TT probe
@@ -2058,11 +2076,8 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
         q_tanh = float(math.tanh(mat_score / 400.0))
         static_eval = (persp * 0.30 * q_tanh)
 
-        # Static Null Move Pruning removed because neural value cannot be estimated purely by material
-
-
-        # Null Move Pruning (NMP)
-        if depth >= 3 and not in_check and non_king_mat > 800 and beta < 5000:
+        # Null Move Pruning (NMP) guarded by static evaluation
+        if depth >= 3 and not in_check and non_king_mat > 800 and beta < 5000 and static_eval >= beta:
             R = 2
             null_hash = z_hash ^ ZOBRIST_TURN
             if 0 <= ep_col < 8:
@@ -2076,7 +2091,7 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
         # Leaf evaluation
         if depth <= 0:
             mat_score_leaf, quiet_turn, quiet_cast_mask, quiet_z_hash, is_mate, best_line = material_quiesce_leaf(
-                cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, c_turn, -100000, 100000, qdepth=5
+                cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, c_turn, -100000, 100000, qdepth=3
             )
             if abs(mat_score_leaf) >= 50000:
                 mate_val = (10.0 - ply * 0.1) if mat_score_leaf > 0 else (-10.0 + ply * 0.1)
@@ -2138,78 +2153,79 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
         orig_alpha = alpha
         legal_count = 0
 
-        # Futility Pruning disabled
-        futility_prune = False
+        path_hashes.add(z_hash)
+        try:
+            for move_idx, (_, m) in enumerate(scored_moves):
+                fr, fc, tr, tc = m[0], m[1], m[2], m[3]
+                promo = m[4] if len(m) > 4 else None
 
-        for move_idx, (_, m) in enumerate(scored_moves):
-            fr, fc, tr, tc = m[0], m[1], m[2], m[3]
-            promo = m[4] if len(m) > 4 else None
+                new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, undo = make_move(
+                    board, fr, fc, tr, tc, promo,
+                    cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash
+                )
 
-            new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, undo = make_move(
-                board, fr, fc, tr, tc, promo,
-                cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash
-            )
+                # Lazy Legality Check
+                chk_kpos = new_wk if c_turn == 'w' else new_bk
+                if is_square_attacked(board, chk_kpos[0], chk_kpos[1], opp_turn):
+                    unmake_move(board, fr, fc, tr, tc, undo)
+                    continue
 
-            # Lazy Legality Check
-            chk_kpos = new_wk if c_turn == 'w' else new_bk
-            if is_square_attacked(board, chk_kpos[0], chk_kpos[1], opp_turn):
-                unmake_move(board, fr, fc, tr, tc, undo)
-                continue
+                legal_count += 1
+                captured_piece = undo[1]
 
-            legal_count += 1
-            captured_piece = undo[1]
-
-            # PVS & Dynamic LMR
-            if legal_count == 1:
-                val, _ = negamax(new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, opp_turn, depth - 1, -beta, -alpha, ply + 1)
-                score = -val
-            else:
-                # Dynamic LMR from precomputed table
-                reduction = 0
-                if depth >= 2 and (move_idx + 1) >= 4 and not captured_piece and not in_check and not promo:
-                    d_idx = min(depth, MAX_LMR_DEPTH - 1)
-                    m_idx = min(move_idx + 1, MAX_LMR_MOVES - 1)
-                    reduction = LMR_TABLE[d_idx][m_idx]
-                    # Don't reduce into negative or zero depth
-                    if reduction >= depth:
-                        reduction = depth - 1
-
-                val, _ = negamax(new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, opp_turn, depth - 1 - reduction, -alpha - 0.01, -alpha, ply + 1)
-                score = -val
-                if score > alpha and (score < beta or reduction > 0):
+                # PVS & Dynamic LMR
+                if legal_count == 1:
                     val, _ = negamax(new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, opp_turn, depth - 1, -beta, -alpha, ply + 1)
                     score = -val
+                else:
+                    # Dynamic LMR from precomputed table
+                    reduction = 0
+                    if depth >= 2 and (move_idx + 1) >= 4 and not captured_piece and not in_check and not promo:
+                        d_idx = min(depth, MAX_LMR_DEPTH - 1)
+                        m_idx = min(move_idx + 1, MAX_LMR_MOVES - 1)
+                        reduction = LMR_TABLE[d_idx][m_idx]
+                        # Don't reduce into negative or zero depth
+                        if reduction >= depth:
+                            reduction = depth - 1
 
-            unmake_move(board, fr, fc, tr, tc, undo)
+                    val, _ = negamax(new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, opp_turn, depth - 1 - reduction, -alpha - 0.01, -alpha, ply + 1)
+                    score = -val
+                    if score > alpha and (score < beta or reduction > 0):
+                        val, _ = negamax(new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, opp_turn, depth - 1, -beta, -alpha, ply + 1)
+                        score = -val
+
+                unmake_move(board, fr, fc, tr, tc, undo)
+                if time_expired[0]:
+                    return alpha, None
+
+                if score > best_score:
+                    best_score = score
+                    best_move = m
+                if score > alpha:
+                    alpha = score
+                if alpha >= beta:
+                    killer_moves[ply] = (fr, fc, tr, tc)
+                    history_table[(fr, fc, tr, tc)] = history_table.get((fr, fc, tr, tc), 0) + depth * depth
+                    break # Beta cutoff
+
+            if legal_count == 0:
+                if in_check:
+                    return -10.0 + ply * 0.1, None
+                return 0.0, None
+
             if time_expired[0]:
                 return alpha, None
 
-            if score > best_score:
-                best_score = score
-                best_move = m
-            if score > alpha:
-                alpha = score
-            if alpha >= beta:
-                killer_moves[ply] = (fr, fc, tr, tc)
-                history_table[(fr, fc, tr, tc)] = history_table.get((fr, fc, tr, tc), 0) + depth * depth
-                break # Beta cutoff
-
-        if legal_count == 0:
-            if in_check:
-                return -10.0 + ply * 0.1, None
-            return 0.0, None
-
-        if time_expired[0]:
-            return alpha, None
-
-        flag = TT_FLAG_EXACT
-        if best_score <= orig_alpha:
-            flag = TT_FLAG_UPPER
-        elif best_score >= beta:
-            flag = TT_FLAG_LOWER
-        score_to_store = best_score if c_turn == 'w' else -best_score
-        GLOBAL_TT.store(z_hash, depth, score_to_store, flag, best_move, c_turn)
-        return best_score, best_move
+            flag = TT_FLAG_EXACT
+            if best_score <= orig_alpha:
+                flag = TT_FLAG_UPPER
+            elif best_score >= beta:
+                flag = TT_FLAG_LOWER
+            score_to_store = best_score if c_turn == 'w' else -best_score
+            GLOBAL_TT.store(z_hash, depth, score_to_store, flag, best_move, c_turn)
+            return best_score, best_move
+        finally:
+            path_hashes.remove(z_hash)
 
     # Root iterative deepening with Aspiration Windows
     best_move_root = active_moves[int(np.argmax(root_priors))]
@@ -2232,13 +2248,15 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
 
         # Aspiration Window
         if d >= 3:
-            delta = 0.40
+            delta = 0.20
             alpha = max(-9999.0, best_val_root - delta)
             beta = min(9999.0, best_val_root + delta)
         else:
             alpha = -9999.0
             beta = 9999.0
 
+        aspiration_alpha = alpha
+        aspiration_beta = beta
         iter_scores = {}
         iter_best_move = None
         iter_best_val = -9999.0
@@ -2309,11 +2327,13 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
 
             # Aspiration Window re-search check
             if d >= 3:
-                if iter_best_val <= alpha and alpha > -9000.0:
+                if iter_best_val <= aspiration_alpha and aspiration_alpha > -9000.0:
                     alpha = -9999.0
+                    aspiration_alpha = -9999.0
                     continue
-                elif iter_best_val >= beta and beta < 9000.0:
+                elif iter_best_val >= aspiration_beta and aspiration_beta < 9000.0:
                     beta = 9999.0
+                    aspiration_beta = 9999.0
                     continue
             break
 
