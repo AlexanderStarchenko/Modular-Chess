@@ -56,9 +56,11 @@ ENDGAME_TABLEBASE = {}
 
 def create_onnx_session(model_path):
     opts = ort.SessionOptions()
-    opts.intra_op_num_threads = 2
+    opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    opts.intra_op_num_threads = min(4, os.cpu_count() or 4)
+    opts.inter_op_num_threads = 1
     opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-    return ort.InferenceSession(model_path, sess_options=opts)
+    return ort.InferenceSession(model_path, sess_options=opts, providers=['CPUExecutionProvider'])
 # Complex and theoretical endgames are calculated dynamically by Alpha-Beta search.
 # Elementary checkmates (K+Q vs K, K+R vs K) are solved by solve_elementary_endgame.
 
@@ -1325,12 +1327,371 @@ def deep_search_5ply(session, fen, top_k1=14, top_k2=8, top_k3=4, top_k4=3, hist
     dt = (time.time() - t0) * 1000
     return results, root_val, dt
 
+# 1. Precompute MOVE_TO_4672_NORMAL table: [fr][fc][tr][tc] -> index
+MOVE_TO_4672_NORMAL = [[[[None for _ in range(8)] for _ in range(8)] for _ in range(8)] for _ in range(8)]
+for fr in range(8):
+    for fc in range(8):
+        for tr in range(8):
+            for tc in range(8):
+                uci = chr(97 + fc) + str(8 - fr) + chr(97 + tc) + str(8 - tr)
+                MOVE_TO_4672_NORMAL[fr][fc][tr][tc] = uci_to_4672(uci)
+
+# 2. Zobrist Hashing tables
+_z_rng = random.Random(0x4D6F64756C6172)
+ZOBRIST_PIECES = {
+    p: [[_z_rng.getrandbits(64) for _ in range(8)] for _ in range(8)]
+    for p in ('P', 'N', 'B', 'R', 'Q', 'K', 'p', 'n', 'b', 'r', 'q', 'k')
+}
+ZOBRIST_TURN = _z_rng.getrandbits(64)
+ZOBRIST_CASTLING = [_z_rng.getrandbits(64) for _ in range(16)]
+ZOBRIST_EP = [_z_rng.getrandbits(64) for _ in range(9)] # 0..7 files, 8 for no EP
+
+def castling_to_mask(castling_str):
+    mask = 0
+    if 'K' in castling_str: mask |= 1
+    if 'Q' in castling_str: mask |= 2
+    if 'k' in castling_str: mask |= 4
+    if 'q' in castling_str: mask |= 8
+    return mask
+
+def mask_to_castling(mask):
+    s = ''
+    if mask & 1: s += 'K'
+    if mask & 2: s += 'Q'
+    if mask & 4: s += 'k'
+    if mask & 8: s += 'q'
+    return s if s else '-'
+
+def ep_to_col(ep_str):
+    if ep_str and ep_str != '-' and len(ep_str) == 2:
+        return ord(ep_str[0]) - ord('a')
+    return -1
+
+def compute_zobrist(board, turn, cast_mask, ep_col):
+    h = 0
+    for r in range(8):
+        for c in range(8):
+            p = board[r][c]
+            if p:
+                h ^= ZOBRIST_PIECES[p][r][c]
+    if turn == 'b':
+        h ^= ZOBRIST_TURN
+    h ^= ZOBRIST_CASTLING[cast_mask]
+    h ^= ZOBRIST_EP[ep_col if 0 <= ep_col < 8 else 8]
+    return h
+
+def init_board_metadata(board):
+    mat_score = 0
+    non_king_mat = 0
+    w_kpos = (-1, -1)
+    b_kpos = (-1, -1)
+    for r in range(8):
+        for c in range(8):
+            p = board[r][c]
+            if p:
+                val = PIECE_VALUES.get(p, 0)
+                mat_score += val
+                if p == 'K':
+                    w_kpos = (r, c)
+                elif p == 'k':
+                    b_kpos = (r, c)
+                else:
+                    non_king_mat += PIECE_ABS_VALUES.get(p, 0)
+                if p.lower() == 'p' and is_passed_pawn(board, r, c, p.isupper()):
+                    adv = (7 - r) if p.isupper() else r
+                    if adv >= 3:
+                        bonus = [0, 0, 0, 20, 50, 110, 250, 0][adv]
+                        mat_score += bonus if p.isupper() else -bonus
+    return mat_score, non_king_mat, w_kpos, b_kpos
+
+def make_move(board, fr, fc, tr, tc, promo, cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash):
+    piece = board[fr][fc]
+    captured = board[tr][tc]
+    is_w = piece.isupper()
+    is_ep = False
+    is_castle = False
+    new_w_kpos = w_kpos
+    new_b_kpos = b_kpos
+    new_cast_mask = cast_mask
+    new_ep_col = -1
+    new_mat = mat_score
+    new_nkm = non_king_mat
+    new_hash = z_hash
+
+    # 1. Remove from source
+    board[fr][fc] = None
+    new_hash ^= ZOBRIST_PIECES[piece][fr][fc]
+
+    # 2. Check En Passant
+    if piece.lower() == 'p' and fc != tc and captured is None:
+        is_ep = True
+        captured = board[fr][tc]
+        board[fr][tc] = None
+        new_hash ^= ZOBRIST_PIECES[captured][fr][tc]
+        if is_w:
+            new_mat += 100
+        else:
+            new_mat -= 100
+        new_nkm -= 100
+    elif captured:
+        new_hash ^= ZOBRIST_PIECES[captured][tr][tc]
+        c_val = PIECE_VALUES.get(captured, 0)
+        c_abs = PIECE_ABS_VALUES.get(captured, 0)
+        new_mat -= c_val
+        if captured.lower() != 'k':
+            new_nkm -= c_abs
+
+    # 3. Promotion
+    final_piece = piece
+    if piece == 'P' and tr == 0:
+        final_piece = promo.upper() if promo else 'Q'
+        promo_diff = PIECE_VALUES[final_piece] - 100
+        new_mat += promo_diff
+        new_nkm += PIECE_ABS_VALUES[final_piece]
+    elif piece == 'p' and tr == 7:
+        final_piece = promo.lower() if promo else 'q'
+        promo_diff = PIECE_VALUES[final_piece] - (-100)
+        new_mat += promo_diff
+        new_nkm += PIECE_ABS_VALUES[final_piece]
+
+    board[tr][tc] = final_piece
+    new_hash ^= ZOBRIST_PIECES[final_piece][tr][tc]
+
+    # 4. Castling execution
+    if piece == 'K':
+        new_w_kpos = (tr, tc)
+        new_cast_mask &= ~3
+        if fc == 4 and tc == 6:
+            is_castle = True
+            board[7][7] = None; board[7][5] = 'R'
+            new_hash ^= ZOBRIST_PIECES['R'][7][7] ^ ZOBRIST_PIECES['R'][7][5]
+        elif fc == 4 and tc == 2:
+            is_castle = True
+            board[7][0] = None; board[7][3] = 'R'
+            new_hash ^= ZOBRIST_PIECES['R'][7][0] ^ ZOBRIST_PIECES['R'][7][3]
+    elif piece == 'k':
+        new_b_kpos = (tr, tc)
+        new_cast_mask &= ~12
+        if fc == 4 and tc == 6:
+            is_castle = True
+            board[0][7] = None; board[0][5] = 'r'
+            new_hash ^= ZOBRIST_PIECES['r'][0][7] ^ ZOBRIST_PIECES['r'][0][5]
+        elif fc == 4 and tc == 2:
+            is_castle = True
+            board[0][0] = None; board[0][3] = 'r'
+            new_hash ^= ZOBRIST_PIECES['r'][0][0] ^ ZOBRIST_PIECES['r'][0][3]
+
+    # 5. Revoke castling rights
+    if fr == 7 and fc == 7: new_cast_mask &= ~1
+    elif fr == 7 and fc == 0: new_cast_mask &= ~2
+    elif fr == 0 and fc == 7: new_cast_mask &= ~4
+    elif fr == 0 and fc == 0: new_cast_mask &= ~8
+
+    if tr == 7 and tc == 7: new_cast_mask &= ~1
+    elif tr == 7 and tc == 0: new_cast_mask &= ~2
+    elif tr == 0 and tc == 7: new_cast_mask &= ~4
+    elif tr == 0 and tc == 0: new_cast_mask &= ~8
+
+    # 6. Double pawn push sets en passant col
+    if piece.lower() == 'p' and abs(tr - fr) == 2:
+        new_ep_col = fc
+
+    # 7. Update castling and EP in hash
+    if new_cast_mask != cast_mask:
+        new_hash ^= ZOBRIST_CASTLING[cast_mask] ^ ZOBRIST_CASTLING[new_cast_mask]
+    if new_ep_col != ep_col:
+        old_ep_idx = ep_col if 0 <= ep_col < 8 else 8
+        new_ep_idx = new_ep_col if 0 <= new_ep_col < 8 else 8
+        new_hash ^= ZOBRIST_EP[old_ep_idx] ^ ZOBRIST_EP[new_ep_idx]
+
+    new_hash ^= ZOBRIST_TURN
+
+    undo_info = (piece, captured, promo, cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, is_ep, is_castle)
+    return new_cast_mask, new_ep_col, new_w_kpos, new_b_kpos, new_mat, new_nkm, new_hash, undo_info
+
+def unmake_move(board, fr, fc, tr, tc, undo_info):
+    piece, captured, promo, cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, is_ep, is_castle = undo_info
+
+    board[fr][fc] = piece
+    board[tr][tc] = None
+
+    if is_ep:
+        board[fr][tc] = captured
+    elif captured:
+        board[tr][tc] = captured
+
+    if is_castle:
+        if piece == 'K':
+            if tc == 6:
+                board[7][5] = None; board[7][7] = 'R'
+            elif tc == 2:
+                board[7][3] = None; board[7][0] = 'R'
+        elif piece == 'k':
+            if tc == 6:
+                board[0][5] = None; board[0][7] = 'r'
+            elif tc == 2:
+                board[0][3] = None; board[0][0] = 'r'
+
+    return cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash
+
+def generate_pseudo_legal_moves(board, turn, cast_mask, ep_col):
+    is_w = (turn == 'w')
+    moves = []
+    p_dir = -1 if is_w else 1
+    start_rank = 6 if is_w else 1
+    promo_rank = 0 if is_w else 7
+
+    for r in range(8):
+        for c in range(8):
+            p = board[r][c]
+            if not p or (p.isupper() != is_w):
+                continue
+            ptype = p.lower()
+
+            if ptype == 'p':
+                nr = r + p_dir
+                if 0 <= nr < 8 and board[nr][c] is None:
+                    if nr == promo_rank:
+                        moves.append((r, c, nr, c, 'q'))
+                    else:
+                        moves.append((r, c, nr, c, None))
+                        if r == start_rank and board[r + 2 * p_dir][c] is None:
+                            moves.append((r, c, r + 2 * p_dir, c, None))
+                for dc in (-1, 1):
+                    nc = c + dc
+                    if 0 <= nr < 8 and 0 <= nc < 8:
+                        tp = board[nr][nc]
+                        if tp and (tp.isupper() != is_w) and tp.lower() != 'k':
+                            if nr == promo_rank:
+                                moves.append((r, c, nr, nc, 'q'))
+                            else:
+                                moves.append((r, c, nr, nc, None))
+                        elif ep_col == nc and ((is_w and r == 3 and nr == 2) or (not is_w and r == 4 and nr == 5)):
+                            moves.append((r, c, nr, nc, None))
+
+            elif ptype == 'n':
+                for dr, dc in ((-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)):
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < 8 and 0 <= nc < 8:
+                        tp = board[nr][nc]
+                        if not tp or ((tp.isupper() != is_w) and tp.lower() != 'k'):
+                            moves.append((r, c, nr, nc, None))
+
+            elif ptype in ('b', 'r', 'q'):
+                dirs = []
+                if ptype in ('b', 'q'): dirs += [(-1,-1),(-1,1),(1,-1),(1,1)]
+                if ptype in ('r', 'q'): dirs += [(-1,0),(1,0),(0,-1),(0,1)]
+                for dr, dc in dirs:
+                    nr, nc = r + dr, c + dc
+                    while 0 <= nr < 8 and 0 <= nc < 8:
+                        tp = board[nr][nc]
+                        if not tp:
+                            moves.append((r, c, nr, nc, None))
+                        else:
+                            if tp.isupper() != is_w and tp.lower() != 'k':
+                                moves.append((r, c, nr, nc, None))
+                            break
+                        nr += dr
+                        nc += dc
+
+            elif ptype == 'k':
+                for dr in (-1, 0, 1):
+                    for dc in (-1, 0, 1):
+                        if dr == 0 and dc == 0: continue
+                        nr, nc = r + dr, c + dc
+                        if 0 <= nr < 8 and 0 <= nc < 8:
+                            tp = board[nr][nc]
+                            if not tp or ((tp.isupper() != is_w) and tp.lower() != 'k'):
+                                moves.append((r, c, nr, nc, None))
+
+    # Castling
+    if is_w:
+        if (cast_mask & 1) and board[7][4] == 'K' and board[7][7] == 'R':
+            if board[7][5] is None and board[7][6] is None:
+                if not is_square_attacked(board, 7, 4, 'b') and not is_square_attacked(board, 7, 5, 'b') and not is_square_attacked(board, 7, 6, 'b'):
+                    moves.append((7, 4, 7, 6, None))
+        if (cast_mask & 2) and board[7][4] == 'K' and board[7][0] == 'R':
+            if board[7][1] is None and board[7][2] is None and board[7][3] is None:
+                if not is_square_attacked(board, 7, 4, 'b') and not is_square_attacked(board, 7, 3, 'b') and not is_square_attacked(board, 7, 2, 'b'):
+                    moves.append((7, 4, 7, 2, None))
+    else:
+        if (cast_mask & 4) and board[0][4] == 'k' and board[0][7] == 'r':
+            if board[0][5] is None and board[0][6] is None:
+                if not is_square_attacked(board, 0, 4, 'w') and not is_square_attacked(board, 0, 5, 'w') and not is_square_attacked(board, 0, 6, 'w'):
+                    moves.append((0, 4, 0, 6, None))
+        if (cast_mask & 8) and board[0][4] == 'k' and board[0][0] == 'r':
+            if board[0][1] is None and board[0][2] is None and board[0][3] is None:
+                if not is_square_attacked(board, 0, 4, 'w') and not is_square_attacked(board, 0, 3, 'w') and not is_square_attacked(board, 0, 2, 'w'):
+                    moves.append((0, 4, 0, 2, None))
+
+    return moves
+
+def generate_captures_fast(board, turn, ep_col):
+    is_w = (turn == 'w')
+    p_dir = -1 if is_w else 1
+    promo_rank = 0 if is_w else 7
+    caps = []
+
+    for r in range(8):
+        for c in range(8):
+            p = board[r][c]
+            if not p or (p.isupper() != is_w):
+                continue
+            ptype = p.lower()
+            a_val = PIECE_ABS_VALUES.get(p, 0)
+
+            if ptype == 'p':
+                nr = r + p_dir
+                for dc in (-1, 1):
+                    nc = c + dc
+                    if 0 <= nr < 8 and 0 <= nc < 8:
+                        tp = board[nr][nc]
+                        if tp and (tp.isupper() != is_w) and tp.lower() != 'k':
+                            v_val = PIECE_ABS_VALUES.get(tp, 0)
+                            if nr == promo_rank: v_val += 800
+                            caps.append((v_val * 10 - a_val, v_val, r, c, nr, nc, 'q' if nr == promo_rank else None))
+                        elif ep_col == nc and ((is_w and r == 3 and nr == 2) or (not is_w and r == 4 and nr == 5)):
+                            caps.append((100 * 10 - a_val, 100, r, c, nr, nc, None))
+
+            elif ptype == 'n':
+                for dr, dc in ((-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)):
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < 8 and 0 <= nc < 8:
+                        tp = board[nr][nc]
+                        if tp and (tp.isupper() != is_w) and tp.lower() != 'k':
+                            v_val = PIECE_ABS_VALUES.get(tp, 0)
+                            caps.append((v_val * 10 - a_val, v_val, r, c, nr, nc, None))
+
+            elif ptype in ('b', 'r', 'q'):
+                dirs = []
+                if ptype in ('b', 'q'): dirs += [(-1,-1),(-1,1),(1,-1),(1,1)]
+                if ptype in ('r', 'q'): dirs += [(-1,0),(1,0),(0,-1),(0,1)]
+                for dr, dc in dirs:
+                    nr, nc = r + dr, c + dc
+                    while 0 <= nr < 8 and 0 <= nc < 8:
+                        tp = board[nr][nc]
+                        if tp:
+                            if (tp.isupper() != is_w) and tp.lower() != 'k':
+                                v_val = PIECE_ABS_VALUES.get(tp, 0)
+                                caps.append((v_val * 10 - a_val, v_val, r, c, nr, nc, None))
+                            break
+                        nr += dr
+                        nc += dc
+
+            elif ptype == 'k':
+                for dr in (-1, 0, 1):
+                    for dc in (-1, 0, 1):
+                        if dr == 0 and dc == 0: continue
+                        nr, nc = r + dr, c + dc
+                        if 0 <= nr < 8 and 0 <= nc < 8:
+                            tp = board[nr][nc]
+                            if tp and (tp.isupper() != is_w) and tp.lower() != 'k':
+                                v_val = PIECE_ABS_VALUES.get(tp, 0)
+                                caps.append((v_val * 10 - a_val, v_val, r, c, nr, nc, None))
+
+    return caps
+
 def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None):
-    """
-    Alpha-Beta search with policy-guided move ordering, Transposition Table,
-    killer moves heuristic, tactical blunder filtering, deep quiescence search,
-    and neural network root evaluation.
-    """
     t0 = time.time()
     
     # 1. Opening book check (0ms)
@@ -1379,10 +1740,11 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
             'score': 9000.0, 'isMate': True
         }], 1.0, (time.time() - t0) * 1000
 
+    history_hashes = set()
     history_set = set()
-    history_counts = {}
-    recent_keys = []
+    last_own_key = None
     if history:
+        recent_keys = []
         for h in history:
             if isinstance(h, str):
                 hparts = h.split()
@@ -1390,12 +1752,14 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
                     k = hparts[0] + ' ' + hparts[1]
                     history_set.add(k)
                     recent_keys.append(k)
-                    history_counts[k] = history_counts.get(k, 0) + 1
                 elif len(hparts) == 1:
                     history_set.add(hparts[0])
                     recent_keys.append(hparts[0])
-                    history_counts[hparts[0]] = history_counts.get(hparts[0], 0) + 1
-    last_own_key = recent_keys[-2] if len(recent_keys) >= 2 else None
+                # Compute zobrist for historical FENs if full FEN
+                if len(hparts) >= 4:
+                    hb, ht, hc, he = fen_to_board(h)
+                    history_hashes.add(compute_zobrist(hb, ht, castling_to_mask(hc), ep_to_col(he)))
+        last_own_key = recent_keys[-2] if len(recent_keys) >= 2 else None
 
     # Filter out fatal tactical blunders at root
     active_moves = filter_tactical_blunders(board, turn, legal_moves, castling, en_passant)
@@ -1409,134 +1773,155 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
             'promotion': 'q' if is_promo else None, 'score': 1.0
         }], 0.0, (time.time() - t0) * 1000
 
-    # Root neural evaluation: computes full grandmaster policy logits & positional value
+    # Initialize root metadata & Zobrist
+    cast_mask_root = castling_to_mask(castling)
+    ep_col_root = ep_to_col(en_passant)
+    mat_score_root, non_king_mat_root, w_kpos_root, b_kpos_root = init_board_metadata(board)
+    z_hash_root = compute_zobrist(board, turn, cast_mask_root, ep_col_root)
+    history_hashes.add(z_hash_root)
+
+    # Root neural evaluation
     inp = board_to_tensor(board, turn, castling)[np.newaxis, ...]
     out = session.run(None, {'board_state': inp})
     root_pol = out[0][0]
     root_val = float(out[1][0, 0])
     root_priors = compute_priors(board, turn, active_moves, root_pol, history_set, root_val, last_own_key, is_root=True)
 
-    eval_cache = {}    # pos_key -> neural Value Head scalar [-1.0, 1.0] from White perspective
-    policy_cache = {}  # pos_key -> neural Policy Head vector for move ordering
-    tt = {} # Transposition Table: pos_key -> { 'depth', 'score', 'flag', 'best_move' }
-    killer_moves = {} # ply -> (m0, m1, m2, m3)
+    eval_cache = {}    # z_hash -> neural Value Head scalar [-1.0, 1.0] from White perspective
+    policy_cache = {}  # z_hash -> neural Policy Head vector for move ordering
+    tt = {}            # z_hash -> { 'depth', 'score', 'flag', 'best_move' }
+    killer_moves = {}  # ply -> (m0, m1, m2, m3)
     history_table = {} # (m0, m1, m2, m3) -> heuristic cutoff score
     node_counter = [0]
     time_expired = [False]
 
-    def get_neural_val(b, c_turn, c_cast):
-        pos_key = (tuple(tuple(row) for row in b), c_turn, c_cast)
-        if pos_key in eval_cache:
-            return eval_cache[pos_key]
-        inp_tensor = board_to_tensor(b, c_turn, c_cast)[np.newaxis, ...]
+    def get_neural_val(b, c_turn, c_cast_mask, z_h):
+        if z_h in eval_cache:
+            return eval_cache[z_h]
+        c_cast_str = mask_to_castling(c_cast_mask)
+        inp_tensor = board_to_tensor(b, c_turn, c_cast_str)[np.newaxis, ...]
         res = session.run(None, {'board_state': inp_tensor})
         pol = res[0][0]
         v = float(res[1][0, 0])
-        eval_cache[pos_key] = v
-        policy_cache[pos_key] = pol
+        eval_cache[z_h] = v
+        policy_cache[z_h] = pol
         return v
 
-    def material_quiesce_leaf(b, c_turn, cast, ep='-', alpha=-100000, beta=100000, qdepth=5):
-        in_check = is_king_in_check(b, c_turn)
+    def material_quiesce_leaf(cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, c_turn, alpha=-100000, beta=100000, qdepth=5):
+        my_kpos = w_kpos if c_turn == 'w' else b_kpos
         opp_turn = 'b' if c_turn == 'w' else 'w'
+        in_check = is_square_attacked(board, my_kpos[0], my_kpos[1], opp_turn)
 
         if in_check:
-            legal = get_legal_moves(b, c_turn, cast, ep)
-            if not legal:
-                return -100000, b, c_turn, cast, True
+            # Must generate evasions
+            pseudo = generate_pseudo_legal_moves(board, c_turn, cast_mask, ep_col)
             scored_evasions = []
-            for m in legal:
-                target = b[m[2]][m[3]]
+            for m in pseudo:
+                target = board[m[2]][m[3]]
                 v_val = PIECE_ABS_VALUES.get(target, 0) if target else 0
-                a_val = PIECE_ABS_VALUES.get(b[m[0]][m[1]], 0) if b[m[0]][m[1]] else 0
+                a_val = PIECE_ABS_VALUES.get(board[m[0]][m[1]], 0) if board[m[0]][m[1]] else 0
                 scored_evasions.append((v_val * 10 - a_val, m))
             scored_evasions.sort(key=lambda x: x[0], reverse=True)
-            best_score = -100000
-            best_board_state = (b, c_turn, cast, False)
+
+            best_score = -200000
+            best_leaf = ([row[:] for row in board], c_turn, cast_mask, z_hash, False)
+            legal_evasions = 0
+
             for _, m in scored_evasions:
-                nb, ncast, nep = simulate_move_full(b, m[0], m[1], m[2], m[3], cast, ep, return_ep=True)
-                score, q_b, q_turn, q_cast, is_m = material_quiesce_leaf(nb, opp_turn, ncast, nep, -beta, -alpha, qdepth - 1)
+                new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, undo = make_move(
+                    board, m[0], m[1], m[2], m[3], m[4] if len(m) > 4 else None,
+                    cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash
+                )
+                chk_kpos = new_wk if c_turn == 'w' else new_bk
+                if is_square_attacked(board, chk_kpos[0], chk_kpos[1], opp_turn):
+                    unmake_move(board, m[0], m[1], m[2], m[3], undo)
+                    continue
+
+                legal_evasions += 1
+                score, q_b_copy, q_turn, q_cast_mask, q_z_hash, is_m = material_quiesce_leaf(
+                    new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, opp_turn, -beta, -alpha, qdepth - 1
+                )
                 score = -score
+                unmake_move(board, m[0], m[1], m[2], m[3], undo)
+
                 if score > best_score:
                     best_score = score
-                    best_board_state = (q_b, q_turn, q_cast, is_m)
+                    best_leaf = (q_b_copy, q_turn, q_cast_mask, q_z_hash, is_m)
                 if score > alpha:
                     alpha = score
                 if alpha >= beta:
-                    return (best_score, *best_board_state)
-            return (best_score, *best_board_state)
+                    return (best_score, *best_leaf)
 
-        mat = evaluate_material(b)
-        stand_pat = mat if c_turn == 'w' else -mat
+            if legal_evasions == 0:
+                # Checkmate
+                return -100000, [row[:] for row in board], c_turn, cast_mask, z_hash, True
+            return (best_score, *best_leaf)
+
+        stand_pat = mat_score if c_turn == 'w' else -mat_score
         if stand_pat >= beta:
-            return stand_pat, b, c_turn, cast, False
+            return stand_pat, [row[:] for row in board], c_turn, cast_mask, z_hash, False
 
         best_score = stand_pat
-        best_board_state = (b, c_turn, cast, False)
+        best_leaf = ([row[:] for row in board], c_turn, cast_mask, z_hash, False)
         if stand_pat > alpha:
             alpha = stand_pat
 
         if qdepth <= 0:
-            return (best_score, *best_board_state)
+            return (best_score, *best_leaf)
 
-        caps = generate_captures(b, c_turn)
-        if ep != '-' and len(ep) == 2:
-            ep_c = ord(ep[0]) - ord('a')
-            ep_r = 8 - int(ep[1])
-            if 0 <= ep_c < 8 and 0 <= ep_r < 8:
-                if c_turn == 'w' and ep_r == 2:
-                    for dc in (-1, 1):
-                        sc = ep_c + dc
-                        if 0 <= sc < 8 and b[3][sc] == 'P':
-                            caps.append({'fr': 3, 'fc': sc, 'tr': 2, 'tc': ep_c, 'victim_val': 100, 'mvv_lva': 100*10 - 100})
-                elif c_turn == 'b' and ep_r == 5:
-                    for dc in (-1, 1):
-                        sc = ep_c + dc
-                        if 0 <= sc < 8 and b[4][sc] == 'p':
-                            caps.append({'fr': 4, 'fc': sc, 'tr': 5, 'tc': ep_c, 'victim_val': 100, 'mvv_lva': 100*10 - 100})
-
+        caps = generate_captures_fast(board, c_turn, ep_col)
         if not caps:
-            return (best_score, *best_board_state)
+            return (best_score, *best_leaf)
 
-        caps.sort(key=lambda x: x['mvv_lva'], reverse=True)
+        caps.sort(key=lambda x: x[0], reverse=True)
         for c in caps:
-            if stand_pat + c['victim_val'] + 200 < alpha:
+            # Delta pruning
+            if stand_pat + c[1] + 200 < alpha:
                 continue
-            nb, ncast, nep = simulate_move_full(b, c['fr'], c['fc'], c['tr'], c['tc'], cast, ep, return_ep=True)
-            if is_king_in_check(nb, c_turn):
+            new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, undo = make_move(
+                board, c[2], c[3], c[4], c[5], c[6],
+                cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash
+            )
+            chk_kpos = new_wk if c_turn == 'w' else new_bk
+            if is_square_attacked(board, chk_kpos[0], chk_kpos[1], opp_turn):
+                unmake_move(board, c[2], c[3], c[4], c[5], undo)
                 continue
-            score, q_b, q_turn, q_cast, is_m = material_quiesce_leaf(nb, opp_turn, ncast, nep, -beta, -alpha, qdepth - 1)
+
+            score, q_b_copy, q_turn, q_cast_mask, q_z_hash, is_m = material_quiesce_leaf(
+                new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, opp_turn, -beta, -alpha, qdepth - 1
+            )
             score = -score
+            unmake_move(board, c[2], c[3], c[4], c[5], undo)
+
             if score > best_score:
                 best_score = score
-                best_board_state = (q_b, q_turn, q_cast, is_m)
+                best_leaf = (q_b_copy, q_turn, q_cast_mask, q_z_hash, is_m)
             if score > alpha:
                 alpha = score
             if alpha >= beta:
-                return (best_score, *best_board_state)
+                return (best_score, *best_leaf)
 
-        return (best_score, *best_board_state)
+        return (best_score, *best_leaf)
 
-    def order_moves_inner(b, c_turn, next_moves, tt_move, ply, cast='-'):
+    def order_moves_inner(next_moves, tt_move, ply, z_h):
         scored = []
         killer = killer_moves.get(ply)
-        pos_key = (tuple(tuple(row) for row in b), c_turn, cast)
-        cached_pol = policy_cache.get(pos_key)
+        cached_pol = policy_cache.get(z_h)
         is_4672 = len(cached_pol) == 4672 if cached_pol is not None else False
 
         for m in next_moves:
             fr, fc, tr, tc = m[0], m[1], m[2], m[3]
+            promo = m[4] if len(m) > 4 else None
             if tt_move and (fr, fc, tr, tc) == (tt_move[0], tt_move[1], tt_move[2], tt_move[3]):
                 scored.append((100000.0, m))
                 continue
-            
+
             s = 0.0
             if cached_pol is not None:
-                p = b[fr][fc]
-                is_promo = p and p.lower() == 'p' and (tr == 0 or tr == 7)
                 if is_4672:
-                    uci = chr(97 + fc) + str(8 - fr) + chr(97 + tc) + str(8 - tr) + ('q' if is_promo else '')
-                    idx = uci_to_4672(uci)
+                    idx = MOVE_TO_4672_NORMAL[fr][fc][tr][tc]
+                    if promo and promo in ('n', 'b', 'r'):
+                        idx = uci_to_4672(chr(97 + fc) + str(8 - fr) + chr(97 + tc) + str(8 - tr) + promo)
                     if idx is not None and idx < 4672:
                         s += float(cached_pol[idx]) * 300.0
                 else:
@@ -1544,17 +1929,17 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
                     if idx < 4096:
                         s += float(cached_pol[idx]) * 300.0
 
-            p = b[fr][fc]
+            p = board[fr][fc]
             is_promo = p and p.lower() == 'p' and (tr == 0 or tr == 7)
             if is_promo:
                 s += 4000.0
-            target = b[tr][tc]
+            target = board[tr][tc]
             if target:
                 v_val = PIECE_ABS_VALUES.get(target, 0)
                 a_val = PIECE_ABS_VALUES.get(p, 0) if p else 0
-                s += (v_val * 10 - a_val + 2000.0) # Captures prioritized by MVV-LVA
+                s += (v_val * 10 - a_val + 2000.0)
             elif killer and (fr, fc, tr, tc) == killer:
-                s += 1500.0 # Killer move heuristic bonus
+                s += 1500.0
             else:
                 s += history_table.get((fr, fc, tr, tc), 0)
                 center_dist = abs(tr - 3.5) + abs(tc - 3.5)
@@ -1564,22 +1949,19 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
         scored.sort(key=lambda x: x[0], reverse=True)
         return scored
 
-    def negamax(b, c_turn, cast, ep, depth, alpha, beta, ply):
+    def negamax(cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, c_turn, depth, alpha, beta, ply):
         node_counter[0] += 1
-        if (node_counter[0] & 31) == 0:
+        if (node_counter[0] & 63) == 0:
             if (time.time() - t0) * 1000 > time_limit_ms:
                 time_expired[0] = True
                 return alpha, None
 
-        pos_key = (tuple(tuple(row) for row in b), c_turn, cast, ep)
-        
-        # Repetition check in tree: draw (0.0 in Negamax)
-        key_str = board_to_simple_key(b, c_turn)
-        if ply > 0 and history_set and (key_str in history_set):
+        # Repetition check in tree: draw
+        if ply > 0 and (z_hash in history_hashes):
             return 0.0, None
 
         # TT probe
-        tt_entry = tt.get(pos_key)
+        tt_entry = tt.get(z_hash)
         tt_move = None
         if tt_entry:
             tt_move = tt_entry.get('best_move')
@@ -1591,61 +1973,95 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
                 elif tt_entry['flag'] == 'UPPER' and tt_entry['score'] <= alpha:
                     return tt_entry['score'], tt_move
 
-        # Leaf evaluation via pure material quiescence to quiet leaf, then single Value Head call
+        # Leaf evaluation
         if depth <= 0:
-            mat_score, quiet_b, quiet_turn, quiet_cast, is_mate = material_quiesce_leaf(b, c_turn, cast, ep, -100000, 100000, qdepth=5)
-            if abs(mat_score) >= 50000:
-                mate_val = (10.0 - ply * 0.1) if mat_score > 0 else (-10.0 + ply * 0.1)
+            mat_score_leaf, quiet_b, quiet_turn, quiet_cast_mask, quiet_z_hash, is_mate = material_quiesce_leaf(
+                cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, c_turn, -100000, 100000, qdepth=5
+            )
+            if abs(mat_score_leaf) >= 50000:
+                mate_val = (10.0 - ply * 0.1) if mat_score_leaf > 0 else (-10.0 + ply * 0.1)
                 return mate_val, None
 
             persp = 1.0 if c_turn == 'w' else -1.0
-            q_tanh = float(math.tanh(mat_score / 400.0))
+            q_tanh = float(math.tanh(mat_score_leaf / 400.0))
             mat_part = 0.30 * q_tanh
 
-            # Lazy evaluation cutoff:
-            # neural_val is strictly bounded in [-1.0, 1.0].
-            # Therefore leaf_eval = 0.70 * (persp * neural_val) + mat_part is strictly in [mat_part - 0.70, mat_part + 0.70].
-            quiet_pos_key = (tuple(tuple(row) for row in quiet_b), quiet_turn, quiet_cast)
-            if quiet_pos_key not in eval_cache:
+            # Lazy evaluation cutoff
+            if quiet_z_hash not in eval_cache:
                 if mat_part + 0.70 <= alpha:
-                    tt[pos_key] = {'depth': 0, 'score': mat_part + 0.70, 'flag': 'UPPER', 'best_move': None}
+                    tt[z_hash] = {'depth': 0, 'score': mat_part + 0.70, 'flag': 'UPPER', 'best_move': None}
                     return mat_part + 0.70, None
                 if mat_part - 0.70 >= beta:
-                    tt[pos_key] = {'depth': 0, 'score': mat_part - 0.70, 'flag': 'LOWER', 'best_move': None}
+                    tt[z_hash] = {'depth': 0, 'score': mat_part - 0.70, 'flag': 'LOWER', 'best_move': None}
                     return mat_part - 0.70, None
 
-            neural_val = get_neural_val(quiet_b, quiet_turn, quiet_cast)
+            neural_val = get_neural_val(quiet_b, quiet_turn, quiet_cast_mask, quiet_z_hash)
             leaf_eval = 0.70 * (persp * neural_val) + mat_part
-            tt[pos_key] = {'depth': 0, 'score': leaf_eval, 'flag': 'EXACT', 'best_move': None}
+            tt[z_hash] = {'depth': 0, 'score': leaf_eval, 'flag': 'EXACT', 'best_move': None}
             return leaf_eval, None
 
-        in_check = is_king_in_check(b, c_turn)
-        next_moves = get_legal_moves(b, c_turn, cast, ep)
-        if not next_moves:
+        my_kpos = w_kpos if c_turn == 'w' else b_kpos
+        opp_turn = 'b' if c_turn == 'w' else 'w'
+        in_check = is_square_attacked(board, my_kpos[0], my_kpos[1], opp_turn)
+
+        # Null Move Pruning (NMP)
+        if depth >= 3 and not in_check and non_king_mat > 800 and beta < 5000:
+            R = 2
+            null_hash = z_hash ^ ZOBRIST_TURN
+            if 0 <= ep_col < 8:
+                null_hash ^= ZOBRIST_EP[ep_col] ^ ZOBRIST_EP[8]
+            val, _ = negamax(cast_mask, -1, w_kpos, b_kpos, mat_score, non_king_mat, null_hash, opp_turn, depth - 1 - R, -beta, -beta + 0.01, ply + 1)
+            if time_expired[0]:
+                return alpha, None
+            if -val >= beta:
+                return beta, None
+
+        pseudo_moves = generate_pseudo_legal_moves(board, c_turn, cast_mask, ep_col)
+        if not pseudo_moves:
             if in_check:
                 return -10.0 + ply * 0.1, None
             return 0.0, None
 
-        scored_moves = order_moves_inner(b, c_turn, next_moves, tt_move, ply, cast)
+        scored_moves = order_moves_inner(pseudo_moves, tt_move, ply, z_hash)
 
         best_score = -9999.0
         best_move = None
         orig_alpha = alpha
-        next_turn = 'b' if c_turn == 'w' else 'w'
+        legal_count = 0
 
         for move_idx, (_, m) in enumerate(scored_moves):
-            # Late Move Reduction (LMR)
-            reduction = 1 if (depth >= 2 and move_idx >= 12 and not b[m[2]][m[3]] and not in_check) else 0
-            nb, ncast, nep = simulate_move_full(b, m[0], m[1], m[2], m[3], cast, ep, return_ep=True)
-            val, _ = negamax(nb, next_turn, ncast, nep, depth - 1 - reduction, -beta, -alpha, ply + 1)
+            fr, fc, tr, tc = m[0], m[1], m[2], m[3]
+            promo = m[4] if len(m) > 4 else None
+
+            new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, undo = make_move(
+                board, fr, fc, tr, tc, promo,
+                cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash
+            )
+
+            # Lazy Legality Check: verify our king is not under attack
+            chk_kpos = new_wk if c_turn == 'w' else new_bk
+            if is_square_attacked(board, chk_kpos[0], chk_kpos[1], opp_turn):
+                unmake_move(board, fr, fc, tr, tc, undo)
+                continue
+
+            legal_count += 1
+            captured_piece = undo[1]
+
+            # Principal Variation Search (PVS) & Late Move Reduction (LMR)
+            if legal_count == 1:
+                val, _ = negamax(new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, opp_turn, depth - 1, -beta, -alpha, ply + 1)
+                score = -val
+            else:
+                reduction = 1 if (depth >= 3 and legal_count >= 8 and not captured_piece and not in_check) else 0
+                val, _ = negamax(new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, opp_turn, depth - 1 - reduction, -alpha - 0.01, -alpha, ply + 1)
+                score = -val
+                if score > alpha and (score < beta or reduction > 0):
+                    val, _ = negamax(new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, opp_turn, depth - 1, -beta, -alpha, ply + 1)
+                    score = -val
+
+            unmake_move(board, fr, fc, tr, tc, undo)
             if time_expired[0]:
                 return alpha, None
-            score = -val
-            if reduction > 0 and score > alpha:
-                val, _ = negamax(nb, next_turn, ncast, nep, depth - 1, -beta, -alpha, ply + 1)
-                if time_expired[0]:
-                    return alpha, None
-                score = -val
 
             if score > best_score:
                 best_score = score
@@ -1653,9 +2069,14 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
             if score > alpha:
                 alpha = score
             if alpha >= beta:
-                killer_moves[ply] = (m[0], m[1], m[2], m[3])
-                history_table[(m[0], m[1], m[2], m[3])] = history_table.get((m[0], m[1], m[2], m[3]), 0) + depth * depth
-                break # Beta cutoff
+                killer_moves[ply] = (fr, fc, tr, tc)
+                history_table[(fr, fc, tr, tc)] = history_table.get((fr, fc, tr, tc), 0) + depth * depth
+                break # Beta cutoff!
+
+        if legal_count == 0:
+            if in_check:
+                return -10.0 + ply * 0.1, None
+            return 0.0, None
 
         if time_expired[0]:
             return alpha, None
@@ -1665,7 +2086,7 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
             flag = 'UPPER'
         elif best_score >= beta:
             flag = 'LOWER'
-        tt[pos_key] = {
+        tt[z_hash] = {
             'depth': depth,
             'score': best_score,
             'flag': flag,
@@ -1673,16 +2094,17 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
         }
         return best_score, best_move
 
-    # Fallback move: prior-guided move with highest policy score from the neural network
+    # Root iterative deepening
     best_move_root = active_moves[int(np.argmax(root_priors))]
     best_val_root = float(root_val)
     move_scores = {}
     completed_depth = 0
+    next_turn = 'b' if turn == 'w' else 'w'
 
     for d in range(1, max_depth + 1):
         if (time.time() - t0) * 1000 > time_limit_ms or time_expired[0]:
             break
-        # Policy-guided root move ordering: Neural network priors determine ordering!
+
         ordered_root = []
         for i, m in enumerate(active_moves):
             pScore = root_priors[i] * 100.0
@@ -1693,24 +2115,41 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
 
         alpha = -9999.0
         beta = 9999.0
-        next_turn = 'b' if turn == 'w' else 'w'
         iter_scores = {}
         iter_best_move = None
         iter_best_val = -9999.0
         depth_aborted = False
 
-        for _, m, pri in ordered_root:
+        for root_idx, (_, m, pri) in enumerate(ordered_root):
             if (time.time() - t0) * 1000 > time_limit_ms or time_expired[0]:
                 depth_aborted = True
                 break
-            nb, ncast, nep = simulate_move_full(board, m[0], m[1], m[2], m[3], castling, en_passant, return_ep=True)
-            val, _ = negamax(nb, next_turn, ncast, nep, d - 1, -beta, -alpha, 1)
+
+            fr, fc, tr, tc = m[0], m[1], m[2], m[3]
+            promo = m[4] if len(m) > 4 else None
+
+            new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, undo = make_move(
+                board, fr, fc, tr, tc, promo,
+                cast_mask_root, ep_col_root, w_kpos_root, b_kpos_root, mat_score_root, non_king_mat_root, z_hash_root
+            )
+
+            if root_idx == 0:
+                val, _ = negamax(new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, next_turn, d - 1, -beta, -alpha, 1)
+                score = -val
+            else:
+                val, _ = negamax(new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, next_turn, d - 1, -alpha - 0.01, -alpha, 1)
+                score = -val
+                if score > alpha and score < beta:
+                    val, _ = negamax(new_cast, new_ep, new_wk, new_bk, new_mat, new_nkm, new_z, next_turn, d - 1, -beta, -alpha, 1)
+                    score = -val
+
+            unmake_move(board, fr, fc, tr, tc, undo)
             if time_expired[0]:
                 depth_aborted = True
                 break
-            score = -val
+
             blended = score + 0.05 * pri
-            iter_scores[(m[0], m[1], m[2], m[3])] = blended
+            iter_scores[(fr, fc, tr, tc)] = blended
             if blended > iter_best_val:
                 iter_best_val = blended
                 iter_best_move = m
@@ -1727,7 +2166,7 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
 
     results = []
     for m in active_moves:
-        fr, fc, tr, tc = m
+        fr, fc, tr, tc = m[0], m[1], m[2], m[3]
         p = board[fr][fc]
         is_promo = p and p.lower() == 'p' and (tr == 0 or tr == 7)
         uci = chr(97 + fc) + str(8 - fr) + chr(97 + tc) + str(8 - tr) + ('q' if is_promo else '')
@@ -1741,6 +2180,7 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
     results.sort(key=lambda x: (x['visits'] == 100, x['score']), reverse=True)
     dt = (time.time() - t0) * 1000
     return results, best_val_root, dt
+
 
 class MCTSNode:
     def __init__(self, board, turn, castling, parent=None, move=None, prior=0.0):
