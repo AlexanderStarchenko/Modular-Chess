@@ -1729,16 +1729,25 @@ const ChessUI = (() => {
     // Вспомогательная функция: автостарт партии при первом действии игрока
     function tryAutoStartOnInteraction() {
         if (!isWaitingForStart) return true;
+        isWaitingForStart = false;
+        if (resetBtn) resetBtn.classList.remove('animate-pulse');
+
         // Если игрок за белых (или локальная игра) — стартуем сразу при касании фигуры
         if (!pcToggle.checked || playerColor === 'w') {
-            isWaitingForStart = false;
             updateStatus();
             updateResignButtonState();
             updateHintButtonState();
             return true;
         }
-        // Если выпали черные против ПК — запускаем партию и ход ПК
-        startNewGame(false);
+
+        // Если игрок за черных против ПК — просто запускаем первый ход ПК без переброса цвета!
+        isWaitingForPC = true;
+        statusElement.textContent = 'ПК думает...';
+        gameInfoElement.textContent = 'Ход соперника';
+        updateResignButtonState();
+        updateHintButtonState();
+        if (pcMoveTimeoutId) cancelPendingMove();
+        pcMoveTimeoutId = safeSetTimeout(makePCMove, 400);
         return false;
     }
 
@@ -1876,7 +1885,6 @@ const ChessUI = (() => {
             drawBtn.disabled = false;
             drawBtn.style.display = (networkState && networkState.connected) ? 'block' : 'none';
         }
-        if (document.getElementById('undo-btn')) document.getElementById('undo-btn').disabled = false;
 
         // Colors
         if (pcToggle.checked) {
@@ -1970,6 +1978,7 @@ const ChessUI = (() => {
         
         updateOpponentAvatar();
         updateResignButtonState();
+        updateHintButtonState();
     }
 
     function formatTime(seconds) {
@@ -3429,7 +3438,6 @@ const ChessUI = (() => {
             drawBtn.disabled = false;
             drawBtn.style.display = (networkState && networkState.connected) ? 'block' : 'none';
         }
-        if (document.getElementById('undo-btn')) document.getElementById('undo-btn').disabled = false;
 
         // Update player labels
         if (pcToggle.checked) {

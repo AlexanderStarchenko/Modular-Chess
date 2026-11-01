@@ -176,6 +176,7 @@ body {
 @media (min-width: 768px) {
     body {
         height: 100vh;
+        height: 100dvh;
     }
 }
 
@@ -409,26 +410,6 @@ footer,
     z-index: 2;
     transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease, opacity 0.2s ease;
     filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.35));
-    will-change: transform, opacity;
-}
-
-.square .piece:not(.black-piece) {
-    color: #ffffff;
-    text-shadow: 
-        -1px -1px 0 #000,  
-         1px -1px 0 #000,
-        -1px  1px 0 #000,
-         1px  1px 0 #000,
-         0 0 12px rgba(255,255,255,0.45);
-}
-
-.square .piece.black-piece {
-    color: #0d0d0d;
-    text-shadow: 
-        -1px -1px 0 #fff,  
-         1px -1px 0 #fff,
-        -1px  1px 0 #fff,
-         1px  1px 0 #fff;
 }
 
 .square:hover .piece {

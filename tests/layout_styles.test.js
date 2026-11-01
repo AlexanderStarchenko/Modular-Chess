@@ -51,10 +51,10 @@ describe('Layout and Style Integrity Tests', () => {
         const stylePath = path.join(__dirname, '../css/style.css');
         const content = fs.readFileSync(stylePath, 'utf8');
         
-        // Match @media (min-width: 768px) { body { height: 100vh; } } or similar
+        // Match @media (min-width: 768px) { body { height: 100vh; ... } }
         // Normalize spaces and match
         const normalized = content.replace(/\s+/g, ' ');
-        expect(normalized).toContain('@media (min-width: 768px) { body { height: 100vh; } }');
+        expect(normalized).toMatch(/@media \(min-width: 768px\) \{ body \{ height: 100vh;( height: 100dvh;)? \} \}/);
     });
 
     test('css/input.css should have font @import, but css/style.css should not', () => {
