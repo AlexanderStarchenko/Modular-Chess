@@ -95,6 +95,7 @@
     --check-color: rgba(239, 68, 68, 0.55);
     
     --board-max-height-constraint: calc(100vh - 160px);
+    --board-max-height-constraint: calc(100dvh - 160px);
 }
 
 html:not(.dark) {
@@ -163,6 +164,7 @@ html:not(.dark) {
 @media (min-width: 1280px) and (min-height: 850px) {
     :root {
         --board-max-height-constraint: calc(100vh - 180px);
+        --board-max-height-constraint: calc(100dvh - 180px);
     }
 }
 
@@ -492,7 +494,7 @@ footer,
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 50px;
+    font-size: 8.8cqw;
     pointer-events: none;
     z-index: 10;
     transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease;
@@ -609,8 +611,8 @@ footer,
 .square.suggested-to::after {
     content: "";
     position: absolute;
-    inset: 12px;
-    border: 3px solid #facc15;
+    inset: 18%;
+    border: clamp(2px, 0.5cqw, 4px) solid #facc15;
     border-radius: 50%;
     pointer-events: none;
     z-index: 3;
@@ -675,6 +677,19 @@ input[type="range"] {
     background: transparent;
     border-radius: 4px;
     outline: none;
+}
+
+input[type="range"]:focus-visible {
+    outline: 2px solid var(--color-primary, #4d8eff);
+    outline-offset: 4px;
+}
+
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px rgba(173, 198, 255, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+input[type="range"]:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 3px rgba(173, 198, 255, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 /* Chrome/Safari/Edge Track */
@@ -805,7 +820,7 @@ html:not(.dark) body {
 
 /* Card name text and sidebar settings label overrides */
 html:not(.dark) p, 
-html:not(.dark) span:not(.piece):not(button span), 
+html:not(.dark) span:not(.piece):not(button span):not(.quality-badge), 
 html:not(.dark) h3, 
 html:not(.dark) label {
     color: var(--color-on-background) !important;
@@ -1212,23 +1227,24 @@ html:not(.dark) #analyze-btn {
     animation: modalScaleUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Force GPU rendering for interactive chessboard elements */
-.piece,
-.square,
+/* GPU rendering for active chessboard animations */
 #chessboard,
-#board-wrapper {
+.piece-fly {
     will-change: transform;
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
 }
 
-/* Optimize scrollable lists with independent rendering layers & inertial scrolling */
+.square:hover .piece {
+    will-change: transform; /* Promote layer only on hover */
+}
+
+/* Optimize scrollable lists with inertial scrolling */
 .overflow-y-auto,
 #history-list,
 #analysis-list,
 #sidebar-drawer,
 main {
-    will-change: scroll-position;
     -webkit-overflow-scrolling: touch;
 }
 
@@ -1748,6 +1764,19 @@ html:not(.dark) #hint-btn:disabled {
 .quick-phrase-btn:active {
     transform: scale(0.95) !important;
 }
+
+/* Reduced Motion Support (Accessibility / WCAG) */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
 
 
 
