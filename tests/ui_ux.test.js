@@ -1530,17 +1530,17 @@ describe('ChessUI Integration', () => {
         global.setTimeout.mockClear();
         changeHandlers['pc-toggle']();
         expect(global.setTimeout).not.toHaveBeenCalledWith(expect.any(Function), 600);
-        expect(mockElements['status'].textContent).toBe('Нажмите "Новая игра" для начала');
+        expect(mockElements['status'].textContent).toBe('Готово к игре за Чёрных');
 
         global.setTimeout.mockClear();
         changeHandlers['side-select']();
         expect(global.setTimeout).not.toHaveBeenCalledWith(expect.any(Function), 600);
-        expect(mockElements['status'].textContent).toBe('Нажмите "Новая игра" для начала');
+        expect(mockElements['status'].textContent).toBe('Готово к игре за Чёрных');
 
         global.setTimeout.mockClear();
         changeHandlers['time-control']();
         expect(global.setTimeout).not.toHaveBeenCalledWith(expect.any(Function), 600);
-        expect(mockElements['status'].textContent).toBe('Нажмите "Новая игра" для начала');
+        expect(mockElements['status'].textContent).toBe('Готово к игре за Чёрных');
 
         // Now trigger explicit reset (New Game button click)
         global.setTimeout.mockClear();
@@ -1622,9 +1622,23 @@ describe('ChessUI Integration', () => {
         
         expect(mockElements['resign-btn'].style.display).toBe('none');
 
-        // 2. PC game (PC on, Network disconnected)
+        // 2. PC game (PC on, Network disconnected) - Hidden before first move, visible after move
         mockElements['pc-toggle'].checked = true;
+        mockElements['side-select'].value = 'w';
         clickHandlers['reset-btn']();
+        expect(mockElements['resign-btn'].style.display).toBe('none');
+
+        const mousedownHandlers = clickHandlers['chess-canvas_mousedown'];
+        const mouseupHandlers = clickHandlers['chess-canvas_mouseup'];
+        const boardSnap = Array.from({ length: 8 }, () => new Array(8).fill(null));
+        boardSnap[6][4] = 'P';
+        ChessLogic.getBoard.mockReturnValue(boardSnap);
+        ChessLogic.getTurn.mockReturnValue('w');
+        ChessLogic.movePiece.mockReset();
+        ChessLogic.movePiece.mockReturnValue(true);
+
+        mousedownHandlers[0]({ clientX: 225, clientY: 325 }); // e2
+        mouseupHandlers[0]({ clientX: 225, clientY: 225 }); // e4
         expect(mockElements['resign-btn'].style.display).toBe('block');
 
         // 3. Network game (PC off, Network connected)
@@ -1633,34 +1647,20 @@ describe('ChessUI Integration', () => {
         expect(mockElements['resign-btn'].style.display).toBe('block');
     });
 
-    test('Should block moves until New Game is clicked, and enable them after New Game is clicked', () => {
+    test('Should auto-start and allow White player to move immediately without clicking New Game', () => {
         ChessUI.init();
         
         const mousedownHandlers = clickHandlers['chess-canvas_mousedown'];
         const mouseupHandlers = clickHandlers['chess-canvas_mouseup'];
-        const clickCanvasHandlers = clickHandlers['chess-canvas_click'];
 
         const boardSnap = Array.from({ length: 8 }, () => new Array(8).fill(null));
         boardSnap[6][4] = 'P'; // White Pawn at e2
         ChessLogic.getBoard.mockReturnValue(boardSnap);
         ChessLogic.getTurn.mockReturnValue('w');
         ChessLogic.movePiece.mockClear();
+        ChessLogic.movePiece.mockReturnValue(true);
 
-        // 1. Before clicking New Game, dragging or clicking should NOT move pieces
-        mousedownHandlers[0]({ clientX: 225, clientY: 325 }); // e2
-        mouseupHandlers[0]({ clientX: 225, clientY: 225 }); // e4
-        expect(ChessLogic.movePiece).not.toHaveBeenCalled();
-
-        if (clickCanvasHandlers && clickCanvasHandlers.length > 0) {
-            clickCanvasHandlers[0]({ clientX: 225, clientY: 325 });
-            clickCanvasHandlers[0]({ clientX: 225, clientY: 225 });
-            expect(ChessLogic.movePiece).not.toHaveBeenCalled();
-        }
-
-        // 2. Click New Game button
-        clickHandlers['reset-btn']();
-
-        // 3. Now dragging/clicking should work
+        // White player can move immediately on first interaction (auto-start)
         mousedownHandlers[0]({ clientX: 225, clientY: 325 }); // e2
         mouseupHandlers[0]({ clientX: 225, clientY: 225 }); // e4
         expect(ChessLogic.movePiece).toHaveBeenCalledWith(6, 4, 4, 4);

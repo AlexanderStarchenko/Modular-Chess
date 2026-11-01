@@ -1,7 +1,9 @@
-const VERSION = '56';
+const VERSION = '57';
 const CACHE_NAME = `modular-chess-v${VERSION}`;
 
-const ASSETS = [
+// Критические ресурсы: ядро игры. Если хоть один не скачается — установка воркера отменяется,
+// чтобы не поломать работающий оффлайн-кэш предыдущей версии.
+const CRITICAL_ASSETS = [
     './',
     'index.html',
     `css/output.css?v=${VERSION}`,
@@ -26,13 +28,17 @@ const ASSETS = [
     `js/audio.js?v=${VERSION}`,
     `js/ai_manager.js?v=${VERSION}`,
     `js/ui.js?v=${VERSION}`,
+    'build/release.wasm',
+    // Базовые фигуры
+    'pieces/wP.svg', 'pieces/wR.svg', 'pieces/wN.svg', 'pieces/wB.svg', 'pieces/wQ.svg', 'pieces/wK.svg',
+    'pieces/bP.svg', 'pieces/bR.svg', 'pieces/bN.svg', 'pieces/bB.svg', 'pieces/bQ.svg', 'pieces/bK.svg'
+];
+
+// Некритические ресурсы: декорации, звуки, тяжелый Stockfish.js.
+// Ошибка их загрузки при установке не блокирует работу игры.
+const OPTIONAL_ASSETS = [
     `js/stockfish.js?v=${VERSION}`,
     `images/stockfish.png?v=${VERSION}`,
-    'build/release.wasm',
-    // Chess piece SVGs
-    'pieces/wP.svg', 'pieces/wR.svg', 'pieces/wN.svg', 'pieces/wB.svg', 'pieces/wQ.svg', 'pieces/wK.svg',
-    'pieces/bP.svg', 'pieces/bR.svg', 'pieces/bN.svg', 'pieces/bB.svg', 'pieces/bQ.svg', 'pieces/bK.svg',
-    // Audio assets
     'sounds/move.mp3',
     'sounds/capture.mp3',
     'sounds/low_time.mp3'
@@ -41,10 +47,15 @@ const ASSETS = [
 self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
-            .then(cache => {
-                return Promise.allSettled(
-                    ASSETS.map(asset => cache.add(asset).catch(err => {
-                        console.warn(`[SW] Failed to pre-cache ${asset}:`, err.message);
+            .then(async cache => {
+                // 1. Принудительно скачиваем критические ресурсы в обход HTTP-кэша браузера
+                await Promise.all(
+                    CRITICAL_ASSETS.map(asset => cache.add(new Request(asset, { cache: 'reload' })))
+                );
+                // 2. Скачиваем факультативные ресурсы без риска сорвать установку
+                await Promise.allSettled(
+                    OPTIONAL_ASSETS.map(asset => cache.add(new Request(asset, { cache: 'reload' })).catch(err => {
+                        console.warn(`[SW] Optional asset failed to pre-cache ${asset}:`, err.message);
                     }))
                 );
             })
@@ -67,7 +78,13 @@ self.addEventListener('fetch', event => {
     const req = event.request;
     const url = new URL(req.url);
 
-    // Не перехватываем POST-запросы, API и трафик Socket.IO
+    // 1. Фильтрация по происхождению (Origin):
+    // Пропускаем сторонние домены, CDN и схемы браузерных расширений (chrome-extension://)
+    if (url.origin !== self.location.origin) {
+        return;
+    }
+
+    // 2. Не перехватываем POST-запросы, API и трафик вебсокетов Socket.IO
     if (
         req.method !== 'GET' ||
         url.pathname.startsWith('/socket.io/') ||
@@ -76,24 +93,56 @@ self.addEventListener('fetch', event => {
         return;
     }
 
+    // 3. Для HTML, JS, CSS: Network-First с fallback на кэш.
+    // Гарантирует, что при обычном обновлении (F5) всегда загружается свежий код,
+    // но игра сохраняет 100% работоспособность офлайн.
+    const isCodeAsset = req.mode === 'navigate' ||
+        url.pathname.endsWith('.html') ||
+        url.pathname.endsWith('.js') ||
+        url.pathname.endsWith('.css') ||
+        url.pathname === '/' ||
+        url.pathname === '';
+
+    if (isCodeAsset) {
+        event.respondWith(
+            fetch(req)
+                .then(networkResponse => {
+                    if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+                        // Не сохраняем в кэш ответы с no-store / private (защита приватных данных)
+                        const cacheControl = networkResponse.headers.get('Cache-Control') || '';
+                        if (!cacheControl.includes('no-store') && !cacheControl.includes('private')) {
+                            const responseToCache = networkResponse.clone();
+                            caches.open(CACHE_NAME).then(cache => cache.put(req, responseToCache)).catch(() => {});
+                        }
+                    }
+                    return networkResponse;
+                })
+                .catch(() => caches.match(req))
+        );
+        return;
+    }
+
+    // 4. Для тяжелых неизменяемых ресурсов (.wasm, .onnx, .svg, .mp3): Cache-First с fallback на сеть.
+    // Точное совпадение URL исключает риск Cache Poisoning и рассинхронизации версий.
     event.respondWith(
-        caches.match(req)
-            .then(cached => cached || caches.match(req, { ignoreSearch: true }))
-            .then(cached => {
-                if (cached) return cached;
-                return fetch(req).then(networkResponse => {
-                    if (
-                        networkResponse &&
-                        networkResponse.status === 200 &&
-                        (networkResponse.type === 'basic' || networkResponse.type === 'cors')
-                    ) {
+        caches.match(req).then(cached => {
+            if (cached) return cached;
+            return fetch(req).then(networkResponse => {
+                if (
+                    networkResponse &&
+                    networkResponse.status === 200 &&
+                    networkResponse.type === 'basic'
+                ) {
+                    const cacheControl = networkResponse.headers.get('Cache-Control') || '';
+                    if (!cacheControl.includes('no-store') && !cacheControl.includes('private')) {
                         const responseToCache = networkResponse.clone();
                         caches.open(CACHE_NAME).then(cache => {
                             cache.put(req, responseToCache);
                         }).catch(() => {});
                     }
-                    return networkResponse;
-                });
-            })
+                }
+                return networkResponse;
+            });
+        })
     );
 });

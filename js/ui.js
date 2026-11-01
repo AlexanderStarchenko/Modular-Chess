@@ -555,7 +555,8 @@ const ChessUI = (() => {
                     draggedOccurred = false;
                     return;
                 }
-                if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
+                if (isWaitingForPC || gameEnded || analysisSnapshot) return;
+                if (isWaitingForStart && !tryAutoStartOnInteraction()) return;
                 const sq = getSquareFromCoords(event.clientX, event.clientY);
                 if (sq.valid) {
                     handleSquareClick(sq.r, sq.c);
@@ -1123,6 +1124,7 @@ const ChessUI = (() => {
                 if (pcToggle && pcToggle.checked && topPlayerName && !gameEnded) {
                     topPlayerName.textContent = getStockfishName();
                 }
+                updateOpponentAvatar();
             });
         }
 
@@ -1667,8 +1669,10 @@ const ChessUI = (() => {
         let opponentAvatarIcon = document.getElementById('opponent-avatar-icon');
         
         const isPC = (pcToggle && pcToggle.checked);
+        const isNeural = difficultySelect && difficultySelect.value.startsWith('neural');
         
-        if (isPC) {
+        if (isPC && !isNeural) {
+            // Показываем логотип Stockfish только для Stockfish
             if (!opponentAvatarImg) {
                 opponentAvatarImg = document.createElement('img');
                 opponentAvatarImg.id = 'opponent-avatar-img';
@@ -1677,18 +1681,16 @@ const ChessUI = (() => {
                 opponentAvatarImg.src = 'images/stockfish.png';
                 opponentAvatarContainer.appendChild(opponentAvatarImg);
             } else {
-                opponentAvatarImg.src = 'images/stockfish.png';
                 opponentAvatarImg.style.display = 'block';
             }
             if (opponentAvatarIcon) opponentAvatarIcon.style.display = 'none';
-            opponentAvatarContainer.className = "w-9 h-9 md:w-10 md:h-10 rounded-lg bg-surface-container-highest border border-outline-variant/20 flex items-center justify-center shadow-md overflow-hidden p-0.5";
         } else {
+            // Для нейросети показываем иконку нейросети (psychology), для человека — person
             if (opponentAvatarImg) opponentAvatarImg.style.display = 'none';
             if (opponentAvatarIcon) {
                 opponentAvatarIcon.style.display = 'block';
-                opponentAvatarIcon.textContent = 'person';
+                opponentAvatarIcon.textContent = isPC ? 'psychology' : 'person';
             }
-            opponentAvatarContainer.className = "w-9 h-9 md:w-10 md:h-10 rounded-lg bg-primary-container/20 border border-primary/20 flex items-center justify-center shadow-md";
         }
     }
 
@@ -1724,24 +1726,59 @@ const ChessUI = (() => {
         }
     }
 
+    // Вспомогательная функция: автостарт партии при первом действии игрока
+    function tryAutoStartOnInteraction() {
+        if (!isWaitingForStart) return true;
+        // Если игрок за белых (или локальная игра) — стартуем сразу при касании фигуры
+        if (!pcToggle.checked || playerColor === 'w') {
+            isWaitingForStart = false;
+            updateStatus();
+            updateResignButtonState();
+            updateHintButtonState();
+            return true;
+        }
+        // Если выпали черные против ПК — запускаем партию и ход ПК
+        startNewGame(false);
+        return false;
+    }
+
     function updateResignButtonState() {
         const resignBtn = document.getElementById('resign-btn');
+        const undoBtn = document.getElementById('undo-btn');
+        const hasMoves = stateHistory.length > 0;
+
+        // Блокируем и приглушаем кнопку "Отменить", если ходов еще нет
+        if (undoBtn) {
+            const canUndo = hasMoves && !gameEnded && !isWaitingForStart;
+            undoBtn.disabled = !canUndo;
+            if (undoBtn.classList) {
+                if (typeof undoBtn.classList.toggle === 'function') {
+                    undoBtn.classList.toggle('opacity-40', !canUndo);
+                    undoBtn.classList.toggle('cursor-not-allowed', !canUndo);
+                } else {
+                    if (!canUndo) {
+                        undoBtn.classList.add?.('opacity-40');
+                        undoBtn.classList.add?.('cursor-not-allowed');
+                    } else {
+                        undoBtn.classList.remove?.('opacity-40');
+                        undoBtn.classList.remove?.('cursor-not-allowed');
+                    }
+                }
+            }
+        }
+
         if (!resignBtn) return;
-        
-        if (gameEnded) {
+
+        // Скрываем "Сдаться", если игра окончена, еще не началась или не сделано ни одного хода
+        if (gameEnded || isWaitingForStart || !hasMoves) {
             resignBtn.style.display = 'none';
             return;
         }
-        
+
         const isNetwork = networkState && networkState.connected;
         const isPC = pcToggle && pcToggle.checked;
-        
-        // Hide in local two-player game on the same device
-        if (!isNetwork && !isPC) {
-            resignBtn.style.display = 'none';
-        } else {
-            resignBtn.style.display = 'block';
-        }
+
+        resignBtn.style.display = (!isNetwork && !isPC) ? 'none' : 'block';
     }
 
     function parseTimeControl() {
@@ -1897,32 +1934,42 @@ const ChessUI = (() => {
         syncNetworkState();
 
         if (isAutomatic) {
-            isWaitingForStart = true;
-            isWaitingForPC = false;
-            statusElement.textContent = 'Нажмите "Новая игра" для начала';
-            gameInfoElement.textContent = (pcToggle && pcToggle.checked) ? 'Чтобы начать игру против ПК' : 'Чтобы начать партию';
+            if (pcToggle && pcToggle.checked && playerColor === 'w') {
+                // Если игрок за белых — разрешаем ходить сразу без лишнего клика!
+                isWaitingForStart = false;
+                statusElement.textContent = 'Ваш ход (Белые)';
+                gameInfoElement.textContent = 'Сделайте ход на доске или измените настройки слева';
+                if (resetBtn) resetBtn.classList.remove('animate-pulse');
+            } else if (!pcToggle || !pcToggle.checked) {
+                isWaitingForStart = false;
+                statusElement.textContent = 'Ход Белых';
+                gameInfoElement.textContent = 'Сделайте ход на доске или измените настройки слева';
+                if (resetBtn) resetBtn.classList.remove('animate-pulse');
+            } else {
+                isWaitingForStart = true;
+                isWaitingForPC = false;
+                statusElement.textContent = 'Готово к игре за Чёрных';
+                gameInfoElement.textContent = 'Нажмите «Новая игра» или кликните по доске для старта';
+                if (resetBtn) resetBtn.classList.add('animate-pulse');
+            }
         } else {
             isWaitingForStart = false;
-            if (pcToggle && pcToggle.checked) {
-                if (pcColor === 'w') {
-                    isWaitingForPC = true;
-                    statusElement.textContent = 'ПК думает...';
-                    gameInfoElement.textContent = 'Ход ПК';
-                    if (pcMoveTimeoutId) cancelPendingMove();
-                    pcMoveTimeoutId = safeSetTimeout(makePCMove, 600);
-                } else {
-                    isWaitingForPC = false;
-                    statusElement.textContent = 'Ход Белых';
-                    gameInfoElement.textContent = 'Игра продолжается';
-                }
+            if (resetBtn) resetBtn.classList.remove('animate-pulse');
+            if (pcToggle && pcToggle.checked && pcColor === 'w') {
+                isWaitingForPC = true;
+                statusElement.textContent = 'ПК думает...';
+                gameInfoElement.textContent = 'Ход соперника';
+                if (pcMoveTimeoutId) cancelPendingMove();
+                pcMoveTimeoutId = safeSetTimeout(makePCMove, 600);
             } else {
                 isWaitingForPC = false;
                 statusElement.textContent = 'Ход Белых';
-                gameInfoElement.textContent = 'Игра продолжается';
+                gameInfoElement.textContent = 'Игра началась';
             }
         }
         
         updateOpponentAvatar();
+        updateResignButtonState();
     }
 
     function formatTime(seconds) {
@@ -2405,6 +2452,7 @@ const ChessUI = (() => {
             if (!isTimerRunning) startTimer();
             handleTurnEnd();
             addToHistory(fromRow, fromCol, toRow, toCol);
+            updateResignButtonState();
 
             if (!isRemote && typeof ChessNetwork !== 'undefined' && networkState && networkState.connected) {
                 ChessNetwork.sendMove({
@@ -2427,7 +2475,8 @@ const ChessUI = (() => {
     }
 
     function isDraggingPiece(clientX, clientY) {
-        if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return false;
+        if (isWaitingForPC || gameEnded || analysisSnapshot) return false;
+        if (isWaitingForStart && pcToggle.checked && playerColor !== 'w') return false;
         const sq = getSquareFromCoords(clientX, clientY);
         if (sq.valid) {
             const board = ChessLogic.getBoard();
@@ -2444,7 +2493,8 @@ const ChessUI = (() => {
     }
 
     function handleMousedown(clientX, clientY) {
-        if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
+        if (isWaitingForPC || gameEnded || analysisSnapshot) return;
+        if (isWaitingForStart && !tryAutoStartOnInteraction()) return;
         updateCanvasRect();
         const sq = getSquareFromCoords(clientX, clientY);
         
@@ -2558,7 +2608,8 @@ const ChessUI = (() => {
     }
 
     function handleSquareClick(row, col) {
-        if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
+        if (isWaitingForPC || gameEnded || analysisSnapshot) return;
+        if (isWaitingForStart && !tryAutoStartOnInteraction()) return;
         const currentTurn = ChessLogic.getTurn();
 
         if ((pcToggle.checked || (networkState && networkState.connected)) && currentTurn !== playerColor) return;
@@ -2923,6 +2974,7 @@ const ChessUI = (() => {
             scheduleRender();
             updateStatus();
             updateTimerDisplays();
+            updateResignButtonState();
         }
     }
 

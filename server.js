@@ -106,11 +106,17 @@ express.static.mime.define({'application/wasm': ['wasm']});
 
 // Serve static files from current directory with optimized caching headers
 app.use(express.static(__dirname, {
-    maxAge: '1d',
     dotfiles: 'deny',
     setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.wasm') || filePath.endsWith('.mp3') || filePath.endsWith('.svg') || filePath.endsWith('.onnx') || filePath.endsWith('stockfish.js')) {
+        const normalized = filePath.replace(/\\/g, '/');
+        if (normalized.endsWith('.wasm') || normalized.endsWith('.mp3') || normalized.endsWith('.svg') || normalized.endsWith('.onnx') || normalized.endsWith('stockfish.js')) {
             res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (normalized.endsWith('sw.js') || normalized.endsWith('.html') || normalized.endsWith('/')) {
+            // Service Worker and HTML pages must never be cached aggressively
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        } else {
+            // JS and CSS: revalidate on regular refresh (304 if unchanged)
+            res.setHeader('Cache-Control', 'no-cache');
         }
     }
 }));

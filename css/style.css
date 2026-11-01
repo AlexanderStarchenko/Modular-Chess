@@ -518,6 +518,18 @@ footer,
     margin: 0;
 }
 
+#history-list:empty::before {
+    content: "Ходов пока нет. Сделайте первый ход на доске!";
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 2rem 1rem;
+    text-align: center;
+    color: rgba(140, 144, 159, 0.6);
+    font-size: 0.85rem;
+}
+
 .history-list li {
     padding: 6px 8px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
