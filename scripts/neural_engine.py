@@ -1460,12 +1460,12 @@ def make_move(board, fr, fc, tr, tc, promo, cast_mask, ep_col, w_kpos, b_kpos, m
         final_piece = promo.upper() if promo else 'Q'
         promo_diff = PIECE_VALUES[final_piece] - 100
         new_mat += promo_diff
-        new_nkm += PIECE_ABS_VALUES[final_piece]
+        new_nkm += PIECE_ABS_VALUES[final_piece] - 100
     elif piece == 'p' and tr == 7:
         final_piece = promo.lower() if promo else 'q'
         promo_diff = PIECE_VALUES[final_piece] - (-100)
         new_mat += promo_diff
-        new_nkm += PIECE_ABS_VALUES[final_piece]
+        new_nkm += PIECE_ABS_VALUES[final_piece] - 100
 
     board[tr][tc] = final_piece
     new_hash ^= ZOBRIST_PIECES[final_piece][tr][tc]
@@ -1655,6 +1655,8 @@ def generate_captures_fast(board, turn, ep_col):
 
             if ptype == 'p':
                 nr = r + p_dir
+                if nr == promo_rank and board[nr][c] is None:
+                    caps.append((800 * 10 - a_val, 800, r, c, nr, c, 'q'))
                 for dc in (-1, 1):
                     nc = c + dc
                     if 0 <= nr < 8 and 0 <= nc < 8:
@@ -1762,10 +1764,20 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
     
     # 1. Opening book check (0ms)
     parts = fen.split()
-    book_key = ' '.join(parts[:4]) if len(parts) >= 4 else parts[0]
-    if book_key in OPENING_BOOK:
-        chosen = random.choice(OPENING_BOOK[book_key])
-        move_obj = uci_to_move(chosen)
+    book_move = None
+    if len(parts) >= 4:
+        key_4 = ' '.join(parts[:4])
+        if key_4 in OPENING_BOOK:
+            book_move = random.choice(OPENING_BOOK[key_4])
+    if not book_move and len(parts) >= 3:
+        key_3 = ' '.join(parts[:3])
+        if key_3 in OPENING_BOOK_3PART:
+            book_move = random.choice(OPENING_BOOK_3PART[key_3])
+    if not book_move and len(parts) >= 1:
+        if parts[0] in OPENING_BOOK:
+            book_move = random.choice(OPENING_BOOK[parts[0]])
+    if book_move:
+        move_obj = uci_to_move(book_move)
         return [move_obj], 0.0, 0.5
 
     board, turn, castling, en_passant = fen_to_board(fen)
@@ -1774,7 +1786,7 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
     eg_move = get_endgame_move(board, turn, castling, fen)
     if eg_move:
         eg_move['score'] = 10000.0
-        return [eg_move], 1.0, (time.time() - t0) * 1000
+        return [eg_move], (1.0 if turn == 'w' else -1.0), (time.time() - t0) * 1000
 
     legal_moves = get_legal_moves(board, turn, castling, en_passant)
     if not legal_moves:
@@ -1791,7 +1803,7 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
             'uci': uci, 'fromR': fr, 'fromC': fc, 'toR': tr, 'toC': tc,
             'promotion': 'q' if is_promo else None,
             'score': 10000.0, 'isMate': True
-        }], 1.0, (time.time() - t0) * 1000
+        }], (1.0 if turn == 'w' else -1.0), (time.time() - t0) * 1000
 
     # 3. Forcing Checkmate-in-2 attack check
     mate_in_2 = find_mate_in_two(board, turn, castling)
@@ -1804,7 +1816,7 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
             'uci': uci, 'fromR': fr, 'fromC': fc, 'toR': tr, 'toC': tc,
             'promotion': 'q' if is_promo else None,
             'score': 9000.0, 'isMate': True
-        }], 1.0, (time.time() - t0) * 1000
+        }], (1.0 if turn == 'w' else -1.0), (time.time() - t0) * 1000
 
     history_hashes = set()
     history_set = set()
@@ -1873,29 +1885,6 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
         eval_cache[z_h] = v
         policy_cache[z_h] = pol
         return v
-
-    def batch_prefetch_leaves(leaf_tasks):
-        """
-        leaf_tasks: list of (b, c_turn, c_cast_mask, z_h)
-        Evaluates up to 16 uncached positions in one batched session.run call.
-        """
-        uncached = [t for t in leaf_tasks if t[3] not in eval_cache]
-        if not uncached:
-            return
-        # Take up to 16 positions
-        uncached = uncached[:16]
-        tensors = []
-        for b, c_turn, c_cast_mask, _ in uncached:
-            c_cast_str = mask_to_castling(c_cast_mask)
-            tensors.append(board_to_tensor(b, c_turn, c_cast_str))
-        batch = np.stack(tensors, axis=0)
-        res = session.run(None, {'board_state': batch})
-        pols = res[0]
-        vals = res[1]
-        for idx, (_, _, _, z_h) in enumerate(uncached):
-            v = float(vals[idx, 0])
-            eval_cache[z_h] = v
-            policy_cache[z_h] = pols[idx]
 
     # Quiescence Search with ZERO board copies: returns (best_score, quiet_turn, quiet_cast_mask, quiet_z_hash, is_mate, best_line)
     def material_quiesce_leaf(cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, c_turn, alpha=-100000, beta=100000, qdepth=3):
@@ -2041,7 +2030,7 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
         scored.sort(key=lambda x: x[0], reverse=True)
         return scored
 
-    def negamax(cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, c_turn, depth, alpha, beta, ply):
+    def negamax(cast_mask, ep_col, w_kpos, b_kpos, mat_score, non_king_mat, z_hash, c_turn, depth, alpha, beta, ply, allow_null=True):
         node_counter[0] += 1
         if (node_counter[0] & 15) == 0:
             if (time.time() - t0) * 1000 > time_limit_ms:
@@ -2060,6 +2049,10 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
         hit, tt_depth, tt_score, tt_flag, tt_move = GLOBAL_TT.probe(z_hash, c_turn)
         if hit and tt_depth >= depth:
             actual_score = tt_score if c_turn == 'w' else -tt_score
+            if actual_score > 9.0:
+                actual_score -= ply * 0.1
+            elif actual_score < -9.0:
+                actual_score += ply * 0.1
             if tt_flag == TT_FLAG_EXACT:
                 return actual_score, tt_move
             elif tt_flag == TT_FLAG_LOWER and actual_score >= beta:
@@ -2074,15 +2067,19 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
         # Static evaluation
         persp = 1.0 if c_turn == 'w' else -1.0
         q_tanh = float(math.tanh(mat_score / 400.0))
-        static_eval = (persp * 0.30 * q_tanh)
+        mat_part = 0.30 * persp * q_tanh
+        if z_hash in eval_cache:
+            static_eval = 0.70 * (persp * eval_cache[z_hash]) + mat_part
+        else:
+            static_eval = persp * q_tanh
 
         # Null Move Pruning (NMP) guarded by static evaluation
-        if depth >= 3 and not in_check and non_king_mat > 800 and beta < 5000 and static_eval >= beta:
+        if allow_null and depth >= 3 and not in_check and non_king_mat > 800 and beta < 5000 and static_eval >= beta:
             R = 2
             null_hash = z_hash ^ ZOBRIST_TURN
             if 0 <= ep_col < 8:
                 null_hash ^= ZOBRIST_EP[ep_col] ^ ZOBRIST_EP[8]
-            val, _ = negamax(cast_mask, -1, w_kpos, b_kpos, mat_score, non_king_mat, null_hash, opp_turn, depth - 1 - R, -beta, -beta + 0.01, ply + 1)
+            val, _ = negamax(cast_mask, -1, w_kpos, b_kpos, mat_score, non_king_mat, null_hash, opp_turn, depth - 1 - R, -beta, -beta + 0.01, ply + 1, allow_null=False)
             if time_expired[0]:
                 return alpha, None
             if -val >= beta:
@@ -2221,7 +2218,13 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
                 flag = TT_FLAG_UPPER
             elif best_score >= beta:
                 flag = TT_FLAG_LOWER
-            score_to_store = best_score if c_turn == 'w' else -best_score
+            if best_score > 9.0:
+                tt_eval = best_score + ply * 0.1
+            elif best_score < -9.0:
+                tt_eval = best_score - ply * 0.1
+            else:
+                tt_eval = best_score
+            score_to_store = tt_eval if c_turn == 'w' else -tt_eval
             GLOBAL_TT.store(z_hash, depth, score_to_store, flag, best_move, c_turn)
             return best_score, best_move
         finally:
@@ -2229,7 +2232,7 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
 
     # Root iterative deepening with Aspiration Windows
     best_move_root = active_moves[int(np.argmax(root_priors))]
-    best_val_root = float(root_val)
+    best_val_root = float(root_val) if turn == 'w' else -float(root_val)
     move_scores = {}
     completed_depth = 0
     next_turn = 'b' if turn == 'w' else 'w'
@@ -2257,9 +2260,6 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
 
         aspiration_alpha = alpha
         aspiration_beta = beta
-        iter_scores = {}
-        iter_best_move = None
-        iter_best_val = -9999.0
         depth_aborted = False
 
         # Root batch prefetch for top candidate boards before search
@@ -2286,6 +2286,13 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
                     policy_cache[b_h] = b_res[0][b_i]
 
         while True:
+            alpha = aspiration_alpha
+            beta = aspiration_beta
+            iter_scores = {}
+            iter_best_move = None
+            iter_best_val = -9999.0
+            raw_best_score = -9999.0
+
             for root_idx, (_, m, pri) in enumerate(ordered_root):
                 if (time.time() - t0) * 1000 > time_limit_ms or time_expired[0]:
                     depth_aborted = True
@@ -2319,6 +2326,8 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
                 if blended > iter_best_val:
                     iter_best_val = blended
                     iter_best_move = m
+                if score > raw_best_score:
+                    raw_best_score = score
                 if score > alpha:
                     alpha = score
 
@@ -2327,19 +2336,17 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
 
             # Aspiration Window re-search check
             if d >= 3:
-                if iter_best_val <= aspiration_alpha and aspiration_alpha > -9000.0:
-                    alpha = -9999.0
+                if raw_best_score <= aspiration_alpha and aspiration_alpha > -9000.0:
                     aspiration_alpha = -9999.0
                     continue
-                elif iter_best_val >= aspiration_beta and aspiration_beta < 9000.0:
-                    beta = 9999.0
+                elif raw_best_score >= aspiration_beta and aspiration_beta < 9000.0:
                     aspiration_beta = 9999.0
                     continue
             break
 
         if not depth_aborted and iter_best_move is not None:
             best_move_root = iter_best_move
-            best_val_root = iter_best_val
+            best_val_root = raw_best_score
             move_scores.update(iter_scores)
             completed_depth = d
         if depth_aborted or time_expired[0]:
@@ -2361,7 +2368,8 @@ def alphabeta_search(session, fen, max_depth=6, time_limit_ms=4000, history=None
         })
     results.sort(key=lambda x: (x['visits'] == 100, x['score']), reverse=True)
     dt = (time.time() - t0) * 1000
-    return results, best_val_root, dt
+    eval_white = best_val_root if turn == 'w' else -best_val_root
+    return results, eval_white, dt
 
 
 

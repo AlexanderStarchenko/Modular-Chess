@@ -111,8 +111,65 @@ const ChessUI = (() => {
         return cachedCanvasRect;
     }
 
+    function getSquareFromCoords(clientX, clientY) {
+        const rect = getCanvasRect() || (canvas && typeof canvas.getBoundingClientRect === 'function' ? canvas.getBoundingClientRect() : null);
+        if (!rect || !rect.width) {
+            return { r: -1, c: -1, x: 0, y: 0, valid: false };
+        }
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        const squareSize = rect.width / 8;
+        const col = Math.floor(x / squareSize);
+        const row = Math.floor(y / squareSize);
+        const flipped = isFlipped();
+        const r = flipped ? 7 - row : row;
+        const c = flipped ? 7 - col : col;
+        return { r, c, x, y, valid: r >= 0 && r < 8 && c >= 0 && c < 8 };
+    }
+
+    let isManualFlip = false;
+
     function isFlipped() {
-        return playerColor === 'b';
+        return (playerColor === 'b') !== isManualFlip;
+    }
+
+    function updatePlayerNames() {
+        if (!topPlayerName || !bottomPlayerName) return;
+        const isPlayerBottom = !isManualFlip;
+        let myName = 'Вы';
+        let oppName = 'Соперник';
+
+        if (pcToggle && pcToggle.checked) {
+            myName = 'Вы';
+            oppName = getStockfishName();
+        } else if (networkState && networkState.connected) {
+            myName = 'Вы';
+            oppName = 'Соперник';
+        } else {
+            myName = playerColor === 'w' ? 'Белые' : 'Черные';
+            oppName = playerColor === 'w' ? 'Черные' : 'Белые';
+        }
+
+        bottomPlayerName.textContent = isPlayerBottom ? myName : oppName;
+        topPlayerName.textContent = isPlayerBottom ? oppName : myName;
+    }
+
+    function flipBoard() {
+        isManualFlip = !isManualFlip;
+
+        // Меняем местами отображение точности, если анализ уже проведен
+        const topAcc = document.getElementById('top-accuracy');
+        const bottomAcc = document.getElementById('bottom-accuracy');
+        if (topAcc && bottomAcc) {
+            const temp = topAcc.textContent;
+            topAcc.textContent = bottomAcc.textContent;
+            bottomAcc.textContent = temp;
+        }
+
+        updatePlayerNames();
+        updateTimerDisplays();
+        updateCapturesDisplay();
+        renderBoard();
     }
     let analysisResults = [];
     let selectedAnalysisIndex = null;
@@ -149,9 +206,11 @@ const ChessUI = (() => {
         'p': 'bP', 'r': 'bR', 'n': 'bN', 'b': 'bB', 'q': 'bQ', 'k': 'bK'
     };
 
+    let imagesInitialized = false;
+
     function initPieceImages() {
-        if (typeof Image === 'undefined') return;
-        if (Object.keys(pieceImages).length > 0) return;
+        if (imagesInitialized || typeof Image === 'undefined') return;
+        imagesInitialized = true;
         let loadedCount = 0;
         const totalPieces = Object.keys(PIECE_CODES).length;
         for (const [code, file] of Object.entries(PIECE_CODES)) {
@@ -159,7 +218,7 @@ const ChessUI = (() => {
             img.onload = () => {
                 loadedCount++;
                 if (loadedCount === totalPieces) {
-                    renderBoard();
+                    scheduleRender();
                 }
             };
             img.onerror = () => {
@@ -167,6 +226,117 @@ const ChessUI = (() => {
             };
             img.src = `pieces/${file}.svg`;
             pieceImages[code] = img;
+        }
+    }
+
+    function drawPieceAtOrigin(piece, squareSize) {
+        const img = pieceImages[piece];
+        let drewImage = false;
+        if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+            try {
+                const pieceSize = squareSize * 0.92;
+                ctx.drawImage(
+                    img,
+                    -pieceSize / 2,
+                    -pieceSize / 2,
+                    pieceSize,
+                    pieceSize
+                );
+                drewImage = true;
+            } catch (e) {
+                drewImage = false;
+            }
+        }
+
+        if (!drewImage) {
+            const fontSize = squareSize * 0.75;
+            ctx.font = `${fontSize}px Outfit, "Arial Unicode MS", sans-serif`;
+            const text = PIECE_UNICODE[piece];
+            const isBlack = piece === piece.toLowerCase();
+
+            if (isBlack) {
+                ctx.fillStyle = '#0d0d0d';
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = Math.max(1.5, squareSize / 30);
+                ctx.strokeText(text, 0, 0);
+                ctx.fillText(text, 0, 0);
+            } else {
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = Math.max(1.5, squareSize / 30);
+                ctx.strokeText(text, 0, 0);
+                ctx.fillText(text, 0, 0);
+            }
+        }
+    }
+
+    function renderHistoryFromMoves(gameHistory) {
+        if (!historyListElement) return;
+        historyListElement.innerHTML = '';
+        moveCount = 1;
+        if (!Array.isArray(gameHistory)) return;
+        const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+        gameHistory.forEach((item, idx) => {
+            const move = item.move || item;
+            const tC = move.toCol !== undefined ? move.toCol : move.tC;
+            const tR = move.toRow !== undefined ? move.toRow : move.tR;
+            if (tC === undefined || tR === undefined) return;
+            const to = `${files[tC]}${8 - tR}`;
+            if (idx % 2 === 0) {
+                const li = document.createElement('li');
+                const spanNum = document.createElement('span');
+                spanNum.textContent = `${Math.floor(idx / 2) + 1}.`;
+                const spanWhite = document.createElement('span');
+                spanWhite.textContent = to;
+                const spanBlack = document.createElement('span');
+                li.appendChild(spanNum);
+                li.appendChild(spanWhite);
+                li.appendChild(spanBlack);
+                historyListElement.appendChild(li);
+            } else {
+                const lastLi = historyListElement.lastElementChild;
+                if (lastLi && lastLi.children && lastLi.children[2]) {
+                    lastLi.children[2].textContent = to;
+                }
+            }
+        });
+        moveCount = Math.floor(gameHistory.length / 2) + 1;
+        historyListElement.scrollTop = historyListElement.scrollHeight;
+    }
+
+    function setSafeHistoryHtml(html) {
+        if (!historyListElement || typeof html !== 'string') return;
+        historyListElement.innerHTML = '';
+        try {
+            if (typeof DOMParser !== 'undefined') {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const items = doc.querySelectorAll('li');
+                if (items.length > 0) {
+                    items.forEach(item => {
+                        const li = document.createElement('li');
+                        item.querySelectorAll('span').forEach(span => {
+                            const s = document.createElement('span');
+                            s.textContent = (span.textContent || '').replace(/[^\w\sа-яА-ЯёЁ.:+#=x-]/gi, '');
+                            li.appendChild(s);
+                        });
+                        historyListElement.appendChild(li);
+                    });
+                    return;
+                }
+            }
+        } catch (e) {}
+        const safeText = html.replace(/<[^>]*>?/gm, '');
+        historyListElement.textContent = safeText;
+    }
+
+    function removeLastHistoryMove() {
+        if (!historyListElement || !historyListElement.lastElementChild) return;
+        const lastLi = historyListElement.lastElementChild;
+        if (lastLi.children && lastLi.children[2] && lastLi.children[2].textContent) {
+            lastLi.children[2].textContent = '';
+        } else {
+            lastLi.remove();
         }
     }
 
@@ -377,27 +547,18 @@ const ChessUI = (() => {
             }
             ctx = canvas.getContext('2d');
             
-            // Bind Canvas Events
-            canvas.addEventListener('click', (event) => {
+            if (!canvas._uiEventsBound) {
+                canvas._uiEventsBound = true;
+                // Bind Canvas Events
+                canvas.addEventListener('click', (event) => {
                 if (draggedOccurred) {
                     draggedOccurred = false;
                     return;
                 }
                 if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
-                const rect = getCanvasRect() || canvas.getBoundingClientRect();
-                const x = event.clientX - rect.left;
-                const y = event.clientY - rect.top;
-                
-                const squareSize = rect.width / 8;
-                const col = Math.floor(x / squareSize);
-                const row = Math.floor(y / squareSize);
-                
-                const flipped = isFlipped();
-                const r = flipped ? 7 - row : row;
-                const c = flipped ? 7 - col : col;
-                
-                if (r >= 0 && r < 8 && c >= 0 && c < 8) {
-                    handleSquareClick(r, c);
+                const sq = getSquareFromCoords(event.clientX, event.clientY);
+                if (sq.valid) {
+                    handleSquareClick(sq.r, sq.c);
                 }
             });
             
@@ -448,10 +609,11 @@ const ChessUI = (() => {
 
             window.addEventListener('resize', () => {
                 updateCanvasRect();
-                renderBoard();
+                scheduleRender();
             });
             if (typeof window !== 'undefined' && window.addEventListener) {
                 window.addEventListener('scroll', updateCanvasRect, { passive: true });
+            }
             }
         }
 
@@ -494,12 +656,7 @@ const ChessUI = (() => {
 
         // Network button logic
         if (networkBtn) {
-            const isMobileApp = typeof window !== 'undefined' && (
-                !!window.Capacitor || 
-                (window.location && window.location.protocol === 'capacitor:') ||
-                (window.location && window.location.origin && window.location.origin.startsWith('capacitor://')) ||
-                (window.location && window.location.hostname === 'localhost' && /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent))
-            );
+            const isMobileApp = isMobilePlatform();
 
             if (isMobileApp) {
                 console.log('[UI] Mobile environment detected. Hiding network play button.');
@@ -727,8 +884,12 @@ const ChessUI = (() => {
                         stopTimer();
                     }
                 }
-                if (data.history) {
-                    historyListElement.innerHTML = data.history;
+                if (data.boardState && data.boardState.gameHistory && data.boardState.gameHistory.length > 0) {
+                    renderHistoryFromMoves(data.boardState.gameHistory);
+                } else if (data.history) {
+                    setSafeHistoryHtml(data.history);
+                }
+                if (data.moveCount) {
                     moveCount = data.moveCount;
                 }
                 if (data.captures) {
@@ -897,6 +1058,11 @@ const ChessUI = (() => {
         const undoBtn = document.getElementById('undo-btn');
         const resignBtn = document.getElementById('resign-btn');
         const drawBtn = document.getElementById('draw-btn');
+
+        const flipBtn = document.getElementById('flip-btn');
+        if (flipBtn) {
+            flipBtn.addEventListener('click', flipBoard);
+        }
 
         if (resignBtn) {
             resignBtn.addEventListener('click', () => {
@@ -1653,6 +1819,7 @@ const ChessUI = (() => {
         updateAnalysisTabVisibility();
         capturedByWhite = [];
         capturedByBlack = [];
+        isManualFlip = false;
         
         // Reset accuracies stats
         if (accuracyBarContainer) accuracyBarContainer.style.display = 'none';
@@ -1710,6 +1877,8 @@ const ChessUI = (() => {
         whiteTimeLeft = tc.time;
         blackTimeLeft = tc.time;
         increment = tc.inc;
+        initialTime = tc.time;
+        initialInc = tc.inc;
         isTimerRunning = false;
         
         if (whiteTimeLeft === 0) {
@@ -1764,9 +1933,10 @@ const ChessUI = (() => {
     }
 
     function updateTimerDisplays() {
-        if (whiteTimeLeft === 0 && blackTimeLeft === 0 && parseTimeControl().time === 0) return;
+        if (whiteTimeLeft === 0 && blackTimeLeft === 0 && initialTime === 0) return;
 
-        const isWhiteBottom = playerColor === 'w';
+        const isWhiteBottom = !isFlipped();
+        const bottomColor = isWhiteBottom ? 'w' : 'b';
         const bottomFormatted = formatTime(isWhiteBottom ? whiteTimeLeft : blackTimeLeft);
         const topFormatted = formatTime(isWhiteBottom ? blackTimeLeft : whiteTimeLeft);
 
@@ -1778,12 +1948,12 @@ const ChessUI = (() => {
         }
 
         const turn = ChessLogic.getTurn();
-        const isMyTurn = turn === playerColor;
+        const isBottomTurn = turn === bottomColor;
 
         if (!cachedOppCard) cachedOppCard = document.getElementById('opponent-card');
         if (!cachedPlayerCard) cachedPlayerCard = document.getElementById('player-card');
 
-        if (isMyTurn) {
+        if (isBottomTurn) {
             bottomTimerContainer.classList.add('active');
             topTimerContainer.classList.remove('active');
             if (cachedPlayerCard) cachedPlayerCard.classList.add('glow-turn');
@@ -1795,16 +1965,16 @@ const ChessUI = (() => {
             if (cachedPlayerCard) cachedPlayerCard.classList.remove('glow-turn');
         }
 
-        const myTimeLeft = playerColor === 'w' ? whiteTimeLeft : blackTimeLeft;
-        const oppTimeLeft = playerColor === 'w' ? blackTimeLeft : whiteTimeLeft;
+        const bottomTimeLeft = isWhiteBottom ? whiteTimeLeft : blackTimeLeft;
+        const topTimeLeft = isWhiteBottom ? blackTimeLeft : whiteTimeLeft;
 
-        if (myTimeLeft > 0 && myTimeLeft < 60) {
+        if (bottomTimeLeft > 0 && bottomTimeLeft < 60) {
             bottomTimerContainer.classList.add('low-time');
         } else {
             bottomTimerContainer.classList.remove('low-time');
         }
 
-        if (oppTimeLeft > 0 && oppTimeLeft < 60) {
+        if (topTimeLeft > 0 && topTimeLeft < 60) {
             topTimerContainer.classList.add('low-time');
         } else {
             topTimerContainer.classList.remove('low-time');
@@ -1812,7 +1982,7 @@ const ChessUI = (() => {
     }
 
     function startTimer() {
-        if (isTimerRunning || parseTimeControl().time === 0 || gameEnded) return;
+        if (isTimerRunning || initialTime === 0 || gameEnded) return;
         isTimerRunning = true;
         
         lastTickTime = Date.now();
@@ -1856,7 +2026,7 @@ const ChessUI = (() => {
 
     function handleTurnEnd() {
         hasPlayedLowTimeWarning = false;
-        if (parseTimeControl().time > 0) {
+        if (initialTime > 0) {
             const turn = ChessLogic.getTurn();
             // Add increment to the player who JUST moved
             if (turn === 'w') { // Black just moved
@@ -1991,6 +2161,9 @@ const ChessUI = (() => {
         const coordLight = cachedThemeColors.coordLight;
         const coordDark = cachedThemeColors.coordDark;
         
+        const currentTurn = analysisSnapshot ? analysisSnapshot.turn : ChessLogic.getTurn();
+        const isTurnKingInCheck = ChessLogic.isKingInCheck(currentTurn);
+
         // 1. Draw Squares & Highlights
         for (let ri = 0; ri < 8; ri++) {
             for (let ci = 0; ci < 8; ci++) {
@@ -2032,9 +2205,8 @@ const ChessUI = (() => {
                 
                 // Check Highlight
                 const piece = board[r][c];
-                const currentTurn = analysisSnapshot ? analysisSnapshot.turn : ChessLogic.getTurn();
                 const isCurrentTurnKing = (currentTurn === 'w' && piece === 'K') || (currentTurn === 'b' && piece === 'k');
-                if (isCurrentTurnKing && ChessLogic.isKingInCheck(currentTurn)) {
+                if (isCurrentTurnKing && isTurnKingInCheck) {
                     ctx.fillStyle = 'rgba(255, 0, 0, 0.4)';
                     ctx.fillRect(x, y, squareSize, squareSize);
                 }
@@ -2140,47 +2312,7 @@ const ChessUI = (() => {
                     ctx.translate(x + squareSize / 2, y + squareSize / 2 + floatY);
                     ctx.scale(scale, scale);
                     
-                    initPieceImages();
-                    const img = pieceImages[piece];
-                    let drewImage = false;
-                    if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
-                        try {
-                            const pieceSize = squareSize * 0.92;
-                            ctx.drawImage(
-                                img,
-                                -pieceSize / 2,
-                                -pieceSize / 2,
-                                pieceSize,
-                                pieceSize
-                            );
-                            drewImage = true;
-                        } catch (e) {
-                            drewImage = false;
-                        }
-                    }
-                    
-                    if (!drewImage) {
-                        // Font size based on cqw equivalent: ~75% of square size
-                        const fontSize = squareSize * 0.75;
-                        ctx.font = `${fontSize}px Outfit, "Arial Unicode MS", sans-serif`;
-                        
-                        const text = PIECE_UNICODE[piece];
-                        
-                        // Render outlines & fill
-                        if (isBlack) {
-                            ctx.fillStyle = '#0d0d0d';
-                            ctx.strokeStyle = '#ffffff';
-                            ctx.lineWidth = Math.max(1.5, squareSize / 30);
-                            ctx.strokeText(text, 0, 0);
-                            ctx.fillText(text, 0, 0);
-                        } else {
-                            ctx.fillStyle = '#ffffff';
-                            ctx.strokeStyle = '#000000';
-                            ctx.lineWidth = Math.max(1.5, squareSize / 30);
-                            ctx.strokeText(text, 0, 0);
-                            ctx.fillText(text, 0, 0);
-                        }
-                    }
+                    drawPieceAtOrigin(piece, squareSize);
                     
                     ctx.restore();
                 }
@@ -2203,46 +2335,7 @@ const ChessUI = (() => {
             // Scale dragged piece slightly larger for a premium "picked up" feel
             ctx.scale(1.2, 1.2);
             
-            initPieceImages();
-            const img = pieceImages[draggedPiece];
-            let drewImage = false;
-            if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
-                try {
-                    const pieceSize = squareSize * 0.92;
-                    ctx.drawImage(
-                        img,
-                        -pieceSize / 2,
-                        -pieceSize / 2,
-                        pieceSize,
-                        pieceSize
-                    );
-                    drewImage = true;
-                } catch (e) {
-                    drewImage = false;
-                }
-            }
-            
-            if (!drewImage) {
-                const fontSize = squareSize * 0.75;
-                ctx.font = `${fontSize}px Outfit, "Arial Unicode MS", sans-serif`;
-                
-                const text = PIECE_UNICODE[draggedPiece];
-                const isBlack = draggedPiece === draggedPiece.toLowerCase();
-                
-                if (isBlack) {
-                    ctx.fillStyle = '#0d0d0d';
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = Math.max(1.5, squareSize / 30);
-                    ctx.strokeText(text, 0, 0);
-                    ctx.fillText(text, 0, 0);
-                } else {
-                    ctx.fillStyle = '#ffffff';
-                    ctx.strokeStyle = '#000000';
-                    ctx.lineWidth = Math.max(1.5, squareSize / 30);
-                    ctx.strokeText(text, 0, 0);
-                    ctx.fillText(text, 0, 0);
-                }
-            }
+            drawPieceAtOrigin(draggedPiece, squareSize);
             
             ctx.restore();
         }
@@ -2260,7 +2353,6 @@ const ChessUI = (() => {
                 inc: increment,
                 running: isTimerRunning
             },
-            history: historyListElement.innerHTML,
             moveCount: moveCount,
             captures: {
                 white: [...capturedByWhite],
@@ -2290,7 +2382,9 @@ const ChessUI = (() => {
 
             updateLastMove({ fromRow, fromCol, toRow, toCol });
 
-            if (wasCapture) {
+            if (givesCheck && typeof ChessAudio !== 'undefined' && typeof ChessAudio.check === 'function') {
+                ChessAudio.check();
+            } else if (wasCapture) {
                 ChessAudio.capture();
             } else {
                 ChessAudio.move();
@@ -2334,21 +2428,10 @@ const ChessUI = (() => {
 
     function isDraggingPiece(clientX, clientY) {
         if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return false;
-        const rect = getCanvasRect() || canvas.getBoundingClientRect();
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
-        
-        const squareSize = rect.width / 8;
-        const col = Math.floor(x / squareSize);
-        const row = Math.floor(y / squareSize);
-        
-        const flipped = isFlipped();
-        const r = flipped ? 7 - row : row;
-        const c = flipped ? 7 - col : col;
-        
-        if (r >= 0 && r < 8 && c >= 0 && c < 8) {
+        const sq = getSquareFromCoords(clientX, clientY);
+        if (sq.valid) {
             const board = ChessLogic.getBoard();
-            const piece = board[r][c];
+            const piece = board[sq.r][sq.c];
             const currentTurn = ChessLogic.getTurn();
             if (piece) {
                 const isWhite = piece === piece.toUpperCase();
@@ -2363,23 +2446,13 @@ const ChessUI = (() => {
     function handleMousedown(clientX, clientY) {
         if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
         updateCanvasRect();
-        const rect = getCanvasRect() || canvas.getBoundingClientRect();
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
+        const sq = getSquareFromCoords(clientX, clientY);
         
-        const squareSize = rect.width / 8;
-        const col = Math.floor(x / squareSize);
-        const row = Math.floor(y / squareSize);
-        
-        const flipped = isFlipped();
-        const r = flipped ? 7 - row : row;
-        const c = flipped ? 7 - col : col;
-        
-        if (r >= 0 && r < 8 && c >= 0 && c < 8) {
-            lastMousedownSquare = { row: r, col: c };
+        if (sq.valid) {
+            lastMousedownSquare = { row: sq.r, col: sq.c };
             
             const board = ChessLogic.getBoard();
-            const piece = board[r][c];
+            const piece = board[sq.r][sq.c];
             const currentTurn = ChessLogic.getTurn();
             
             if (piece) {
@@ -2390,13 +2463,13 @@ const ChessUI = (() => {
                 
                 if (canMove) {
                     isDragging = true;
-                    dragStartSquare = { row: r, col: c };
+                    dragStartSquare = { row: sq.r, col: sq.c };
                     draggedPiece = piece;
-                    dragCurrentX = x;
-                    dragCurrentY = y;
-                    selectedSquare = { row: r, col: c };
+                    dragCurrentX = sq.x;
+                    dragCurrentY = sq.y;
+                    selectedSquare = { row: sq.r, col: sq.c };
                     draggedOccurred = false;
-                    renderBoard();
+                    scheduleRender();
                 }
             }
         }
@@ -2418,46 +2491,32 @@ const ChessUI = (() => {
     }
 
     function processMousemove(clientX, clientY) {
-        const rect = getCanvasRect() || canvas.getBoundingClientRect();
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
-        
-        const squareSize = rect.width / 8;
-        const col = Math.floor(x / squareSize);
-        const row = Math.floor(y / squareSize);
-        
-        const flipped = isFlipped();
-        const r = flipped ? 7 - row : row;
-        const c = flipped ? 7 - col : col;
+        const sq = getSquareFromCoords(clientX, clientY);
         
         if (isDragging) {
-            dragCurrentX = x;
-            dragCurrentY = y;
+            dragCurrentX = sq.x;
+            dragCurrentY = sq.y;
             draggedOccurred = true;
-            if (r >= 0 && r < 8 && c >= 0 && c < 8) {
-                hoverSquare = { row: r, col: c };
-            } else {
-                hoverSquare = null;
-            }
+            hoverSquare = sq.valid ? { row: sq.r, col: sq.c } : null;
             renderBoard();
         } else {
             if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) {
                 if (hoverSquare) {
                     hoverSquare = null;
-                    renderBoard();
+                    scheduleRender();
                 }
                 return;
             }
             
-            if (r >= 0 && r < 8 && c >= 0 && c < 8) {
-                if (!hoverSquare || hoverSquare.row !== r || hoverSquare.col !== c) {
-                    hoverSquare = { row: r, col: c };
-                    renderBoard();
+            if (sq.valid) {
+                if (!hoverSquare || hoverSquare.row !== sq.r || hoverSquare.col !== sq.c) {
+                    hoverSquare = { row: sq.r, col: sq.c };
+                    scheduleRender();
                 }
             } else {
                 if (hoverSquare) {
                     hoverSquare = null;
-                    renderBoard();
+                    scheduleRender();
                 }
             }
         }
@@ -2465,17 +2524,7 @@ const ChessUI = (() => {
 
     function handleMouseup(clientX, clientY) {
         if (isWaitingForPC || isWaitingForStart || gameEnded || analysisSnapshot) return;
-        const rect = getCanvasRect() || canvas.getBoundingClientRect();
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
-        
-        const squareSize = rect.width / 8;
-        const col = Math.floor(x / squareSize);
-        const row = Math.floor(y / squareSize);
-        
-        const flipped = isFlipped();
-        const r = flipped ? 7 - row : row;
-        const c = flipped ? 7 - col : col;
+        const sq = getSquareFromCoords(clientX, clientY);
         
         if (isDragging) {
             isDragging = false;
@@ -2485,13 +2534,13 @@ const ChessUI = (() => {
             dragStartSquare = null;
             draggedPiece = null;
             
-            if (r >= 0 && r < 8 && c >= 0 && c < 8) {
-                if (startRow === r && startCol === c) {
+            if (sq.valid) {
+                if (startRow === sq.r && startCol === sq.c) {
                     // Same square: treat as click
-                    handleSquareClick(r, c);
+                    handleSquareClick(sq.r, sq.c);
                 } else {
                     // Try to execute the move
-                    const success = executeMove(startRow, startCol, r, c, false, true);
+                    const success = executeMove(startRow, startCol, sq.r, sq.c, false, true);
                     if (success) {
                         selectedSquare = null;
                     } else {
@@ -2499,10 +2548,10 @@ const ChessUI = (() => {
                     }
                 }
             }
-            renderBoard();
+            scheduleRender();
         } else {
-            if (r >= 0 && r < 8 && c >= 0 && c < 8 && lastMousedownSquare && lastMousedownSquare.row === r && lastMousedownSquare.col === c) {
-                handleSquareClick(r, c);
+            if (sq.valid && lastMousedownSquare && lastMousedownSquare.row === sq.r && lastMousedownSquare.col === sq.c) {
+                handleSquareClick(sq.r, sq.c);
             }
         }
         lastMousedownSquare = null;
@@ -2524,7 +2573,7 @@ const ChessUI = (() => {
             
             if (executeMove(fromRow, fromCol, row, col)) {
                 selectedSquare = null;
-                renderBoard();
+                scheduleRender();
 
                 return;
             } else {
@@ -2533,7 +2582,7 @@ const ChessUI = (() => {
         } else {
             selectPiece(row, col, currentTurn);
         }
-        renderBoard();
+        scheduleRender();
     }
 
     function selectPiece(row, col, currentTurn) {
@@ -2554,7 +2603,7 @@ const ChessUI = (() => {
     function applyPCMove(bestMove) {
         isWaitingForPC = false;
         if (!bestMove || gameEnded) {
-            renderBoard();
+            scheduleRender();
             return;
         }
 
@@ -2564,7 +2613,7 @@ const ChessUI = (() => {
         const toC = bestMove.toC !== undefined ? bestMove.toC : bestMove.toCol;
 
         executeMove(fromR, fromC, toR, toC);
-        renderBoard();
+        scheduleRender();
     }
 
     function makePCMove() {
@@ -2623,7 +2672,7 @@ const ChessUI = (() => {
             'q': '♕', 'r': '♖', 'b': '♗', 'n': '♘', 'p': '♙'
         };
 
-        const isBottomWhite = playerColor === 'w' || !pcToggle.checked;
+        const isBottomWhite = !isFlipped();
         const bottomCaptured = isBottomWhite ? sortByValue(capturedByWhite) : sortByValue(capturedByBlack);
         const topCaptured = isBottomWhite ? sortByValue(capturedByBlack) : sortByValue(capturedByWhite);
         const bottomScore = isBottomWhite ? whiteScore : blackScore;
@@ -2827,6 +2876,7 @@ const ChessUI = (() => {
 
         for (let i = 0; i < levels; i++) {
             previousState = stateHistory.pop();
+            removeLastHistoryMove();
             // Subtract the increment that was added to the player when they made the move
             if (previousState && gameHasTimeControl) {
                 const turn = previousState.boardState.turn || 'w';
@@ -2856,16 +2906,6 @@ const ChessUI = (() => {
                 startTimer();
             }
             
-            if (previousState.history !== undefined) {
-                historyListElement.innerHTML = previousState.history;
-            } else if (historyListElement && historyListElement.lastElementChild) {
-                const lastLi = historyListElement.lastElementChild;
-                if (lastLi.children[2] && lastLi.children[2].textContent) {
-                    lastLi.children[2].textContent = '';
-                } else {
-                    lastLi.remove();
-                }
-            }
             moveCount = previousState.moveCount;
             capturedByWhite = previousState.captures.white;
             capturedByBlack = previousState.captures.black;
@@ -2880,7 +2920,7 @@ const ChessUI = (() => {
             cachedLegalDests = null;
             cachedLegalDestsSquare = null;
             updateCapturesDisplay();
-            renderBoard();
+            scheduleRender();
             updateStatus();
             updateTimerDisplays();
         }
@@ -3045,7 +3085,7 @@ const ChessUI = (() => {
         const bottomAcc = document.getElementById('bottom-accuracy');
         
         if (topAcc && bottomAcc) {
-            const isWhiteBottom = playerColor === 'w';
+            const isWhiteBottom = !isFlipped();
             const whiteValue = `${stats.whiteAccuracy}%`;
             const blackValue = `${stats.blackAccuracy}%`;
             
@@ -3291,7 +3331,13 @@ const ChessUI = (() => {
         updateTimerDisplays();
 
         // Restore notation and history
-        historyListElement.innerHTML = saveObj.history || '';
+        if (saveObj.history) {
+            setSafeHistoryHtml(saveObj.history);
+        } else if (saveObj.boardState && saveObj.boardState.gameHistory) {
+            renderHistoryFromMoves(saveObj.boardState.gameHistory);
+        } else {
+            historyListElement.innerHTML = '';
+        }
         moveCount = saveObj.moveCount || 1;
         stateHistory = saveObj.stateHistory || [];
 
@@ -3315,6 +3361,7 @@ const ChessUI = (() => {
         analysisSnapshot = null;
         if (animationLayer) animationLayer.innerHTML = '';
         hideAnalysis();
+        isManualFlip = false;
 
         // Reset accuracy UI
         if (accuracyBarContainer) accuracyBarContainer.style.display = 'none';
@@ -3544,6 +3591,7 @@ const ChessUI = (() => {
 
     return {
         init,
+        flipBoard,
         clearPendingTimers,
         cancelPendingMove,
         applyRemoteMove(move) {
