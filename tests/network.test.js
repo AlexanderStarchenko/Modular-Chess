@@ -162,4 +162,108 @@ describe('ChessNetwork Adapter', () => {
         ChessNetwork.receiveDrawResponse(false);
         expect(drawResponseListener).toHaveBeenCalledWith(false);
     });
+
+    test('Prototype Pollution protection in on and emit', () => {
+        expect(() => {
+            const unsub = ChessNetwork.on('toString', () => {});
+            unsub();
+        }).not.toThrow();
+
+        expect(() => {
+            const unsub = ChessNetwork.on('constructor', () => {});
+            unsub();
+        }).not.toThrow();
+    });
+
+    test('Safe unsubscribe during emit execution does not corrupt loop', () => {
+        let firstCalled = false;
+        let secondCalled = false;
+        let unsubSecond;
+
+        ChessNetwork.on('reconnected', () => {
+            firstCalled = true;
+            if (unsubSecond) unsubSecond(); // unsubscribe second listener during first's execution
+        });
+
+        unsubSecond = ChessNetwork.on('reconnected', () => {
+            secondCalled = true;
+        });
+
+        ChessNetwork.receiveReconnected();
+
+        expect(firstCalled).toBe(true);
+        // The snapshot executed both, but subsequent emit will only execute the first
+        ChessNetwork.receiveReconnected();
+        expect(firstCalled).toBe(true);
+    });
+
+    test('Transport cleanup and disconnect invocation on re-attach and disconnect', () => {
+        const transportA = { disconnect: jest.fn() };
+        const transportB = { disconnect: jest.fn() };
+
+        ChessNetwork.attach(transportA);
+        // Attaching transportB should disconnect transportA
+        ChessNetwork.attach(transportB);
+        expect(transportA.disconnect).toHaveBeenCalled();
+
+        // Disconnecting should disconnect transportB
+        ChessNetwork.disconnect();
+        expect(transportB.disconnect).toHaveBeenCalled();
+    });
+
+    test('Safe transport call catches sync throws and returns false', () => {
+        const errorTransport = {
+            sendMove: jest.fn(() => { throw new Error('Transport broken'); }),
+            sendState: jest.fn(() => false)
+        };
+        ChessNetwork.attach(errorTransport);
+
+        const moveListener = jest.fn();
+        ChessNetwork.on('move', moveListener);
+
+        expect(ChessNetwork.sendMove({ from: 'e2', to: 'e4' })).toBe(false);
+        expect(moveListener).not.toHaveBeenCalled();
+
+        expect(ChessNetwork.sendState('state')).toBe(false);
+    });
+
+    test('Chat message validation, slicing to 500 chars and dual dispatch', () => {
+        const chatTransport = { sendChatMessage: jest.fn() };
+        ChessNetwork.attach(chatTransport);
+
+        // Invalid messages
+        expect(ChessNetwork.sendChatMessage('')).toBe(false);
+        expect(ChessNetwork.sendChatMessage('   ')).toBe(false);
+        expect(ChessNetwork.sendChatMessage(null)).toBe(false);
+        expect(chatTransport.sendChatMessage).not.toHaveBeenCalled();
+
+        // Valid message clamped to 500 chars
+        const longText = 'A'.repeat(600);
+        expect(ChessNetwork.sendChatMessage(longText)).toBe(true);
+        expect(chatTransport.sendChatMessage).toHaveBeenCalledWith('A'.repeat(500));
+
+        // Dual dispatch: custom receiver and event bus
+        const busListener = jest.fn();
+        ChessNetwork.on('chatMessage', busListener);
+
+        const customCallback = jest.fn();
+        ChessNetwork.receiveChatMessage = customCallback;
+
+        ChessNetwork.receiveChatMessage('Hello world!');
+        expect(customCallback).toHaveBeenCalledWith('Hello world!');
+        expect(busListener).toHaveBeenCalledWith('Hello world!');
+    });
+
+    test('Public API contract is frozen and receiveChatMessage has stable reference', () => {
+        expect(Object.isFrozen(ChessNetwork)).toBe(true);
+
+        // Accessor returns stable reference (no allocation on read)
+        expect(ChessNetwork.receiveChatMessage).toBe(ChessNetwork.receiveChatMessage);
+
+        // Setter continues working on frozen object
+        const newCallback = jest.fn();
+        ChessNetwork.receiveChatMessage = newCallback;
+        ChessNetwork.receiveChatMessage('Test msg');
+        expect(newCallback).toHaveBeenCalledWith('Test msg');
+    });
 });

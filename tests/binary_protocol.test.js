@@ -334,4 +334,106 @@ describe('Universal Binary Protocol', () => {
         expect(unpacked.captures.black).not.toContain('p');
         expect(unpacked.captures.black.length).toBe(0);
     });
+
+    test('Safe view validation for truncated or malformed buffers', () => {
+        expect(BinaryProtocol.unpackMove(null)).toBeNull();
+        expect(BinaryProtocol.unpackMove(undefined)).toBeNull();
+        expect(BinaryProtocol.unpackMove(new Uint8Array(10))).toBeNull(); // < 15 bytes
+        expect(BinaryProtocol.unpackMove({})).toBeNull();
+
+        expect(BinaryProtocol.unpackState(null)).toBeNull();
+        expect(BinaryProtocol.unpackState(new Uint8Array(50))).toBeNull(); // < 81 bytes
+    });
+
+    test('Timer NaN, Infinity and Uint32 overflow clamping', () => {
+        const moveWithEdgeTimers = {
+            from: 'e2',
+            to: 'e4',
+            timers: {
+                white: NaN,
+                black: Infinity,
+                inc: 70000 // exceeds uint16
+            }
+        };
+
+        const packed = BinaryProtocol.packMove(moveWithEdgeTimers);
+        const unpacked = BinaryProtocol.unpackMove(packed);
+
+        expect(unpacked.timers.white).toBe(0);
+        expect(unpacked.timers.black).toBe(0);
+        expect(unpacked.timers.inc).toBe(65535); // clamped to uint16 max
+    });
+
+    test('Coordinates boundary protection against invalid from/to/enPassant', () => {
+        const moveBadCoords = {
+            fromR: 9,
+            fromC: -1,
+            toRow: 12,
+            toCol: 8
+        };
+
+        const packed = BinaryProtocol.packMove(moveBadCoords);
+        const unpacked = BinaryProtocol.unpackMove(packed);
+
+        expect(unpacked.from).toBeNull();
+        expect(unpacked.to).toBeNull();
+        expect(unpacked.fromR).toBeUndefined();
+        expect(unpacked.toR).toBeUndefined();
+
+        const stateBadEp = {
+            boardState: {
+                board: new Array(64).fill(null),
+                enPassantSquare: { row: 15, col: 99 }
+            }
+        };
+
+        const packedState = BinaryProtocol.packState(stateBadEp);
+        const unpackedState = BinaryProtocol.unpackState(packedState);
+        expect(unpackedState.enPassant).toBeNull();
+        expect(unpackedState.boardState.enPassantSquare).toBeNull();
+    });
+
+    test('Promotion character sanitization against control and junk characters', () => {
+        const validPromo = BinaryProtocol.packMove({ from: 'e7', to: 'e8', promotion: 'q' });
+        expect(BinaryProtocol.unpackMove(validPromo).promotion).toBe('q');
+
+        // Tamper byte 3 with arbitrary character code (e.g. 65 'A' or 1 'SOH')
+        const tampered = new Uint8Array(validPromo);
+        tampered[3] = 1; // SOH control character
+        expect(BinaryProtocol.unpackMove(tampered).promotion).toBeNull();
+
+        tampered[3] = 120; // 'x'
+        expect(BinaryProtocol.unpackMove(tampered).promotion).toBeNull();
+
+        tampered[3] = 81; // 'Q'
+        expect(BinaryProtocol.unpackMove(tampered).promotion).toBe('Q');
+    });
+
+    test('Prototype Pollution protection for piece property', () => {
+        // 'toString' or 'constructor' should not resolve to Object.prototype functions
+        const movePollution = { from: 'e2', to: 'e4', piece: 'toString' };
+        const packed = BinaryProtocol.packMove(movePollution);
+        expect(packed[2]).toBe(0); // piece byte should be 0, not a function reference
+        const unpacked = BinaryProtocol.unpackMove(packed);
+        expect(unpacked.piece).toBeNull();
+    });
+
+    test('Strict square string length check in squareToIndex', () => {
+        expect(BinaryProtocol.squareToIndex('e2e4')).toBe(255);
+        expect(BinaryProtocol.squareToIndex('e2_extra')).toBe(255);
+        expect(BinaryProtocol.squareToIndex('e')).toBe(255);
+        expect(BinaryProtocol.squareToIndex('e2')).toBe(12);
+    });
+
+    test('Non-negative moveCount and fullmoveNumber clamp on malformed state packet', () => {
+        const state = { boardState: { board: new Array(64).fill(null), turn: 'w' } };
+        const packed = BinaryProtocol.packState(state);
+        // Corrupt fullmoveNumber bytes 68-69 to 0
+        packed[68] = 0;
+        packed[69] = 0;
+
+        const unpacked = BinaryProtocol.unpackState(packed);
+        expect(unpacked.fullmoveNumber).toBe(1);
+        expect(unpacked.moveCount).toBe(0); // (1 - 1) * 2 + 0 = 0, never negative
+    });
 });

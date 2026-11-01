@@ -657,11 +657,17 @@ const ChessUI = (() => {
 
         // Network button logic
         if (networkBtn) {
-            const isMobileApp = isMobilePlatform();
+            const isNativeApp = typeof window !== 'undefined' && (
+                !!window.Capacitor || 
+                (window.location && window.location.protocol === 'capacitor:') ||
+                (window.location && window.location.origin && window.location.origin.startsWith('capacitor://'))
+            );
 
-            if (isMobileApp) {
-                console.log('[UI] Mobile environment detected. Hiding network play button.');
+            if (isNativeApp) {
+                console.log('[UI] Native app environment detected. Hiding network play button.');
                 networkBtn.style.display = 'none';
+            } else {
+                networkBtn.style.display = '';
             }
 
             console.log('[UI] Network button found, setting up listeners...');

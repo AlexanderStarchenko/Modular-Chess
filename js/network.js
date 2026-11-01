@@ -1,80 +1,122 @@
 /**
  * Chess Network Adapter
- * Provides a transport-agnostic contract for future online play.
+ * Provides a transport-agnostic contract for online play and event bus.
  */
 
 const ChessNetwork = (() => {
     let transport = null;
+    let customChatReceiver = null;
+
     let state = {
         connected: false,
         roomId: null,
         playerColor: null
     };
 
-    const listeners = {
-        status: [],
-        move: [],
-        sync: [],
-        joined: [],
-        undoRequest: [],
-        undoResponse: [],
-        colorAssigned: [],
-        resign: [],
-        drawOffer: [],
-        drawResponse: [],
-        reconnecting: [],
-        reconnected: [],
-        opponentPresence: [],
-        pingUpdate: []
-    };
+    // Словарь без прототипа + Set вместо Array (защита от Prototype Pollution, дублей и O(1) удаление)
+    const listeners = Object.assign(Object.create(null), {
+        status: new Set(),
+        move: new Set(),
+        sync: new Set(),
+        joined: new Set(),
+        undoRequest: new Set(),
+        undoResponse: new Set(),
+        colorAssigned: new Set(),
+        resign: new Set(),
+        drawOffer: new Set(),
+        drawResponse: new Set(),
+        reconnecting: new Set(),
+        reconnected: new Set(),
+        opponentPresence: new Set(),
+        pingUpdate: new Set(),
+        chatMessage: new Set()
+    });
 
     function emit(type, payload) {
-        (listeners[type] || []).forEach(fn => {
+        const set = listeners[type];
+        if (!set || set.size === 0) return;
+        // Копия через Array.from защищает итерацию, если подписчик отпишется прямо внутри коллбэка
+        const snapshot = Array.from(set);
+        for (let i = 0; i < snapshot.length; i++) {
             try {
-                fn(payload);
+                snapshot[i](payload);
             } catch (err) {
-                console.error('ChessNetwork listener error:', err);
+                console.error(`ChessNetwork listener error [${type}]:`, err);
             }
-        });
+        }
     }
 
     function on(type, handler) {
-        if (!listeners[type] || typeof handler !== 'function') return () => {};
-        listeners[type].push(handler);
+        const set = listeners[type];
+        if (!set || typeof handler !== 'function') return () => {};
+        set.add(handler);
         return () => {
-            listeners[type] = listeners[type].filter(fn => fn !== handler);
+            set.delete(handler);
         };
     }
 
     function attach(newTransport) {
-        transport = newTransport;
+        if (transport && transport !== newTransport && typeof transport.disconnect === 'function') {
+            try { transport.disconnect(); } catch (e) {}
+        }
+        transport = (newTransport && typeof newTransport === 'object') ? newTransport : null;
     }
 
     function setConnectionState(nextState) {
-        state = { ...state, ...nextState };
-        emit('status', { ...state });
+        if (!nextState || typeof nextState !== 'object') return;
+        let changed = false;
+
+        if ('connected' in nextState && Boolean(nextState.connected) !== state.connected) {
+            state.connected = Boolean(nextState.connected);
+            changed = true;
+        }
+        if ('roomId' in nextState && nextState.roomId !== state.roomId) {
+            state.roomId = nextState.roomId ?? null;
+            changed = true;
+        }
+        if ('playerColor' in nextState && nextState.playerColor !== state.playerColor) {
+            state.playerColor = nextState.playerColor ?? null;
+            changed = true;
+        }
+
+        // Эмитим статус только если данные реально изменились
+        if (changed) {
+            emit('status', { ...state });
+        }
     }
 
-    function connect(meta = {}) {
-        setConnectionState({ connected: true, ...meta });
-        return state;
+    function connect(meta) {
+        setConnectionState({ ...(meta && typeof meta === 'object' ? meta : {}), connected: true });
+        return { ...state };
     }
 
     function disconnect() {
+        const currentTransport = transport;
+        transport = null; // Сначала обнуляем ссылку (защита от рекурсии при взаимном disconnect)
+        if (currentTransport && typeof currentTransport.disconnect === 'function') {
+            try { currentTransport.disconnect(); } catch (e) {}
+        }
         setConnectionState({ connected: false, roomId: null, playerColor: null });
-        transport = null;
+    }
+
+    function safeTransportCall(methodName, arg) {
+        if (!transport || typeof transport[methodName] !== 'function') return false;
+        try {
+            return transport[methodName](arg) !== false;
+        } catch (err) {
+            console.error(`ChessNetwork transport.${methodName} error:`, err);
+            return false;
+        }
     }
 
     function sendMove(move) {
-        if (!transport || typeof transport.sendMove !== 'function') return false;
-        transport.sendMove(move);
+        if (!move || !safeTransportCall('sendMove', move)) return false;
         emit('move', move);
         return true;
     }
 
     function sendState(snapshot) {
-        if (!transport || typeof transport.sendState !== 'function') return false;
-        transport.sendState(snapshot);
+        if (!snapshot || !safeTransportCall('sendState', snapshot)) return false;
         emit('sync', snapshot);
         return true;
     }
@@ -85,6 +127,17 @@ const ChessNetwork = (() => {
 
     function receiveState(snapshot) {
         emit('sync', snapshot);
+    }
+
+    function handleChatMessage(msg) {
+        if (typeof customChatReceiver === 'function') {
+            try {
+                customChatReceiver(msg);
+            } catch (e) {
+                console.error('ChessNetwork customChatReceiver error:', e);
+            }
+        }
+        emit('chatMessage', msg);
     }
 
     const API = {
@@ -98,25 +151,21 @@ const ChessNetwork = (() => {
         receiveState,
         receiveJoined: () => emit('joined'),
         receiveColor: (color) => emit('colorAssigned', color),
-        sendUndoRequest: (levels) => {
-            if (transport && typeof transport.sendUndoRequest === 'function') transport.sendUndoRequest(levels);
-        },
-        sendUndoResponse: (accepted) => {
-            if (transport && typeof transport.sendUndoResponse === 'function') transport.sendUndoResponse(accepted);
-        },
-        sendResign: () => {
-            if (transport && typeof transport.sendResign === 'function') transport.sendResign();
-        },
-        sendDrawOffer: () => {
-            if (transport && typeof transport.sendDrawOffer === 'function') transport.sendDrawOffer();
-        },
-        sendDrawResponse: (accepted) => {
-            if (transport && typeof transport.sendDrawResponse === 'function') transport.sendDrawResponse(accepted);
-        },
+        sendUndoRequest: (levels) => safeTransportCall('sendUndoRequest', levels),
+        sendUndoResponse: (accepted) => safeTransportCall('sendUndoResponse', Boolean(accepted)),
+        sendResign: () => safeTransportCall('sendResign'),
+        sendDrawOffer: () => safeTransportCall('sendDrawOffer'),
+        sendDrawResponse: (accepted) => safeTransportCall('sendDrawResponse', Boolean(accepted)),
         sendChatMessage: (text) => {
-            if (transport && typeof transport.sendChatMessage === 'function') transport.sendChatMessage(text);
+            if (typeof text !== 'string' || !text.trim()) return false;
+            return safeTransportCall('sendChatMessage', text.slice(0, 500));
         },
-        receiveChatMessage: null, // Will be set by UI
+        get receiveChatMessage() {
+            return handleChatMessage;
+        },
+        set receiveChatMessage(fn) {
+            customChatReceiver = (typeof fn === 'function') ? fn : null;
+        },
         receiveUndoRequest: (levels) => emit('undoRequest', levels),
         receiveUndoResponse: (accepted) => emit('undoResponse', accepted),
         receiveResign: () => emit('resign'),
@@ -128,6 +177,9 @@ const ChessNetwork = (() => {
         receivePingUpdate: (pingData) => emit('pingUpdate', pingData),
         getState: () => ({ ...state })
     };
+
+    Object.freeze(API);
+
     if (typeof module !== 'undefined' && module.exports) {
         module.exports = API;
     }

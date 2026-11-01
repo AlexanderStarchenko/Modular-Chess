@@ -4,36 +4,32 @@
  */
 
 const BinaryProtocol = (() => {
-    // 1-to-1 square mappings (e.g. 'e2' -> 12, null -> 255)
+    // Предвычисленный массив клеток (0 аллокаций при чтении)
+    const INDEX_TO_SQUARE = Array.from({ length: 64 }, (_, i) => 
+        String.fromCharCode(97 + (i & 7)) + String.fromCharCode(49 + (i >> 3))
+    );
+
     function squareToIndex(sq) {
-        if (!sq || sq.length < 2) return 255;
+        if (!sq || typeof sq !== 'string' || sq.length !== 2) return 255;
         const file = sq.charCodeAt(0) - 97; // 'a' is 97
         const rank = sq.charCodeAt(1) - 49; // '1' is 49
         if (file < 0 || file > 7 || rank < 0 || rank > 7) return 255;
-        return rank * 8 + file;
+        return (rank << 3) | file;
     }
 
     function indexToSquare(idx) {
-        if (idx === 255 || idx < 0 || idx > 63) return null;
-        const file = String.fromCharCode(97 + (idx % 8));
-        const rank = String.fromCharCode(49 + Math.floor(idx / 8));
-        return file + rank;
+        return (idx >= 0 && idx < 64) ? INDEX_TO_SQUARE[idx] : null;
     }
 
     // Piece types to small codes
     // 'wp'/'P' -> 1, 'wn'/'N' -> 2, 'wb'/'B' -> 3, 'wr'/'R' -> 4, 'wq'/'Q' -> 5, 'wk'/'K' -> 6
     // 'bp'/'p' -> 7, 'bn'/'n' -> 8, 'bb'/'b' -> 9, 'br'/'r' -> 10, 'bq'/'q' -> 11, 'bk'/'k' -> 12
-    const PIECE_TO_BYTE = {
+    const PIECE_TO_BYTE = Object.assign(Object.create(null), {
         'wp': 1, 'wn': 2, 'wb': 3, 'wr': 4, 'wq': 5, 'wk': 6,
         'bp': 7, 'bn': 8, 'bb': 9, 'br': 10, 'bq': 11, 'bk': 12,
         'P': 1, 'N': 2, 'B': 3, 'R': 4, 'Q': 5, 'K': 6,
         'p': 7, 'n': 8, 'b': 9, 'r': 10, 'q': 11, 'k': 12
-    };
-
-    const BYTE_TO_PIECE = {
-        1: 'wp', 2: 'wn', 3: 'wb', 4: 'wr', 5: 'wq', 6: 'wk',
-        7: 'bp', 8: 'bn', 9: 'bb', 10: 'br', 11: 'bq', 12: 'bk'
-    };
+    });
 
     const BYTE_TO_PIECE_STR = [
         null, 'wp', 'wn', 'wb', 'wr', 'wq', 'wk',
@@ -45,15 +41,36 @@ const BinaryProtocol = (() => {
         'p', 'n', 'b', 'r', 'q', 'k'
     ];
 
-    // Helper to map piece characters to code
-    function pieceToCode(piece) {
-        if (!piece) return 0;
-        return PIECE_TO_BYTE[piece] || 0;
+    // Вынесенные константы для исключения аллокаций внутри unpackState
+    const BLACK_PIECES = ['n', 'b', 'r', 'q'];
+    const VALID_PROMOS = new Set([113, 114, 98, 110, 81, 82, 66, 78]); // q,r,b,n,Q,R,B,N
+
+    function getSafeView(data, minByteLength) {
+        if (!data) return null;
+        if (ArrayBuffer.isView(data)) {
+            if (data.byteLength < minByteLength) return null;
+            return new DataView(data.buffer, data.byteOffset, data.byteLength);
+        }
+        if (data instanceof ArrayBuffer) {
+            if (data.byteLength < minByteLength) return null;
+            return new DataView(data);
+        }
+        return null;
     }
 
-    // Helper to map code back to piece character
-    function codeToPiece(code) {
-        return BYTE_TO_PIECE_CHAR[code] || null;
+    function clampUint32(val) {
+        const n = Number(val);
+        return Number.isFinite(n) ? Math.min(4294967295, Math.max(0, Math.round(n))) : 0;
+    }
+
+    function clampUint16(val, min = 0) {
+        const n = Number(val);
+        return Number.isFinite(n) ? Math.min(65535, Math.max(min, Math.round(n))) : min;
+    }
+
+    function clampUint8(val, min = 0) {
+        const n = Number(val);
+        return Number.isFinite(n) ? Math.min(255, Math.max(min, Math.round(n))) : min;
     }
 
     /**
@@ -69,20 +86,22 @@ const BinaryProtocol = (() => {
         let fromIdx = 255;
         let toIdx = 255;
 
-        const fR = move.fromR !== undefined ? move.fromR : move.fromRow;
-        const fC = move.fromC !== undefined ? move.fromC : move.fromCol;
-        if (fR !== undefined && fC !== undefined) {
-            fromIdx = (7 - fR) * 8 + fC;
-        } else if (move.from) {
-            fromIdx = squareToIndex(move.from);
-        }
+        if (move) {
+            const fR = move.fromR ?? move.fromRow;
+            const fC = move.fromC ?? move.fromCol;
+            if (Number.isInteger(fR) && Number.isInteger(fC) && fR >= 0 && fR <= 7 && fC >= 0 && fC <= 7) {
+                fromIdx = ((7 - fR) << 3) | fC;
+            } else if (typeof move.from === 'string') {
+                fromIdx = squareToIndex(move.from);
+            }
 
-        const tR = move.toR !== undefined ? move.toR : move.toRow;
-        const tC = move.toC !== undefined ? move.toC : move.toCol;
-        if (tR !== undefined && tC !== undefined) {
-            toIdx = (7 - tR) * 8 + tC;
-        } else if (move.to) {
-            toIdx = squareToIndex(move.to);
+            const tR = move.toR ?? move.toRow;
+            const tC = move.toC ?? move.toCol;
+            if (Number.isInteger(tR) && Number.isInteger(tC) && tR >= 0 && tR <= 7 && tC >= 0 && tC <= 7) {
+                toIdx = ((7 - tR) << 3) | tC;
+            } else if (typeof move.to === 'string') {
+                toIdx = squareToIndex(move.to);
+            }
         }
 
         // Byte 0: from index
@@ -92,23 +111,24 @@ const BinaryProtocol = (() => {
 
         // Byte 2: piece byte representation
         let pieceByte = 0;
-        if (move.piece) {
+        if (move && move.piece) {
             pieceByte = PIECE_TO_BYTE[move.piece] || 0;
         }
         view.setUint8(2, pieceByte);
 
         // Byte 3: promotion piece code (0 if none, else char code)
         let promoByte = 0;
-        if (move.promotion) {
+        if (move && move.promotion && typeof move.promotion === 'string') {
             promoByte = move.promotion.charCodeAt(0);
         }
         view.setUint8(3, promoByte);
 
-        // Timers (safely clamped against negative network skew and NaN)
-        const whiteTime = move.timers ? Math.max(0, Math.round(move.timers.white || 0)) : 0;
-        const blackTime = move.timers ? Math.max(0, Math.round(move.timers.black || 0)) : 0;
-        const inc = move.timers ? Math.min(65535, Math.max(0, Math.round(move.timers.inc || 0))) : 0;
-        const running = (move.timers && move.timers.running) ? 1 : 0;
+        // Timers (safely clamped against negative network skew, NaN, and Uint32 wrap-around)
+        const timers = move ? move.timers : null;
+        const whiteTime = timers ? clampUint32(timers.white) : 0;
+        const blackTime = timers ? clampUint32(timers.black) : 0;
+        const inc = timers ? clampUint16(timers.inc) : 0;
+        const running = (timers && timers.running) ? 1 : 0;
 
         // Bytes 4-7: timers.white
         view.setUint32(4, whiteTime, true);
@@ -126,12 +146,11 @@ const BinaryProtocol = (() => {
      * Unpacks chess move data from a 15-byte Uint8Array/ArrayBuffer without unnecessary slice copies
      * Returns both fromRow/fromCol and fromR/fromC for complete module interoperability.
      * @param {ArrayBuffer|Uint8Array|Buffer} data 
-     * @returns {Object}
+     * @returns {Object|null}
      */
     function unpackMove(data) {
-        const view = ArrayBuffer.isView(data)
-            ? new DataView(data.buffer, data.byteOffset, data.byteLength)
-            : new DataView(data);
+        const view = getSafeView(data, 15);
+        if (!view) return null;
 
         const fromIdx = view.getUint8(0);
         const toIdx = view.getUint8(1);
@@ -139,32 +158,22 @@ const BinaryProtocol = (() => {
         const from = indexToSquare(fromIdx);
         const to = indexToSquare(toIdx);
 
-        let fromRow = undefined;
-        let fromCol = undefined;
-        let fromR = undefined;
-        let fromC = undefined;
-        if (fromIdx !== 255) {
-            fromRow = 7 - Math.floor(fromIdx / 8);
-            fromCol = fromIdx % 8;
-            fromR = fromRow;
-            fromC = fromCol;
+        let fromRow, fromCol, fromR, fromC;
+        if (fromIdx < 64) {
+            fromRow = fromR = 7 - (fromIdx >> 3);
+            fromCol = fromC = fromIdx & 7;
         }
 
-        let toRow = undefined;
-        let toCol = undefined;
-        let toR = undefined;
-        let toC = undefined;
-        if (toIdx !== 255) {
-            toRow = 7 - Math.floor(toIdx / 8);
-            toCol = toIdx % 8;
-            toR = toRow;
-            toC = toCol;
+        let toRow, toCol, toR, toC;
+        if (toIdx < 64) {
+            toRow = toR = 7 - (toIdx >> 3);
+            toCol = toC = toIdx & 7;
         }
 
-        const piece = BYTE_TO_PIECE[view.getUint8(2)] || null;
+        const piece = BYTE_TO_PIECE_STR[view.getUint8(2)] || null;
 
         const promoCode = view.getUint8(3);
-        const promotion = promoCode === 0 ? null : String.fromCharCode(promoCode);
+        const promotion = VALID_PROMOS.has(promoCode) ? String.fromCharCode(promoCode) : null;
 
         const white = view.getUint32(4, true);
         const black = view.getUint32(8, true);
@@ -198,7 +207,7 @@ const BinaryProtocol = (() => {
         const buffer = new ArrayBuffer(81);
         const view = new DataView(buffer);
 
-        const boardState = state.boardState || state;
+        const boardState = (state && state.boardState) ? state.boardState : (state || {});
         const board = boardState.board;
 
         // Bytes 0-63: board (64 bytes)
@@ -206,10 +215,13 @@ const BinaryProtocol = (() => {
             if (Array.isArray(board[0])) {
                 // 2D Array (8x8)
                 for (let r = 0; r < 8; r++) {
-                    for (let c = 0; c < 8; c++) {
-                        const piece = board[r][c];
-                        const idx = (7 - r) * 8 + c;
-                        view.setUint8(idx, PIECE_TO_BYTE[piece] || 0);
+                    const row = board[r];
+                    if (Array.isArray(row)) {
+                        for (let c = 0; c < 8; c++) {
+                            const piece = row[c];
+                            const idx = ((7 - r) << 3) | c;
+                            view.setUint8(idx, PIECE_TO_BYTE[piece] || 0);
+                        }
                     }
                 }
             } else {
@@ -261,8 +273,9 @@ const BinaryProtocol = (() => {
         let enPassantIdx = 255;
         const ep = boardState.enPassantSquare || boardState.enPassant;
         if (ep) {
-            if (typeof ep === 'object' && ep.row !== undefined && ep.col !== undefined) {
-                enPassantIdx = (7 - ep.row) * 8 + ep.col;
+            if (typeof ep === 'object' && Number.isInteger(ep.row) && Number.isInteger(ep.col) &&
+                ep.row >= 0 && ep.row <= 7 && ep.col >= 0 && ep.col <= 7) {
+                enPassantIdx = ((7 - ep.row) << 3) | ep.col;
             } else if (typeof ep === 'string') {
                 enPassantIdx = squareToIndex(ep);
             }
@@ -271,18 +284,18 @@ const BinaryProtocol = (() => {
 
         // Byte 67: halfmoveClock
         const halfmove = boardState.halfMoveClock !== undefined ? boardState.halfMoveClock : (boardState.halfmoveClock || 0);
-        view.setUint8(67, Math.max(0, Math.min(255, halfmove)));
+        view.setUint8(67, clampUint8(halfmove, 0));
 
         // Bytes 68-69: fullmoveNumber (Uint16)
-        const moveCount = state.moveCount !== undefined ? state.moveCount : (boardState.moveCount || 0);
+        const moveCount = (state && state.moveCount !== undefined) ? state.moveCount : (boardState.moveCount || 0);
         const fullmove = boardState.fullmoveNumber || (1 + Math.floor(moveCount / 2));
-        view.setUint16(68, Math.max(1, Math.min(65535, fullmove)), true);
+        view.setUint16(68, clampUint16(fullmove, 1), true);
 
-        // Timers (safely clamped against underflow/NaN)
-        const timers = state.timers || boardState.timers;
-        const whiteTime = timers ? Math.max(0, Math.round(timers.white || 0)) : 0;
-        const blackTime = timers ? Math.max(0, Math.round(timers.black || 0)) : 0;
-        const inc = timers ? Math.min(65535, Math.max(0, Math.round(timers.inc || 0))) : 0;
+        // Timers (safely clamped against underflow/NaN/overflow)
+        const timers = (state && state.timers) || boardState.timers;
+        const whiteTime = timers ? clampUint32(timers.white) : 0;
+        const blackTime = timers ? clampUint32(timers.black) : 0;
+        const inc = timers ? clampUint16(timers.inc) : 0;
         const running = (timers && timers.running) ? 1 : 0;
 
         // Bytes 70-73: timers.white
@@ -301,12 +314,11 @@ const BinaryProtocol = (() => {
      * Unpacks full game state from an 81-byte ArrayBuffer/Uint8Array in a single high-speed pass.
      * Accurately calculates captures without distorting pawns after promotions.
      * @param {ArrayBuffer|Uint8Array|Buffer} data 
-     * @returns {Object}
+     * @returns {Object|null}
      */
     function unpackState(data) {
-        const view = ArrayBuffer.isView(data)
-            ? new DataView(data.buffer, data.byteOffset, data.byteLength)
-            : new DataView(data);
+        const view = getSafeView(data, 81);
+        if (!view) return null;
 
         const board1D = new Array(64);
         const board2D = [
@@ -314,21 +326,16 @@ const BinaryProtocol = (() => {
             new Array(8), new Array(8), new Array(8), new Array(8)
         ];
 
-        const actualCounts = {
-            'P': 0, 'N': 0, 'B': 0, 'R': 0, 'Q': 0, 'K': 0,
-            'p': 0, 'n': 0, 'b': 0, 'r': 0, 'q': 0, 'k': 0
-        };
+        const counts = new Uint8Array(13);
 
-        // Single pass for 1D, 2D boards and actualCounts
+        // Single pass for 1D, 2D boards and counts
         for (let i = 0; i < 64; i++) {
             const val = view.getUint8(i);
             board1D[i] = BYTE_TO_PIECE_STR[val] || null;
             const pieceChar = BYTE_TO_PIECE_CHAR[val] || null;
-            const r = 7 - (i >> 3);
-            const c = i & 7;
-            board2D[r][c] = pieceChar;
-            if (pieceChar) {
-                actualCounts[pieceChar]++;
+            board2D[7 - (i >> 3)][i & 7] = pieceChar;
+            if (val >= 1 && val <= 12) {
+                counts[val]++;
             }
         }
 
@@ -353,67 +360,67 @@ const BinaryProtocol = (() => {
 
         const enPassantIdx = view.getUint8(66);
         const enPassant = indexToSquare(enPassantIdx);
-        const enPassantSquare = enPassantIdx !== 255 ? {
-            row: 7 - Math.floor(enPassantIdx / 8),
-            col: enPassantIdx % 8
+        const enPassantSquare = enPassantIdx < 64 ? {
+            row: 7 - (enPassantIdx >> 3),
+            col: enPassantIdx & 7
         } : null;
 
         const halfmoveClock = view.getUint8(67);
         const halfMoveClock = halfmoveClock;
 
-        const fullmoveNumber = view.getUint16(68, true);
+        const fullmoveNumber = Math.max(1, view.getUint16(68, true));
 
         const white = view.getUint32(70, true);
         const black = view.getUint32(74, true);
         const inc = view.getUint16(78, true);
         const running = view.getUint8(80) === 1;
 
-        // Reconstruct captures dynamically from board state with accurate under/promotion handling
-        const standardCounts = {
-            'P': 8, 'N': 2, 'B': 2, 'R': 2, 'Q': 1, 'K': 1,
-            'p': 8, 'n': 2, 'b': 2, 'r': 2, 'q': 1, 'k': 1
-        };
-
         const capturedByWhite = [];
         const capturedByBlack = [];
 
         // Count promoted pieces for White (pieces exceeding initial count came from pawns)
-        const whitePromotions = Math.max(0, actualCounts['Q'] - 1) +
-                               Math.max(0, actualCounts['R'] - 2) +
-                               Math.max(0, actualCounts['B'] - 2) +
-                               Math.max(0, actualCounts['N'] - 2);
+        const whitePromotions = Math.max(0, counts[5] - 1) +
+                                Math.max(0, counts[4] - 2) +
+                                Math.max(0, counts[3] - 2) +
+                                Math.max(0, counts[2] - 2);
 
         // Count promoted pieces for Black
-        const blackPromotions = Math.max(0, actualCounts['q'] - 1) +
-                               Math.max(0, actualCounts['r'] - 2) +
-                               Math.max(0, actualCounts['b'] - 2) +
-                               Math.max(0, actualCounts['n'] - 2);
+        const blackPromotions = Math.max(0, counts[11] - 1) +
+                                Math.max(0, counts[10] - 2) +
+                                Math.max(0, counts[9] - 2) +
+                                Math.max(0, counts[8] - 2);
 
         // Black pieces captured by White:
-        // Pawns: subtract blackPromotions from missing pawns
-        const blackPawnsCaptured = Math.max(0, standardCounts['p'] - actualCounts['p'] - blackPromotions);
+        const blackPawnsCaptured = Math.max(0, 8 - counts[7] - blackPromotions);
         for (let i = 0; i < blackPawnsCaptured; i++) {
             capturedByWhite.push('p');
         }
-        ['n', 'b', 'r', 'q'].forEach(p => {
-            const missing = Math.max(0, standardCounts[p] - actualCounts[p]);
+
+        // Коды 8(n), 9(b), 10(r), 11(q)
+        for (let j = 0; j < 4; j++) {
+            const p = BLACK_PIECES[j];
+            const std = j === 3 ? 1 : 2;
+            const missing = Math.max(0, std - counts[8 + j]);
             for (let i = 0; i < missing; i++) {
                 capturedByWhite.push(p);
             }
-        });
+        }
 
         // White pieces captured by Black:
-        // Pawns: subtract whitePromotions from missing pawns
-        const whitePawnsCaptured = Math.max(0, standardCounts['P'] - actualCounts['P'] - whitePromotions);
+        const whitePawnsCaptured = Math.max(0, 8 - counts[1] - whitePromotions);
         for (let i = 0; i < whitePawnsCaptured; i++) {
             capturedByBlack.push('p');
         }
-        ['N', 'B', 'R', 'Q'].forEach(p => {
-            const missing = Math.max(0, standardCounts[p] - actualCounts[p]);
+
+        // Коды 2(N), 3(B), 4(R), 5(Q)
+        for (let j = 0; j < 4; j++) {
+            const pLower = BLACK_PIECES[j];
+            const std = j === 3 ? 1 : 2;
+            const missing = Math.max(0, std - counts[2 + j]);
             for (let i = 0; i < missing; i++) {
-                capturedByBlack.push(p.toLowerCase());
+                capturedByBlack.push(pLower);
             }
-        });
+        }
 
         const captures = {
             white: capturedByWhite,

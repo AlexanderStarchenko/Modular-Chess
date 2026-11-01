@@ -230,4 +230,18 @@ describe('Network Side Selection & UI Game Mode Hiding', () => {
         expect(mockElements['difficulty-container'].style.display).toBe('');
         delete global.window.__FORCE_DESKTOP_TEST__;
     });
+
+    test('should keep network-btn visible on mobile web browsers and hide in Capacitor app', () => {
+        const ChessUI = require('../js/ui');
+        
+        // Mobile web browser environment
+        ChessUI.init();
+        expect(mockElements['network-btn'].style.display).toBe('');
+
+        // Capacitor native app environment
+        global.window.Capacitor = {};
+        ChessUI.init();
+        expect(mockElements['network-btn'].style.display).toBe('none');
+        delete global.window.Capacitor;
+    });
 });
