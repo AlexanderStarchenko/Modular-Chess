@@ -1,0 +1,21 @@
+name: Keep Render Alive
+
+on:
+  schedule:
+    # Run every 10 minutes to prevent Render free instance from spinning down (15 min inactivity timeout)
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions UI
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Modular Chess on Render
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://modular-chess.onrender.com)
+          echo "Render response code: $response"
+          if [ "$response" -eq 200 ] || [ "$response" -eq 301 ] || [ "$response" -eq 302 ]; then
+            echo "Successfully pinged Modular Chess!"
+          else
+            echo "Warning: Received HTTP $response"
+          fi

@@ -1,6 +1,7 @@
 node_modules/
 .DS_Store
 *.log
+*.jsonl
 .env
 js/stockfish-18.wasm
 release/
