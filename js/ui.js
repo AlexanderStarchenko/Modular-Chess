@@ -135,21 +135,26 @@ const ChessUI = (() => {
 
     function updatePlayerNames() {
         if (!topPlayerName || !bottomPlayerName) return;
-        const isPlayerBottom = !isManualFlip;
+        const isPC = (pcToggle && pcToggle.checked);
+        const isNetwork = (networkState && networkState.connected);
+
         let myName = 'Вы';
         let oppName = 'Соперник';
 
-        if (pcToggle && pcToggle.checked) {
+        if (isPC) {
             myName = 'Вы';
             oppName = getStockfishName();
-        } else if (networkState && networkState.connected) {
+        } else if (isNetwork) {
             myName = 'Вы';
             oppName = 'Соперник';
         } else {
-            myName = playerColor === 'w' ? 'Белые' : 'Черные';
-            oppName = playerColor === 'w' ? 'Черные' : 'Белые';
+            const isBottomWhite = !isFlipped();
+            bottomPlayerName.textContent = isBottomWhite ? 'Белые' : 'Черные';
+            topPlayerName.textContent = isBottomWhite ? 'Черные' : 'Белые';
+            return;
         }
 
+        const isPlayerBottom = !isManualFlip;
         bottomPlayerName.textContent = isPlayerBottom ? myName : oppName;
         topPlayerName.textContent = isPlayerBottom ? oppName : myName;
     }
@@ -167,6 +172,7 @@ const ChessUI = (() => {
         }
 
         updatePlayerNames();
+        updateAvatars();
         updateTimerDisplays();
         updateCapturesDisplay();
         renderBoard();
@@ -409,13 +415,17 @@ const ChessUI = (() => {
             if (pcToggle) pcToggle.checked = true;
             if (gameModeContainer) gameModeContainer.style.display = 'none';
             if (diffContainer) diffContainer.style.display = '';
-            if (topPlayerName && !gameEnded) topPlayerName.textContent = getStockfishName();
+            if (!gameEnded) {
+                updatePlayerNames();
+                updateAvatars();
+            }
         } else {
             // Mobile device: Player vs Player switch available.
             if (gameModeContainer) gameModeContainer.style.display = '';
             if (diffContainer) diffContainer.style.display = (pcToggle && pcToggle.checked) ? '' : 'none';
-            if (topPlayerName && !gameEnded) {
-                topPlayerName.textContent = (pcToggle && pcToggle.checked) ? getStockfishName() : 'Игрок 2';
+            if (!gameEnded) {
+                updatePlayerNames();
+                updateAvatars();
             }
         }
     }
@@ -917,8 +927,9 @@ const ChessUI = (() => {
                     return;
                 }
                 playerColor = color;
-                bottomPlayerName.textContent = 'Вы';
-                topPlayerName.textContent = 'Соперник';
+                isManualFlip = false;
+                updatePlayerNames();
+                updateAvatars();
                 renderBoard();
             });
 
@@ -994,7 +1005,10 @@ const ChessUI = (() => {
             });
 
             ChessNetwork.on('opponentPresence', status => {
-                const dot = document.getElementById('opponent-status-dot');
+                const topDot = document.getElementById('opponent-status-dot');
+                const bottomDot = document.getElementById('player-status-dot');
+                const isPlayerBottom = !isManualFlip;
+                const dot = isPlayerBottom ? topDot : bottomDot;
                 if (dot) {
                     if (status.online) {
                         dot.classList.remove('offline');
@@ -1127,10 +1141,10 @@ const ChessUI = (() => {
 
         if (difficultySelect) {
             difficultySelect.addEventListener('change', () => {
-                if (pcToggle && pcToggle.checked && topPlayerName && !gameEnded) {
-                    topPlayerName.textContent = getStockfishName();
+                if (pcToggle && pcToggle.checked && !gameEnded) {
+                    updatePlayerNames();
                 }
-                updateOpponentAvatar();
+                updateAvatars();
             });
         }
 
@@ -1667,52 +1681,98 @@ const ChessUI = (() => {
         renderBoard();
     }
 
-    function updateOpponentAvatar() {
-        const opponentAvatarContainer = document.getElementById('opponent-avatar-container');
-        if (!opponentAvatarContainer) return;
-        
-        let opponentAvatarImg = document.getElementById('opponent-avatar-img');
-        let opponentAvatarIcon = document.getElementById('opponent-avatar-icon');
-        
-        const isPC = (pcToggle && pcToggle.checked);
-        const isNeural = difficultySelect && difficultySelect.value.startsWith('neural');
-        
-        if (isPC && !isNeural) {
-            // Показываем логотип Stockfish только для Stockfish
-            if (!opponentAvatarImg) {
-                opponentAvatarImg = document.createElement('img');
-                opponentAvatarImg.id = 'opponent-avatar-img';
-                opponentAvatarImg.alt = 'Stockfish';
-                opponentAvatarImg.className = 'w-full h-full object-contain rounded-lg';
-                opponentAvatarImg.src = 'images/stockfish.png';
-                opponentAvatarContainer.appendChild(opponentAvatarImg);
-            } else {
-                opponentAvatarImg.style.display = 'block';
+    function renderAvatar(container, imgEl, iconEl, type) {
+        if (!container) return;
+        if (type === 'player') {
+            if (imgEl && imgEl.style) imgEl.style.display = 'none';
+            if (iconEl) {
+                if (iconEl.style) iconEl.style.display = 'block';
+                iconEl.textContent = 'person';
             }
-            if (opponentAvatarIcon) opponentAvatarIcon.style.display = 'none';
-        } else {
-            // Для нейросети показываем иконку нейросети (psychology), для человека — person
-            if (opponentAvatarImg) opponentAvatarImg.style.display = 'none';
-            if (opponentAvatarIcon) {
-                opponentAvatarIcon.style.display = 'block';
-                opponentAvatarIcon.textContent = isPC ? 'psychology' : 'person';
+            if (container.classList && typeof container.classList.add === 'function') {
+                container.classList.remove('bg-surface-container-highest', 'border-outline-variant/20');
+                container.classList.add('bg-primary-container/20', 'border-primary/25');
+            }
+        } else if (type === 'stockfish') {
+            if (!imgEl && typeof document !== 'undefined') {
+                imgEl = document.createElement('img');
+                imgEl.className = 'w-full h-full object-contain rounded-lg';
+                imgEl.src = 'images/stockfish.png?v=56';
+                imgEl.alt = 'Stockfish';
+                container.appendChild(imgEl);
+            } else if (imgEl) {
+                if (imgEl.style) imgEl.style.display = 'block';
+                imgEl.src = 'images/stockfish.png?v=56';
+            }
+            if (iconEl && iconEl.style) iconEl.style.display = 'none';
+            if (container.classList && typeof container.classList.add === 'function') {
+                container.classList.remove('bg-primary-container/20', 'border-primary/25');
+                container.classList.add('bg-surface-container-highest', 'border-outline-variant/20');
+            }
+        } else if (type === 'neural') {
+            if (imgEl && imgEl.style) imgEl.style.display = 'none';
+            if (iconEl) {
+                if (iconEl.style) iconEl.style.display = 'block';
+                iconEl.textContent = 'psychology';
+            }
+            if (container.classList && typeof container.classList.add === 'function') {
+                container.classList.remove('bg-primary-container/20', 'border-primary/25');
+                container.classList.add('bg-surface-container-highest', 'border-outline-variant/20');
             }
         }
     }
 
+    function updateAvatars() {
+        const opponentAvatarContainer = document.getElementById('opponent-avatar-container');
+        const opponentAvatarImg = document.getElementById('opponent-avatar-img');
+        const opponentAvatarIcon = document.getElementById('opponent-avatar-icon');
+        const playerAvatarContainer = document.getElementById('player-avatar-container');
+        const playerAvatarImg = document.getElementById('player-avatar-img');
+        const playerAvatarIcon = document.getElementById('player-avatar-icon');
+
+        const isPC = (pcToggle && pcToggle.checked);
+        const isNeural = difficultySelect && (difficultySelect.value || '').startsWith('neural');
+        const aiType = isNeural ? 'neural' : 'stockfish';
+
+        const isPlayerBottom = (isPC || (networkState && networkState.connected))
+            ? !isManualFlip
+            : true;
+
+        const bottomType = isPC ? (isPlayerBottom ? 'player' : aiType) : 'player';
+        const topType = isPC ? (isPlayerBottom ? aiType : 'player') : 'player';
+
+        if (playerAvatarContainer) {
+            renderAvatar(playerAvatarContainer, playerAvatarImg, playerAvatarIcon, bottomType);
+        }
+        if (opponentAvatarContainer) {
+            renderAvatar(opponentAvatarContainer, opponentAvatarImg, opponentAvatarIcon, topType);
+        }
+    }
+
+    function updateOpponentAvatar() {
+        updateAvatars();
+    }
+
     function updateNetworkUiAndTelemetry() {
-        const dot = document.getElementById('opponent-status-dot');
+        const topDot = document.getElementById('opponent-status-dot');
+        const bottomDot = document.getElementById('player-status-dot');
         const telemetry = document.getElementById('settings-network-telemetry');
         const isNetworkGame = networkState && networkState.connected;
+        const isPlayerBottom = !isManualFlip;
         
-        if (dot) {
-            dot.style.display = isNetworkGame ? 'inline-block' : 'none';
+        const activeDot = isPlayerBottom ? topDot : bottomDot;
+        const inactiveDot = isPlayerBottom ? bottomDot : topDot;
+        
+        if (inactiveDot) inactiveDot.style.display = 'none';
+        
+        if (activeDot) {
+            activeDot.style.display = isNetworkGame ? 'inline-block' : 'none';
             if (!isNetworkGame) {
-                dot.classList.remove('online');
-                dot.classList.add('offline');
-                dot.style.backgroundColor = 'rgba(140, 144, 159, 0.4)';
-                dot.style.boxShadow = 'none';
-                dot.title = "Оппонент не в игре";
+                activeDot.classList.remove('online');
+                activeDot.classList.add('offline');
+                activeDot.style.backgroundColor = 'rgba(140, 144, 159, 0.4)';
+                activeDot.style.boxShadow = 'none';
+                activeDot.title = "Оппонент не в игре";
             }
         }
         if (telemetry) {
@@ -1903,11 +1963,8 @@ const ChessUI = (() => {
                 playerColor = Math.random() < 0.5 ? 'w' : 'b';
             }
             pcColor = playerColor === 'w' ? 'b' : 'w';
-            bottomPlayerName.textContent = 'Вы';
-            topPlayerName.textContent = getStockfishName();
         } else if (networkState && networkState.connected) {
-            bottomPlayerName.textContent = 'Вы';
-            topPlayerName.textContent = 'Соперник';
+            // Assigned by server or network protocol
         } else {
             const chosenSide = sideSelect ? sideSelect.value : 'random';
             if (chosenSide === 'w') {
@@ -1918,9 +1975,9 @@ const ChessUI = (() => {
                 playerColor = Math.random() < 0.5 ? 'w' : 'b';
             }
             pcColor = playerColor === 'w' ? 'b' : 'w';
-            bottomPlayerName.textContent = playerColor === 'w' ? 'Белые' : 'Черные';
-            topPlayerName.textContent = playerColor === 'w' ? 'Черные' : 'Белые';
         }
+        updatePlayerNames();
+        updateAvatars();
 
         // Timers
         stopTimer();
@@ -2692,11 +2749,8 @@ const ChessUI = (() => {
         
         isWaitingForPC = true;
         statusElement.textContent = 'ПК думает...';
-        
-        const topPlayerName = document.getElementById('top-player-name');
-        if (topPlayerName) {
-            topPlayerName.textContent = getStockfishName();
-        }
+        updatePlayerNames();
+        updateAvatars();
 
         const fen = ChessLogic.getFen();
         const history = (typeof ChessLogic.getGameHistory === 'function')
@@ -3445,17 +3499,9 @@ const ChessUI = (() => {
             drawBtn.style.display = (networkState && networkState.connected) ? 'block' : 'none';
         }
 
-        // Update player labels
-        if (pcToggle.checked) {
-            bottomPlayerName.textContent = 'Вы';
-            topPlayerName.textContent = getStockfishName();
-        } else if (networkState && networkState.connected) {
-            bottomPlayerName.textContent = 'Вы';
-            topPlayerName.textContent = 'Соперник';
-        } else {
-            bottomPlayerName.textContent = 'Белые';
-            topPlayerName.textContent = 'Черные';
-        }
+        // Update player labels and avatars
+        updatePlayerNames();
+        updateAvatars();
 
         updateGameFormatBadge();
         updateStatus();

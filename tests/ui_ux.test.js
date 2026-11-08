@@ -526,6 +526,8 @@ describe('ChessUI Integration', () => {
             'tab-content-notation', 'tab-content-analysis',
             'accuracy-bar-container', 'accuracy-white-bar', 'accuracy-black-bar',
             'game-over-title', 'game-over-reason', 'game-over-icon-container', 'opponent-avatar-container',
+            'opponent-avatar-img', 'opponent-avatar-icon', 'player-avatar-container', 'player-avatar-img', 'player-avatar-icon',
+            'flip-btn',
             'chess-canvas', 'game-condition-badge',
             'save-game-btn', 'load-game-btn', 'save-load-close-btn', 'save-load-modal',
             'export-json-btn', 'import-json-btn', 'import-file-input',
@@ -1418,6 +1420,40 @@ describe('ChessUI Integration', () => {
         // Verify value is restored
         expect(mockElements['side-select'].value).toBe('b');
         expect(mockElements['side-container'].style.display).toBe('');
+    });
+
+    test('Should properly flip board, swap player names and avatars, and prevent PC move overwrite', () => {
+        ChessUI.init();
+        mockElements['pc-toggle'].checked = true;
+        mockElements['difficulty-select'].value = 'neural-v1-7-alphabeta';
+        changeHandlers['difficulty-select']();
+
+        // 1. Initial state (unflipped):
+        expect(mockElements['bottom-player-name'].textContent).toBe('Вы');
+        expect(mockElements['top-player-name'].textContent).toContain('Нейросеть V1.7');
+        expect(mockElements['player-avatar-icon'].textContent).toBe('person');
+        expect(mockElements['opponent-avatar-icon'].textContent).toBe('psychology');
+
+        // 2. Flip board:
+        ChessUI.flipBoard();
+        expect(mockElements['bottom-player-name'].textContent).toContain('Нейросеть V1.7');
+        expect(mockElements['top-player-name'].textContent).toBe('Вы');
+        expect(mockElements['bottom-player-name'].textContent).not.toBe(mockElements['top-player-name'].textContent);
+        expect(mockElements['player-avatar-icon'].textContent).toBe('psychology');
+        expect(mockElements['opponent-avatar-icon'].textContent).toBe('person');
+
+        // 3. Trigger difficulty change while flipped:
+        changeHandlers['difficulty-select']();
+        // Top must stay 'Вы' and bottom must stay PC name:
+        expect(mockElements['top-player-name'].textContent).toBe('Вы');
+        expect(mockElements['bottom-player-name'].textContent).toContain('Нейросеть V1.7');
+
+        // 4. Flip back:
+        ChessUI.flipBoard();
+        expect(mockElements['bottom-player-name'].textContent).toBe('Вы');
+        expect(mockElements['top-player-name'].textContent).toContain('Нейросеть V1.7');
+        expect(mockElements['player-avatar-icon'].textContent).toBe('person');
+        expect(mockElements['opponent-avatar-icon'].textContent).toBe('psychology');
     });
 
     test('Should handle drag-and-drop piece movements on canvas', () => {

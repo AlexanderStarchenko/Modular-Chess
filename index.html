@@ -54,7 +54,7 @@
     <!-- Preload Chess WASM Engine for lightning-fast startup -->
     <link rel="preload" href="build/release.wasm" as="fetch" crossorigin>
     <!-- Optimized compiled stylesheet containing both Tailwind utility classes and custom styling -->
-    <link rel="stylesheet" href="css/output.css?v=60">
+    <link rel="stylesheet" href="css/output.css?v=61">
 </head>
 <body class="bg-background text-on-background font-body-md overflow-x-hidden md:overflow-hidden min-h-screen min-h-dvh md:h-screen md:h-dvh flex flex-col">
     <!-- TopAppBar Component -->
@@ -292,12 +292,16 @@
                     <!-- Bottom Player Profile Card -->
                     <div id="player-card" class="w-full flex justify-between items-center glass-panel p-2.5 md:p-3 rounded-2xl border border-outline-variant/15 shadow-lg transition-all duration-300">
                         <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 md:w-11 md:h-11 rounded-xl bg-primary-container/20 border border-primary/25 flex items-center justify-center shadow-md">
-                                <span class="material-symbols-outlined text-primary text-xl">person</span>
+                            <div id="player-avatar-container" class="w-10 h-10 md:w-11 md:h-11 rounded-xl bg-primary-container/20 border border-primary/25 flex items-center justify-center shadow-md overflow-hidden p-0.5 relative transition-all duration-300">
+                                <img id="player-avatar-img" src="images/stockfish.png?v=56" alt="Stockfish" class="w-full h-full object-contain rounded-lg" style="display: none;">
+                                <span class="material-symbols-outlined text-primary text-xl" id="player-avatar-icon" style="font-variation-settings: 'FILL' 1;">person</span>
                             </div>
                             <div>
                                 <span class="player-avatar hidden">👤</span>
-                                <p class="font-bold text-xs md:text-sm text-on-surface tracking-wide" id="bottom-player-name">Вы</p>
+                                <div class="flex items-center gap-1.5">
+                                    <p class="font-bold text-xs md:text-sm text-on-surface tracking-wide" id="bottom-player-name">Вы</p>
+                                    <span id="player-status-dot" class="status-indicator-dot offline" style="display: none; width: 8px; height: 8px; border-radius: 50%; background-color: rgba(140, 144, 159, 0.4); margin-left: 4px; flex-shrink: 0;" title="Оппонент не в игре"></span>
+                                </div>
                                 <div class="captures-row flex items-center gap-2 mt-0.5 min-h-[16px]">
                                     <span class="captured-pieces text-[9px] md:text-[10px] text-on-surface-variant font-mono tracking-tighter" id="bottom-captured"></span>
                                     <span class="material-advantage text-[9px] md:text-[10px] font-bold text-primary" id="bottom-advantage"></span>
@@ -607,32 +611,32 @@
     </div>
 
     <!-- Scripts Integration -->
-    <script src="js/telemetry.js?v=60" defer></script>
-    <script src="js/wasm_loader.js?v=60" defer></script>
-    <script src="js/logic.js?v=60" defer></script>
-    <script src="js/ai_shared.js?v=60" defer></script>
-    <script src="js/syzygy.js?v=60" defer></script>
-    <script src="js/ort.min.js?v=60" defer></script>
-    <script src="js/ai_neural.js?v=60" defer></script>
-    <script src="js/ai_easy.js?v=60" defer></script>
-    <script src="js/ai_medium.js?v=60" defer></script>
-    <script src="js/ai_hard.js?v=60" defer></script>
-    <script src="js/ai_very_hard.js?v=60" defer></script>
-    <script src="js/ai_unreal.js?v=60" defer></script>
-    <script src="js/analysis_manager.js?v=60" defer></script>
-    <script src="js/network.js?v=60" defer></script>
-    <script src="js/lib/binary_protocol.js?v=60" defer></script>
+    <script src="js/telemetry.js?v=61" defer></script>
+    <script src="js/wasm_loader.js?v=61" defer></script>
+    <script src="js/logic.js?v=61" defer></script>
+    <script src="js/ai_shared.js?v=61" defer></script>
+    <script src="js/syzygy.js?v=61" defer></script>
+    <script src="js/ort.min.js?v=61" defer></script>
+    <script src="js/ai_neural.js?v=61" defer></script>
+    <script src="js/ai_easy.js?v=61" defer></script>
+    <script src="js/ai_medium.js?v=61" defer></script>
+    <script src="js/ai_hard.js?v=61" defer></script>
+    <script src="js/ai_very_hard.js?v=61" defer></script>
+    <script src="js/ai_unreal.js?v=61" defer></script>
+    <script src="js/analysis_manager.js?v=61" defer></script>
+    <script src="js/network.js?v=61" defer></script>
+    <script src="js/lib/binary_protocol.js?v=61" defer></script>
     <script src="js/lib/socket.io.min.js" defer></script>
-    <script src="js/mobile_config.js?v=60" defer></script>
-    <script src="js/transport_socket.js?v=60" defer></script>
-    <script src="js/storage.js?v=60" defer></script>
-    <script src="js/audio.js?v=60" defer></script>
-    <script src="js/ai_manager.js?v=60" defer></script>
-    <script src="js/ui.js?v=60" defer></script>
+    <script src="js/mobile_config.js?v=61" defer></script>
+    <script src="js/transport_socket.js?v=61" defer></script>
+    <script src="js/storage.js?v=61" defer></script>
+    <script src="js/audio.js?v=61" defer></script>
+    <script src="js/ai_manager.js?v=61" defer></script>
+    <script src="js/ui.js?v=61" defer></script>
     <script>
         if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=60').then(reg => {
+                navigator.serviceWorker.register('sw.js?v=61').then(reg => {
                     reg.update();
                 }).catch(err => {
                     console.warn('[SW] Registration failed:', err);
