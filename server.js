@@ -164,6 +164,51 @@ app.post('/api/telemetry', rateLimit(60, 60000), (req, res) => {
     }
 });
 
+// Syzygy Endgame Tablebase Proxy & Cache (Up to 7 pieces)
+const syzygyServerCache = new Map();
+const MAX_SYZYGY_CACHE = 3000;
+
+app.get('/api/tablebase', rateLimit(120, 60000), async (req, res) => {
+    const fen = req.query.fen;
+    if (!fen || typeof fen !== 'string') {
+        return res.status(400).json({ error: 'Missing fen query parameter' });
+    }
+
+    const cleanFen = fen.trim();
+    if (syzygyServerCache.has(cleanFen)) {
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.json(syzygyServerCache.get(cleanFen));
+    }
+
+    try {
+        const fetchUrl = `https://tablebase.lichess.ovh/standard?fen=${encodeURIComponent(cleanFen)}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3500);
+
+        const upstreamRes = await fetch(fetchUrl, {
+            signal: controller.signal,
+            headers: { 'User-Agent': 'ModularChess/2.5.0 (https://modular-chess.onrender.com)' }
+        });
+        clearTimeout(timeout);
+
+        if (!upstreamRes.ok) {
+            return res.status(upstreamRes.status).json({ error: 'Tablebase upstream error' });
+        }
+
+        const data = await upstreamRes.json();
+        if (syzygyServerCache.size >= MAX_SYZYGY_CACHE) {
+            const firstKey = syzygyServerCache.keys().next().value;
+            syzygyServerCache.delete(firstKey);
+        }
+        syzygyServerCache.set(cleanFen, data);
+
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.json(data);
+    } catch (err) {
+        return res.status(502).json({ error: 'Failed to probe tablebase', details: err.message });
+    }
+});
+
 // ==========================================
 // Persistent Python Neural Daemon (Warm Pool)
 // ==========================================

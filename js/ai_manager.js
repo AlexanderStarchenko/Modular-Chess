@@ -78,7 +78,7 @@ const ChessAIManager = (() => {
     }
 
     const API = {
-        getBestMove(fen, difficulty, history = []) {
+        getEngineMove(fen, difficulty, history = []) {
             if (typeof difficulty === 'string' && difficulty.startsWith('neural')) {
                 if (typeof ChessAINeural !== 'undefined') {
                     const match = difficulty.match(/^neural-(v\d+-\d+)/);
@@ -126,7 +126,38 @@ const ChessAIManager = (() => {
             return Promise.resolve(getFallbackPCMove(difficulty, fen));
         },
 
+        getBestMove(fen, difficulty, history = []) {
+            // Syzygy Endgame Tablebases Probe (Up to 7 pieces)
+            if (typeof ChessSyzygy !== 'undefined' && typeof ChessSyzygy.isTablebasePosition === 'function' && ChessSyzygy.isTablebasePosition(fen)) {
+                return ChessSyzygy.probe(fen).then(syzygyMove => {
+                    if (syzygyMove) {
+                        console.log(`[AI Manager] 🏆 Syzygy Tablebase optimal move: (${syzygyMove.fromR},${syzygyMove.fromC}) -> (${syzygyMove.toR},${syzygyMove.toC}) [${syzygyMove.category || 'optimal'}, dtz: ${syzygyMove.dtz}, dtm: ${syzygyMove.dtm}]`);
+                        return syzygyMove;
+                    }
+                    return API.getEngineMove(fen, difficulty, history);
+                }).catch(err => {
+                    console.warn('[AI Manager] Syzygy probe error, continuing with engine:', err);
+                    return API.getEngineMove(fen, difficulty, history);
+                });
+            }
+
+            return API.getEngineMove(fen, difficulty, history);
+        },
+
         getHint(fen) {
+            // If in tablebase territory, Syzygy provides mathematically flawless advice
+            if (typeof ChessSyzygy !== 'undefined' && typeof ChessSyzygy.isTablebasePosition === 'function' && ChessSyzygy.isTablebasePosition(fen)) {
+                return ChessSyzygy.probe(fen).then(syzygyMove => {
+                    if (syzygyMove) {
+                        return syzygyMove;
+                    }
+                    return API.getHintEngine(fen);
+                }).catch(() => API.getHintEngine(fen));
+            }
+            return API.getHintEngine(fen);
+        },
+
+        getHintEngine(fen) {
             if (!isFileProtocol && typeof ChessAIUnreal !== 'undefined') {
                 const hintTimeoutMs = 6000;
                 return withTimeout(

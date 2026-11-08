@@ -54,7 +54,7 @@
     <!-- Preload Chess WASM Engine for lightning-fast startup -->
     <link rel="preload" href="build/release.wasm" as="fetch" crossorigin>
     <!-- Optimized compiled stylesheet containing both Tailwind utility classes and custom styling -->
-    <link rel="stylesheet" href="css/output.css?v=59">
+    <link rel="stylesheet" href="css/output.css?v=60">
 </head>
 <body class="bg-background text-on-background font-body-md overflow-x-hidden md:overflow-hidden min-h-screen min-h-dvh md:h-screen md:h-dvh flex flex-col">
     <!-- TopAppBar Component -->
@@ -607,31 +607,32 @@
     </div>
 
     <!-- Scripts Integration -->
-    <script src="js/telemetry.js?v=59" defer></script>
-    <script src="js/wasm_loader.js?v=59" defer></script>
-    <script src="js/logic.js?v=59" defer></script>
-    <script src="js/ai_shared.js?v=59" defer></script>
-    <script src="js/ort.min.js?v=59" defer></script>
-    <script src="js/ai_neural.js?v=59" defer></script>
-    <script src="js/ai_easy.js?v=59" defer></script>
-    <script src="js/ai_medium.js?v=59" defer></script>
-    <script src="js/ai_hard.js?v=59" defer></script>
-    <script src="js/ai_very_hard.js?v=59" defer></script>
-    <script src="js/ai_unreal.js?v=59" defer></script>
-    <script src="js/analysis_manager.js?v=59" defer></script>
-    <script src="js/network.js?v=59" defer></script>
-    <script src="js/lib/binary_protocol.js?v=59" defer></script>
+    <script src="js/telemetry.js?v=60" defer></script>
+    <script src="js/wasm_loader.js?v=60" defer></script>
+    <script src="js/logic.js?v=60" defer></script>
+    <script src="js/ai_shared.js?v=60" defer></script>
+    <script src="js/syzygy.js?v=60" defer></script>
+    <script src="js/ort.min.js?v=60" defer></script>
+    <script src="js/ai_neural.js?v=60" defer></script>
+    <script src="js/ai_easy.js?v=60" defer></script>
+    <script src="js/ai_medium.js?v=60" defer></script>
+    <script src="js/ai_hard.js?v=60" defer></script>
+    <script src="js/ai_very_hard.js?v=60" defer></script>
+    <script src="js/ai_unreal.js?v=60" defer></script>
+    <script src="js/analysis_manager.js?v=60" defer></script>
+    <script src="js/network.js?v=60" defer></script>
+    <script src="js/lib/binary_protocol.js?v=60" defer></script>
     <script src="js/lib/socket.io.min.js" defer></script>
-    <script src="js/mobile_config.js?v=59" defer></script>
-    <script src="js/transport_socket.js?v=59" defer></script>
-    <script src="js/storage.js?v=59" defer></script>
-    <script src="js/audio.js?v=59" defer></script>
-    <script src="js/ai_manager.js?v=59" defer></script>
-    <script src="js/ui.js?v=59" defer></script>
+    <script src="js/mobile_config.js?v=60" defer></script>
+    <script src="js/transport_socket.js?v=60" defer></script>
+    <script src="js/storage.js?v=60" defer></script>
+    <script src="js/audio.js?v=60" defer></script>
+    <script src="js/ai_manager.js?v=60" defer></script>
+    <script src="js/ui.js?v=60" defer></script>
     <script>
         if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=59').then(reg => {
+                navigator.serviceWorker.register('sw.js?v=60').then(reg => {
                     reg.update();
                 }).catch(err => {
                     console.warn('[SW] Registration failed:', err);
