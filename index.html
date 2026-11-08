@@ -28,7 +28,7 @@
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="google-site-verification" content="qN_qjoiirZBhZakmoogdgxfInyT4KtIlLWUuHraiamg" />
+    <meta name="robots" content="noindex, nofollow">
     <title>Модульные Шахматы - Grandmaster Pro</title>
     <meta name="description" content="Бесплатные онлайн шахматы: играйте с друзьями по сети или против ИИ Stockfish 19 и нейросетей прямо в браузере. Без регистрации.">
     <meta name="keywords" content="шахматы онлайн, играть в шахматы, шахматы с другом, шахматы по сети, stockfish online, нейросеть шахматы, модульные шахматы">
@@ -54,7 +54,7 @@
     <!-- Preload Chess WASM Engine for lightning-fast startup -->
     <link rel="preload" href="build/release.wasm" as="fetch" crossorigin>
     <!-- Optimized compiled stylesheet containing both Tailwind utility classes and custom styling -->
-    <link rel="stylesheet" href="css/output.css?v=58">
+    <link rel="stylesheet" href="css/output.css?v=59">
 </head>
 <body class="bg-background text-on-background font-body-md overflow-x-hidden md:overflow-hidden min-h-screen min-h-dvh md:h-screen md:h-dvh flex flex-col">
     <!-- TopAppBar Component -->
@@ -607,37 +607,172 @@
     </div>
 
     <!-- Scripts Integration -->
-    <script src="js/telemetry.js?v=58" defer></script>
-    <script src="js/wasm_loader.js?v=58" defer></script>
-    <script src="js/logic.js?v=58" defer></script>
-    <script src="js/ai_shared.js?v=58" defer></script>
-    <script src="js/ort.min.js?v=58" defer></script>
-    <script src="js/ai_neural.js?v=58" defer></script>
-    <script src="js/ai_easy.js?v=58" defer></script>
-    <script src="js/ai_medium.js?v=58" defer></script>
-    <script src="js/ai_hard.js?v=58" defer></script>
-    <script src="js/ai_very_hard.js?v=58" defer></script>
-    <script src="js/ai_unreal.js?v=58" defer></script>
-    <script src="js/analysis_manager.js?v=58" defer></script>
-    <script src="js/network.js?v=58" defer></script>
-    <script src="js/lib/binary_protocol.js?v=58" defer></script>
+    <script src="js/telemetry.js?v=59" defer></script>
+    <script src="js/wasm_loader.js?v=59" defer></script>
+    <script src="js/logic.js?v=59" defer></script>
+    <script src="js/ai_shared.js?v=59" defer></script>
+    <script src="js/ort.min.js?v=59" defer></script>
+    <script src="js/ai_neural.js?v=59" defer></script>
+    <script src="js/ai_easy.js?v=59" defer></script>
+    <script src="js/ai_medium.js?v=59" defer></script>
+    <script src="js/ai_hard.js?v=59" defer></script>
+    <script src="js/ai_very_hard.js?v=59" defer></script>
+    <script src="js/ai_unreal.js?v=59" defer></script>
+    <script src="js/analysis_manager.js?v=59" defer></script>
+    <script src="js/network.js?v=59" defer></script>
+    <script src="js/lib/binary_protocol.js?v=59" defer></script>
     <script src="js/lib/socket.io.min.js" defer></script>
-    <script src="js/mobile_config.js?v=58" defer></script>
-    <script src="js/transport_socket.js?v=58" defer></script>
-    <script src="js/storage.js?v=58" defer></script>
-    <script src="js/audio.js?v=58" defer></script>
-    <script src="js/ai_manager.js?v=58" defer></script>
-    <script src="js/ui.js?v=58" defer></script>
+    <script src="js/mobile_config.js?v=59" defer></script>
+    <script src="js/transport_socket.js?v=59" defer></script>
+    <script src="js/storage.js?v=59" defer></script>
+    <script src="js/audio.js?v=59" defer></script>
+    <script src="js/ai_manager.js?v=59" defer></script>
+    <script src="js/ui.js?v=59" defer></script>
     <script>
         if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=58').then(reg => {
+                navigator.serviceWorker.register('sw.js?v=59').then(reg => {
                     reg.update();
                 }).catch(err => {
                     console.warn('[SW] Registration failed:', err);
                 });
             });
         }
+    </script>
+    <!-- Автоматическая замена стандартных <select> на стильные кастомные списки -->
+    <script>
+        (() => {
+            const initCustomSelects = () => {
+                const selects = document.querySelectorAll('select');
+                const closeAllDropdowns = (except = null) => {
+                    document.querySelectorAll('.custom-select-dropdown').forEach(menu => {
+                        if (menu !== except) {
+                            menu.classList.add('hidden');
+                            menu.previousElementSibling?.classList.remove('open');
+                        }
+                    });
+                };
+
+                selects.forEach(select => {
+                    if (select.dataset.customized) return;
+                    select.dataset.customized = 'true';
+
+                    // Создаем обертку
+                    const container = document.createElement('div');
+                    container.className = 'custom-select-container';
+                    select.parentNode.insertBefore(container, select);
+                    container.appendChild(select);
+                    select.style.display = 'none';
+
+                    // Кнопка-триггер
+                    const trigger = document.createElement('button');
+                    trigger.type = 'button';
+                    trigger.className = 'custom-select-trigger';
+
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = 'custom-select-label';
+
+                    const arrowSpan = document.createElement('span');
+                    arrowSpan.className = 'material-symbols-outlined custom-select-arrow';
+                    arrowSpan.textContent = 'expand_more';
+
+                    trigger.appendChild(labelSpan);
+                    trigger.appendChild(arrowSpan);
+                    container.appendChild(trigger);
+
+                    // Выпадающий список
+                    const dropdown = document.createElement('div');
+                    dropdown.className = 'custom-select-dropdown hidden';
+                    container.appendChild(dropdown);
+
+                    const syncUI = () => {
+                        const selectedOpt = select.options[select.selectedIndex] || select.options[0];
+                        labelSpan.textContent = selectedOpt ? selectedOpt.textContent : '';
+                        trigger.title = selectedOpt ? selectedOpt.textContent : '';
+                        trigger.classList.toggle('disabled', select.disabled);
+
+                        dropdown.querySelectorAll('.custom-select-option').forEach(btn => {
+                            btn.classList.toggle('selected', btn.dataset.value === select.value);
+                        });
+                    };
+
+                    // Заполняем опции
+                    Array.from(select.options).forEach(opt => {
+                        const optBtn = document.createElement('button');
+                        optBtn.type = 'button';
+                        optBtn.className = 'custom-select-option';
+                        optBtn.dataset.value = opt.value;
+
+                        const text = document.createElement('span');
+                        text.textContent = opt.textContent;
+
+                        const check = document.createElement('span');
+                        check.className = 'material-symbols-outlined custom-select-check';
+                        check.textContent = 'check';
+
+                        optBtn.appendChild(text);
+                        optBtn.appendChild(check);
+
+                        optBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (select.disabled) return;
+                            if (select.value !== opt.value) {
+                                select.value = opt.value;
+                                select.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                            syncUI();
+                            closeAllDropdowns();
+                        });
+
+                        dropdown.appendChild(optBtn);
+                    });
+
+                    trigger.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (select.disabled) return;
+                        const isHidden = dropdown.classList.contains('hidden');
+                        closeAllDropdowns(dropdown);
+                        dropdown.classList.toggle('hidden', !isHidden);
+                        trigger.classList.toggle('open', isHidden);
+                    });
+
+                    // Перехватываем программное изменение select.value из ui.js
+                    let proto = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+                    if (!proto || !proto.get || !proto.set) {
+                        let currentProto = Object.getPrototypeOf(HTMLSelectElement.prototype);
+                        while (currentProto && (!proto || !proto.get || !proto.set)) {
+                            proto = Object.getOwnPropertyDescriptor(currentProto, 'value');
+                            currentProto = Object.getPrototypeOf(currentProto);
+                        }
+                    }
+                    if (proto && proto.get && proto.set) {
+                        Object.defineProperty(select, 'value', {
+                            get() { return proto.get.call(this); },
+                            set(val) {
+                                proto.set.call(this, val);
+                                syncUI();
+                            }
+                        });
+                    }
+
+                    // Отслеживаем изменение атрибута disabled
+                    if (typeof MutationObserver !== 'undefined') {
+                        new MutationObserver(syncUI).observe(select, { attributes: true, attributeFilter: ['disabled'] });
+                    }
+                    select.addEventListener('change', syncUI);
+
+                    syncUI();
+                });
+
+                document.addEventListener('click', () => closeAllDropdowns());
+            };
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initCustomSelects);
+            } else {
+                initCustomSelects();
+            }
+        })();
     </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const VERSION = '58';
+const VERSION = '59';
 const CACHE_NAME = `modular-chess-v${VERSION}`;
 
 // Критические ресурсы: ядро игры. Если хоть один не скачается — установка воркера отменяется,

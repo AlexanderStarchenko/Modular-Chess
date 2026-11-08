@@ -749,20 +749,200 @@ aside label {
     font-size: clamp(0.95rem, 1.8vh, 1.15rem) !important;
     font-weight: 600 !important;
 }
-aside select {
-    font-size: clamp(0.95rem, 1.8vh, 1.15rem) !important;
-    padding-top: 10px !important;
-    padding-bottom: 10px !important;
-    padding-left: 14px !important;
-    padding-right: 34px !important;
+/* Базовая стилизация всех select (включая модальные окна) и обрезка длинного текста */
+aside select,
+.modal-content select,
+.sidebar-select {
+    font-size: clamp(0.85rem, 1.6vh, 1rem) !important;
+    padding: 10px 36px 10px 14px !important;
     height: auto !important;
+    width: 100%;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
     appearance: none !important;
     -webkit-appearance: none !important;
     -moz-appearance: none !important;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
     background-repeat: no-repeat !important;
-    background-position: right 14px center !important;
-    background-size: 14px 14px !important;
+    background-position: right 12px center !important;
+    background-size: 15px 15px !important;
+    border-radius: 0.75rem !important;
+}
+
+/* Кастомные выпадающие списки (Custom Select UI) */
+.custom-select-container {
+    position: relative;
+    width: 100%;
+}
+
+.custom-select-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background-color: var(--color-surface-container);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: 0.75rem;
+    padding: 10px 12px !important;
+    font-size: clamp(0.82rem, 1.5vh, 0.95rem) !important;
+    font-weight: 500;
+    color: var(--color-on-surface);
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.custom-select-trigger:hover:not(.disabled) {
+    background-color: var(--color-surface-container-high);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.custom-select-trigger.open {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(173, 198, 255, 0.2);
+}
+
+.custom-select-trigger.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.custom-select-label {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.custom-select-arrow {
+    font-size: 18px !important;
+    color: var(--color-on-surface-variant);
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s ease;
+    flex-shrink: 0;
+}
+
+.custom-select-trigger:hover:not(.disabled) .custom-select-arrow,
+.custom-select-trigger.open .custom-select-arrow {
+    color: var(--color-primary);
+}
+
+.custom-select-trigger.open .custom-select-arrow {
+    transform: rotate(180deg);
+}
+
+/* Выпадающее меню опций */
+.custom-select-dropdown {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 6px);
+    background-color: rgba(38, 38, 42, 0.96);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 0.85rem;
+    padding: 6px;
+    box-shadow: 0 14px 30px -5px rgba(0, 0, 0, 0.55);
+    z-index: 100;
+    max-height: 240px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    animation: saveDropdownScaleFade 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-outline-variant) transparent;
+}
+
+.custom-select-dropdown.hidden {
+    display: none !important;
+}
+
+.custom-select-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 10px !important;
+    border-radius: 0.55rem;
+    font-size: 0.8rem !important;
+    font-weight: 500;
+    color: var(--color-on-surface);
+    background: transparent;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    line-height: 1.3;
+}
+
+.custom-select-option:hover {
+    background-color: rgba(173, 198, 255, 0.14);
+    color: var(--color-primary);
+}
+
+.custom-select-option.selected {
+    background-color: rgba(173, 198, 255, 0.2);
+    color: var(--color-primary);
+    font-weight: 700;
+}
+
+.custom-select-check {
+    font-size: 16px !important;
+    opacity: 0;
+    color: var(--color-primary);
+    flex-shrink: 0;
+    transition: opacity 0.15s ease;
+}
+
+.custom-select-option.selected .custom-select-check {
+    opacity: 1;
+}
+
+/* Светлая тема для кастомных списков */
+html:not(.dark) .custom-select-trigger {
+    background-color: #ffffff;
+    border-color: rgba(15, 23, 42, 0.15);
+    color: #0f172a;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+html:not(.dark) .custom-select-trigger:hover:not(.disabled) {
+    background-color: #f8fafc;
+    border-color: #2563eb;
+    color: #2563eb;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+}
+
+html:not(.dark) .custom-select-trigger.open {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+html:not(.dark) .custom-select-dropdown {
+    background-color: rgba(255, 255, 255, 0.98);
+    border-color: rgba(15, 23, 42, 0.12);
+    box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.14), 0 4px 10px -2px rgba(15, 23, 42, 0.06);
+}
+
+html:not(.dark) .custom-select-option {
+    color: #0f172a;
+}
+
+html:not(.dark) .custom-select-option:hover {
+    background-color: rgba(37, 99, 235, 0.08);
+    color: #2563eb !important;
+}
+
+html:not(.dark) .custom-select-option.selected {
+    background-color: rgba(37, 99, 235, 0.12);
+    color: #2563eb !important;
 }
 aside input {
     font-size: clamp(0.95rem, 1.8vh, 1.15rem) !important;
