@@ -33,15 +33,56 @@ const ChessAINeural = (() => {
     let activeSession = null;
     let activeModelVer = null;
 
+    function resolveWasmPaths() {
+        if (typeof window !== 'undefined' && window.location && /^(https?|file|capacitor):/i.test(window.location.protocol || '')) {
+            try {
+                const base = (typeof document !== 'undefined' && document.baseURI) || window.location.href;
+                return new URL('js/', base).href;
+            } catch (_) {
+                // Fall back to relative path
+            }
+        }
+        return 'js/';
+    }
+
+    async function loadModelInput(modelPath) {
+        const isFileProtocol = typeof window !== 'undefined' && window.location && window.location.protocol === 'file:';
+        const isElectron = typeof process !== 'undefined' && process.versions && !!process.versions.electron;
+
+        if ((isFileProtocol || isElectron) && typeof require === 'function') {
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                const candidates = [
+                    typeof process !== 'undefined' && typeof process.cwd === 'function' ? path.resolve(process.cwd(), modelPath) : null,
+                    typeof __dirname !== 'undefined' ? path.resolve(__dirname, modelPath) : null,
+                    typeof __dirname !== 'undefined' ? path.resolve(__dirname, '..', modelPath) : null
+                ].filter(Boolean);
+
+                for (const candidate of candidates) {
+                    if (fs.existsSync(candidate)) {
+                        const buf = await fs.promises.readFile(candidate);
+                        return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+                    }
+                }
+            } catch (e) {
+                console.warn(`[Neural AI] Direct file read failed for ${modelPath}, falling back to path:`, e);
+            }
+        }
+
+        return modelPath;
+    }
+
     async function createOrtSession(modelPath) {
+        const modelInput = await loadModelInput(modelPath);
         if (typeof navigator !== 'undefined' && navigator.gpu) {
             try {
-                return await ort.InferenceSession.create(modelPath, { executionProviders: ['webgpu', 'wasm'] });
+                return await ort.InferenceSession.create(modelInput, { executionProviders: ['webgpu', 'wasm'] });
             } catch (gpuErr) {
                 console.warn('[Neural AI] WebGPU provider unavailable, falling back to WASM:', gpuErr);
             }
         }
-        return await ort.InferenceSession.create(modelPath, { executionProviders: ['wasm'] });
+        return await ort.InferenceSession.create(modelInput, { executionProviders: ['wasm'] });
     }
 
     async function init(modelVer = 'v1') {
@@ -59,8 +100,12 @@ const ChessAINeural = (() => {
 
         initPromise = (async () => {
             if (ort.env && ort.env.wasm) {
-                ort.env.wasm.wasmPaths = 'js/';
-                ort.env.wasm.numThreads = 2;
+                ort.env.wasm.wasmPaths = resolveWasmPaths();
+                const isCrossOriginIsolated = typeof self !== 'undefined' && self.crossOriginIsolated === true;
+                const hwThreads = (typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency) && navigator.hardwareConcurrency > 0)
+                    ? Math.min(4, Math.max(1, Math.floor(navigator.hardwareConcurrency)))
+                    : 1;
+                ort.env.wasm.numThreads = isCrossOriginIsolated ? hwThreads : 1;
             }
 
             if (modelVer === 'v1_7' || modelVer === 'v1.7') {

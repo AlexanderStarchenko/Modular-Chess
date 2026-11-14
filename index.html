@@ -54,7 +54,7 @@
     <!-- Preload Chess WASM Engine for lightning-fast startup -->
     <link rel="preload" href="build/release.wasm" as="fetch" crossorigin>
     <!-- Optimized compiled stylesheet containing both Tailwind utility classes and custom styling -->
-    <link rel="stylesheet" href="css/output.css?v=64">
+    <link rel="stylesheet" href="css/output.css?v=68">
 </head>
 <body class="md:h-screen md:h-dvh overflow-x-hidden md:overflow-hidden min-h-screen min-h-dvh flex flex-col bg-background text-on-background font-body-md antialiased">
     <!-- Legacy TopAppBar Hook (Hidden) -->
@@ -611,13 +611,15 @@
     </div>
 
     <!-- Scripts Integration -->
-    <script src="js/telemetry.js?v=64" defer></script>
+    <script src="js/telemetry.js?v=67" defer></script>
     <script src="js/wasm_loader.js?v=64" defer></script>
     <script src="js/logic.js?v=64" defer></script>
-    <script src="js/ai_shared.js?v=64" defer></script>
-    <script src="js/syzygy.js?v=64" defer></script>
-    <script src="js/ort.min.js?v=64" defer></script>
-    <script src="js/ai_neural.js?v=64" defer></script>
+    <script src="js/books/opening_book.js?v=72" defer></script>
+    <script src="js/books/endgame_book.js?v=71" defer></script>
+    <script src="js/ai_shared.js?v=71" defer></script>
+    <script src="js/syzygy.js?v=65" defer></script>
+    <script src="js/ort.min.js?v=68" defer></script>
+    <script src="js/ai_neural.js?v=68" defer></script>
     <script src="js/ai_easy.js?v=64" defer></script>
     <script src="js/ai_medium.js?v=64" defer></script>
     <script src="js/ai_hard.js?v=64" defer></script>
@@ -627,9 +629,9 @@
     <script src="js/network.js?v=64" defer></script>
     <script src="js/lib/binary_protocol.js?v=64" defer></script>
     <script src="js/lib/socket.io.min.js" defer></script>
-    <script src="js/mobile_config.js?v=64" defer></script>
+    <script src="js/mobile_config.js?v=69" defer></script>
     <script src="js/transport_socket.js?v=64" defer></script>
-    <script src="js/storage.js?v=64" defer></script>
+    <script src="js/storage.js?v=66" defer></script>
     <script src="js/audio.js?v=64" defer></script>
     <script src="js/ai_manager.js?v=64" defer></script>
     <script src="js/design/theme.js?v=64" defer></script>
@@ -637,7 +639,7 @@
     <script src="js/design/panels_view.js?v=64" defer></script>
     <script src="js/ui/timers.js?v=64" defer></script>
     <script src="js/ui/analysis_controller.js?v=64" defer></script>
-    <script src="js/ui/saves_controller.js?v=64" defer></script>
+    <script src="js/ui/saves_controller.js?v=66" defer></script>
     <script src="js/ui/board_interaction.js?v=64" defer></script>
     <script src="js/ui/game_flow.js?v=64" defer></script>
     <script src="js/ui/dom_events.js?v=64" defer></script>

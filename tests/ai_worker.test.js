@@ -8,6 +8,7 @@ describe('Chess AI Worker', () => {
     let originalConsoleError;
 
     let initScriptsCalls = 0;
+    let initScriptsArgs = [];
     let initWasmCalls = 0;
 
     beforeAll(() => {
@@ -45,6 +46,7 @@ describe('Chess AI Worker', () => {
         require('../js/ai_worker');
 
         initScriptsCalls = global.importScripts.mock.calls.length;
+        initScriptsArgs = global.importScripts.mock.calls[0] || [];
         initWasmCalls = global.ChessWASM.init.mock.calls.length;
     });
 
@@ -70,6 +72,32 @@ describe('Chess AI Worker', () => {
     test('Worker should initialize ChessWASM', () => {
         expect(initScriptsCalls).toBe(1);
         expect(initWasmCalls).toBe(1);
+    });
+
+    test('Worker should import opening_book.js and endgame_book.js before ai_shared.js', () => {
+        const openingIdx = initScriptsArgs.indexOf('books/opening_book.js');
+        const endgameIdx = initScriptsArgs.indexOf('books/endgame_book.js');
+        const sharedIdx = initScriptsArgs.indexOf('ai_shared.js');
+
+        expect(openingIdx).toBeGreaterThanOrEqual(0);
+        expect(endgameIdx).toBeGreaterThanOrEqual(0);
+        expect(sharedIdx).toBeGreaterThan(openingIdx);
+        expect(sharedIdx).toBeGreaterThan(endgameIdx);
+    });
+
+    test('Worker should return opening book move via ChessAIShared when available', () => {
+        const bookMove = { fromR: 6, fromC: 4, toR: 4, toC: 4, promotion: null };
+        global.ChessAIShared = {
+            getOpeningBookMove: jest.fn().mockReturnValue(bookMove)
+        };
+        try {
+            global.onmessage({ data: { state: { turn: 'w' }, difficulty: '3' } });
+            expect(global.ChessAIShared.getOpeningBookMove).toHaveBeenCalled();
+            expect(global.ChessAIHard.getBestMove).not.toHaveBeenCalled();
+            expect(global.postMessage).toHaveBeenCalledWith({ bestMove: bookMove });
+        } finally {
+            delete global.ChessAIShared;
+        }
     });
 
     test('Worker should handle difficulty 1 (Easy AI)', () => {

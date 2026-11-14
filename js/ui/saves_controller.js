@@ -50,7 +50,10 @@
             try {
                 const saveObj = deps.serializeGameState();
                 if (typeof ChessStorage !== 'undefined') {
-                    ChessStorage.setSaveSlot(slotNum, saveObj);
+                    const persisted = ChessStorage.setSaveSlot(slotNum, saveObj);
+                    if (persisted === false) {
+                        alert('Не удалось сохранить игру в постоянное хранилище (нет места или доступ ограничен).');
+                    }
                 } else {
                     localStorage.setItem(SAVE_SLOTS_KEY_PREFIX + slotNum, JSON.stringify(saveObj));
                 }

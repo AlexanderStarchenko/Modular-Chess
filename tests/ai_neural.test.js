@@ -96,4 +96,79 @@ describe('Neural AI Module (js/ai_neural.js)', () => {
         expect(move2.toR).toBe(move1.toR);
         expect(move2.toC).toBe(move1.toC);
     });
+
+    test('sets ort.env.wasm.numThreads to 1 unless crossOriginIsolated is true, and resolves absolute wasmPaths', async () => {
+        const origSelf = global.self;
+        const origNavigator = global.navigator;
+        const origWindow = global.window;
+        const origOrt = global.ort;
+
+        try {
+            const makeMockOrt = () => ({
+                env: { wasm: {} },
+                Tensor: function() {},
+                InferenceSession: { create: jest.fn(async () => ({ run: jest.fn() })) }
+            });
+
+            // 1. Not crossOriginIsolated -> numThreads must be 1 (no SharedArrayBuffer warning)
+            global.self = { crossOriginIsolated: false };
+            global.navigator = { hardwareConcurrency: 8 };
+            global.window = { location: { protocol: 'http:', href: 'http://localhost:5000/index.html' } };
+            global.ort = makeMockOrt();
+
+            let isolatedNeural;
+            jest.isolateModules(() => {
+                isolatedNeural = require('../js/ai_neural.js');
+            });
+            await isolatedNeural.init('v1');
+            expect(global.ort.env.wasm.numThreads).toBe(1);
+            expect(global.ort.env.wasm.wasmPaths).toBe('http://localhost:5000/js/');
+
+            // 2. crossOriginIsolated === true -> numThreads scales up cleanly
+            global.self = { crossOriginIsolated: true };
+            global.ort = makeMockOrt();
+            jest.isolateModules(() => {
+                isolatedNeural = require('../js/ai_neural.js');
+            });
+            await isolatedNeural.init('v1');
+            expect(global.ort.env.wasm.numThreads).toBe(4);
+        } finally {
+            global.self = origSelf;
+            global.navigator = origNavigator;
+            global.window = origWindow;
+            global.ort = origOrt;
+        }
+    });
+
+    test('passes Uint8Array buffer instead of string path to InferenceSession.create under file:// protocol', async () => {
+        const origSelf = global.self;
+        const origWindow = global.window;
+        const origOrt = global.ort;
+
+        try {
+            global.self = { crossOriginIsolated: false };
+            global.window = { location: { protocol: 'file:', href: 'file:///C:/chess/index.html' } };
+            const createMock = jest.fn(async () => ({ run: jest.fn() }));
+            global.ort = {
+                env: { wasm: {} },
+                Tensor: function() {},
+                InferenceSession: { create: createMock }
+            };
+
+            let isolatedNeural;
+            jest.isolateModules(() => {
+                isolatedNeural = require('../js/ai_neural.js');
+            });
+            await isolatedNeural.init('v1');
+
+            expect(createMock).toHaveBeenCalledTimes(1);
+            const [modelArg] = createMock.mock.calls[0];
+            expect(modelArg).toBeInstanceOf(Uint8Array);
+            expect(modelArg.byteLength).toBeGreaterThan(0);
+        } finally {
+            global.self = origSelf;
+            global.window = origWindow;
+            global.ort = origOrt;
+        }
+    });
 });

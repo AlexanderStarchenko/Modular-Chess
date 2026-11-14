@@ -1,4 +1,4 @@
-const VERSION = '64';
+const VERSION = '72';
 const CACHE_NAME = `modular-chess-v${VERSION}`;
 
 // Критические ресурсы: ядро игры. Если хоть один не скачается — установка воркера отменяется,
@@ -10,6 +10,8 @@ const CRITICAL_ASSETS = [
     `js/telemetry.js?v=${VERSION}`,
     `js/wasm_loader.js?v=${VERSION}`,
     `js/logic.js?v=${VERSION}`,
+    `js/books/opening_book.js?v=${VERSION}`,
+    `js/books/endgame_book.js?v=${VERSION}`,
     `js/ai_shared.js?v=${VERSION}`,
     `js/syzygy.js?v=${VERSION}`,
     `js/ort.min.js?v=${VERSION}`,

@@ -2,7 +2,9 @@
 module.exports = {
   content: [
     "./index.html",
-    "./js/**/*.js"
+    "./js/**/*.js",
+    "!./js/**/ort*.js",
+    "!./js/stockfish.js"
   ],
   darkMode: "class",
   theme: {
@@ -55,10 +57,12 @@ module.exports = {
         "on-surface-variant": "var(--color-on-surface-variant, #c2c6d6)",
         "outline": "var(--color-outline, #8c909f)",
         "tertiary-fixed-dim": "var(--color-tertiary-fixed-dim, #f9ba82)",
-        "glass-bg-primary": "var(--glass-bg-primary)",
-        "glass-bg-surface": "var(--glass-bg-surface)",
-        "glass-border-light": "var(--glass-border-light)",
-        "glass-shadow-elevated": "var(--glass-shadow-elevated)"
+        "glass-bg-primary": "var(--glass-bg-primary, #181A1D)",
+        "glass-bg-surface": "var(--glass-bg-surface, #151619)",
+        "glass-border-light": "var(--glass-border-light, rgba(255, 255, 255, 0.08))"
+      },
+      boxShadow: {
+        "glass-elevated": "var(--glass-shadow-elevated, 0 12px 32px -12px rgba(0, 0, 0, 0.45))"
       },
       borderRadius: {
         "DEFAULT": "0.25rem",
@@ -74,12 +78,12 @@ module.exports = {
         "margin-lg": "40px"
       },
       fontFamily: {
-        "body-md": ["Inter"],
-        "headline-lg-mobile": ["Hanken Grotesk"],
-        "timer-display": ["JetBrains Mono"],
-        "headline-xl": ["Hanken Grotesk"],
-        "label-sm": ["JetBrains Mono"],
-        "headline-lg": ["Hanken Grotesk"]
+        "body-md": ["Inter", "system-ui", "-apple-system", "sans-serif"],
+        "headline-lg-mobile": ["Hanken Grotesk", "Inter", "system-ui", "sans-serif"],
+        "timer-display": ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"],
+        "headline-xl": ["Hanken Grotesk", "Inter", "system-ui", "sans-serif"],
+        "label-sm": ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"],
+        "headline-lg": ["Hanken Grotesk", "Inter", "system-ui", "sans-serif"]
       },
       fontSize: {
         "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],

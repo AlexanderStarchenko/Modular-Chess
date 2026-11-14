@@ -2,7 +2,7 @@ console.log('[Worker] Script starting...');
 
 try {
     console.log('[Worker] Importing scripts...');
-    importScripts('wasm_loader.js', 'logic.js', 'ai_shared.js', 'ai_easy.js', 'ai_medium.js', 'ai_hard.js', 'ai_very_hard.js');
+    importScripts('wasm_loader.js', 'logic.js', 'books/opening_book.js', 'books/endgame_book.js', 'ai_shared.js', 'ai_easy.js', 'ai_medium.js', 'ai_hard.js', 'ai_very_hard.js');
     console.log('[Worker] Scripts imported successfully');
 
     // Asynchronously initialize WASM inside the Worker

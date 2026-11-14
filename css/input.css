@@ -3,6 +3,8 @@
 @config "../tailwind.config.js";
 @source "../index.html";
 @source "../js/**/*.js";
+@source not "../js/ort*.js";
+@source not "../js/stockfish.js";
 
 @import "./style.css";
 
