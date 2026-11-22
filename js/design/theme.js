@@ -194,6 +194,7 @@
             return 'Stockfish 19';
         }
 
+        if (val === 'neural-v1-8-alphabeta' || val === 'neural-v1-8') return 'Нейросеть V1.8 (Alpha-Beta)';
         if (val === 'neural-v1-7-alphabeta' || val === 'neural-v1-7') return 'Нейросеть V1.7 (Alpha-Beta 12-SE)';
         if (val === 'neural-v1-6-alphabeta') return 'Нейросеть V1.6 (Alpha-Beta)';
         if (val === 'neural-v1-6-mcts') return 'Нейросеть V1.6 (MCTS 4672)';

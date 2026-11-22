@@ -1,4 +1,4 @@
-const VERSION = '72';
+const VERSION = '81';
 const CACHE_NAME = `modular-chess-v${VERSION}`;
 
 // Критические ресурсы: ядро игры. Если хоть один не скачается — установка воркера отменяется,
@@ -15,6 +15,8 @@ const CRITICAL_ASSETS = [
     `js/ai_shared.js?v=${VERSION}`,
     `js/syzygy.js?v=${VERSION}`,
     `js/ort.min.js?v=${VERSION}`,
+    `js/ai_neural_search.js?v=${VERSION}`,
+    `js/ai_neural_worker.js?v=${VERSION}`,
     `js/ai_neural.js?v=${VERSION}`,
     `js/ai_easy.js?v=${VERSION}`,
     `js/ai_medium.js?v=${VERSION}`,
@@ -129,7 +131,7 @@ self.addEventListener('fetch', event => {
                     }
                     return networkResponse;
                 })
-                .catch(() => caches.match(req))
+                .catch(() => caches.match(req).then(cached => cached || caches.match(req, { ignoreSearch: true })))
         );
         return;
     }

@@ -8,6 +8,8 @@ const ChessAIManager = (() => {
     const isFileProtocol = typeof window !== 'undefined' && window.location && window.location.protocol === 'file:' && !isElectron;
 
     const DEFAULT_TIMEOUT_MS = 15000;
+    // Syzygy endgame tablebases enabled
+    const SYZYGY_ENABLED = true;
 
     const stockfishSettings = {
         '1': [0, 500],   // Easy
@@ -82,7 +84,7 @@ const ChessAIManager = (() => {
             if (typeof difficulty === 'string' && difficulty.startsWith('neural')) {
                 if (typeof ChessAINeural !== 'undefined') {
                     const match = difficulty.match(/^neural-(v\d+-\d+)/);
-                    const modelVer = match ? match[1].replace('-', '_') : (difficulty === 'neural' ? 'v1' : 'v1_7');
+                    const modelVer = match ? match[1].replace('-', '_') : (difficulty === 'neural' ? 'v1' : 'v1_8');
 
                     let searchType = 'alphabeta';
                     if (difficulty.endsWith('-mcts')) {
@@ -128,7 +130,7 @@ const ChessAIManager = (() => {
 
         getBestMove(fen, difficulty, history = []) {
             // Syzygy Endgame Tablebases Probe (Up to 7 pieces)
-            if (typeof ChessSyzygy !== 'undefined' && typeof ChessSyzygy.isTablebasePosition === 'function' && ChessSyzygy.isTablebasePosition(fen)) {
+            if (SYZYGY_ENABLED && typeof ChessSyzygy !== 'undefined' && typeof ChessSyzygy.isTablebasePosition === 'function' && ChessSyzygy.isTablebasePosition(fen)) {
                 return ChessSyzygy.probe(fen).then(syzygyMove => {
                     if (syzygyMove) {
                         console.log(`[AI Manager] 🏆 Syzygy Tablebase optimal move: (${syzygyMove.fromR},${syzygyMove.fromC}) -> (${syzygyMove.toR},${syzygyMove.toC}) [${syzygyMove.category || 'optimal'}, dtz: ${syzygyMove.dtz}, dtm: ${syzygyMove.dtm}]`);
@@ -146,7 +148,7 @@ const ChessAIManager = (() => {
 
         getHint(fen) {
             // If in tablebase territory, Syzygy provides mathematically flawless advice
-            if (typeof ChessSyzygy !== 'undefined' && typeof ChessSyzygy.isTablebasePosition === 'function' && ChessSyzygy.isTablebasePosition(fen)) {
+            if (SYZYGY_ENABLED && typeof ChessSyzygy !== 'undefined' && typeof ChessSyzygy.isTablebasePosition === 'function' && ChessSyzygy.isTablebasePosition(fen)) {
                 return ChessSyzygy.probe(fen).then(syzygyMove => {
                     if (syzygyMove) {
                         return syzygyMove;

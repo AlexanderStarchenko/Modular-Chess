@@ -163,7 +163,8 @@
                         <span>Движок / Сложность</span>
                     </label>
                     <select id="difficulty-select" class="sidebar-select w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-xs font-medium text-on-surface focus:outline-none focus:border-primary transition-colors cursor-pointer">
-                        <option value="neural-v1-7-alphabeta" selected>Нейросеть V1.7 (12-SE Alpha-Beta 8M)</option>
+                        <option value="neural-v1-8-alphabeta" selected>Нейросеть V1.8 (Alpha-Beta)</option>
+                        <option value="neural-v1-7-alphabeta">Нейросеть V1.7 (12-SE Alpha-Beta 8M)</option>
                         <option value="neural-v1-6-alphabeta">Нейросеть V1.6 (Alpha-Beta + Policy NN)</option>
                         <option value="neural-v1-6-mcts">Нейросеть V1.6 (MCTS AlphaZero 4672)</option>
                         <option value="neural-v1-6">Нейросеть V1.6 (5-Ply Deep Minimax)</option>
@@ -251,7 +252,7 @@
                             <div class="min-w-0">
                                 <span class="player-avatar hidden"></span>
                                 <div class="flex items-center gap-1.5">
-                                    <span class="font-semibold text-xs md:text-sm text-on-surface tracking-tight truncate" id="top-player-name">Нейросеть V1.7</span>
+                                    <span class="font-semibold text-xs md:text-sm text-on-surface tracking-tight truncate" id="top-player-name">Нейросеть V1.8</span>
                                     <span id="opponent-status-dot" class="status-indicator-dot offline" style="display: none; width: 8px; height: 8px; border-radius: 50%; background-color: rgba(140, 144, 159, 0.4); margin-left: 4px; flex-shrink: 0;" title="Оппонент не в игре"></span>
                                 </div>
                                 <div class="captures-row flex items-center gap-2 mt-0.5 min-h-[16px]">
@@ -617,9 +618,10 @@
     <script src="js/books/opening_book.js?v=72" defer></script>
     <script src="js/books/endgame_book.js?v=71" defer></script>
     <script src="js/ai_shared.js?v=71" defer></script>
-    <script src="js/syzygy.js?v=65" defer></script>
+    <script src="js/syzygy.js?v=74" defer></script>
     <script src="js/ort.min.js?v=68" defer></script>
-    <script src="js/ai_neural.js?v=68" defer></script>
+    <script src="js/ai_neural_search.js?v=81" defer></script>
+    <script src="js/ai_neural.js?v=79" defer></script>
     <script src="js/ai_easy.js?v=64" defer></script>
     <script src="js/ai_medium.js?v=64" defer></script>
     <script src="js/ai_hard.js?v=64" defer></script>
@@ -633,7 +635,7 @@
     <script src="js/transport_socket.js?v=64" defer></script>
     <script src="js/storage.js?v=66" defer></script>
     <script src="js/audio.js?v=64" defer></script>
-    <script src="js/ai_manager.js?v=64" defer></script>
+    <script src="js/ai_manager.js?v=79" defer></script>
     <script src="js/design/theme.js?v=64" defer></script>
     <script src="js/design/board_renderer.js?v=64" defer></script>
     <script src="js/design/panels_view.js?v=64" defer></script>
